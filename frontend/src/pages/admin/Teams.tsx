@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, QrCode } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { Table, THead, TH, TR, TD } from "@/components/ui/table";
 import { Dialog } from "@/components/ui/dialog";
+import { QRDialog } from "@/components/admin/QRDialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 
@@ -28,6 +29,7 @@ export default function AdminTeams() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  const [qrTeam, setQrTeam] = useState<{ id: number; name: string } | null>(null);
   const [form, setForm] = useState<Partial<Team>>(empty);
 
   const load = () => {
@@ -98,6 +100,9 @@ export default function AdminTeams() {
                   <TD className="text-slate-600">{t.contact_name || "—"}</TD>
                   <TD>
                     <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="icon" onClick={() => setQrTeam({ id: t.id, name: t.name })} data-testid={`qr-team-${t.id}`}>
+                        <QrCode className="h-4 w-4" />
+                      </Button>
                       <Button variant="ghost" size="icon" onClick={() => { setForm(t); setOpen(true); }} data-testid={`edit-team-${t.id}`}>
                         <Pencil className="h-4 w-4" />
                       </Button>
@@ -135,6 +140,13 @@ export default function AdminTeams() {
           </div>
         </div>
       </Dialog>
+
+      <QRDialog
+        open={qrTeam !== null}
+        onClose={() => setQrTeam(null)}
+        url={qrTeam ? `${window.location.origin}/teams/${qrTeam.id}` : ""}
+        title={qrTeam?.name ?? ""}
+      />
     </div>
   );
 }

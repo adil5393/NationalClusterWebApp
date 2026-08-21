@@ -29,6 +29,14 @@ AND the reasoning (WHY). Build a strong foundation first (Phase 1), extend incre
 ## Implemented (2026-08-21)
 - Full relational schema (20 tables): Event, Team, Participant, Coach, Building, Floor, Room,
   AccommodationAssignment, Venue, ScheduleEvent, Announcement, Driver, TransportVehicle,
+  TransportAssignment, ProcurementItem, KnowledgeItem, Task, Document, Contact, Comment.
+- Phase 2: Room assignments + live occupancy; public Team Portal (coach/room/transport/schedule);
+  Knowledge attachments (uploaded files + links) and comments. Integrity guards (duplicate/capacity 409).
+- Phase 3: Participant beds (assign individual participants to rooms) + Participants CRUD;
+  Transport setup (drivers, vehicles/buses, team transport assignments) flowing into the team portal;
+  QR codes per team (printable, opens the public portal) on both the portal and admin Teams table.
+- Tested: iteration_1 (30/30), iteration_2 (11/11), iteration_3 (24/24) — all green.
+  AccommodationAssignment, Venue, ScheduleEvent, Announcement, Driver, TransportVehicle,
   TransportAssignment, ProcurementItem, KnowledgeItem, Task, Document, Contact.
 - Alembic initial migration + auto-upgrade on startup.
 - REST API: health, dashboard stats, Teams CRUD, Buildings/Floors/Rooms CRUD, Knowledge CRUD

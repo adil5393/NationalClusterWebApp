@@ -12,11 +12,13 @@ from .routers import (
     dashboard,
     health,
     knowledge,
+    participants,
     procurement,
     public,
     search,
     structure,
     teams,
+    transport,
 )
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -64,8 +66,10 @@ for module in (
     health,
     dashboard,
     teams,
+    participants,
     structure,
     accommodation,
+    transport,
     knowledge,
     attachments,
     procurement,

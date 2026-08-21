@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Share2, BedDouble, Bus, CalendarDays, UserCog, Users } from "lucide-react";
+import { ArrowLeft, Share2, BedDouble, Bus, CalendarDays, UserCog, Users, QrCode } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
+import { QRDialog } from "@/components/admin/QRDialog";
 import { formatDate } from "@/lib/meta";
 
 interface TeamDetail {
@@ -34,6 +35,7 @@ export default function TeamPortal() {
   const [team, setTeam] = useState<TeamDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -75,8 +77,13 @@ export default function TeamPortal() {
           </div>
           <p className="mt-2 text-base text-slate-600">{[team.school, team.region].filter(Boolean).join(" · ") || "—"} · {team.member_count ?? 0} members</p>
         </div>
-        <Button variant="outline" onClick={share} data-testid="share-team-btn"><Share2 className="h-4 w-4" /> Share</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setQrOpen(true)} data-testid="team-qr-btn"><QrCode className="h-4 w-4" /> QR</Button>
+          <Button variant="outline" onClick={share} data-testid="share-team-btn"><Share2 className="h-4 w-4" /> Share</Button>
+        </div>
       </div>
+
+      <QRDialog open={qrOpen} onClose={() => setQrOpen(false)} url={typeof window !== "undefined" ? window.location.href : ""} title={team.name} />
 
       <div className="mt-8 grid gap-5 md:grid-cols-2">
         <Section icon={UserCog} title="Coach">

@@ -36,3 +36,10 @@ h1, h2, h3, h4, h5, h6 {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* Print only the QR card when printing a team QR code */
+@media print {
+  body * { visibility: hidden; }
+  .qr-print, .qr-print * { visibility: visible; }
+  .qr-print { position: fixed; inset: 0; margin: auto; height: max-content; }
+}

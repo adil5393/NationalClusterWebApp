@@ -40,6 +40,7 @@ def assignments(db: Session = Depends(get_db)):
     for a in rows:
         room = a.room
         floor, building = _room_context(room) if room else (None, None)
+        participant = db.get(models.Participant, a.participant_id) if a.participant_id else None
         out.append({
             "id": a.id,
             "room_id": a.room_id,
@@ -49,6 +50,7 @@ def assignments(db: Session = Depends(get_db)):
             "team_id": a.team_id,
             "team_name": a.team.name if a.team else None,
             "participant_id": a.participant_id,
+            "participant_name": participant.full_name if participant else None,
             "notes": a.notes,
         })
     return out
@@ -67,14 +69,24 @@ def create_assignment(payload: schemas.AssignmentCreate, db: Session = Depends(g
         raise HTTPException(404, "Participant not found")
 
     # Data integrity: prevent duplicate team assignment to the same room
-    if payload.team_id:
+    if payload.team_id and not payload.participant_id:
         dupe = (
             db.query(models.AccommodationAssignment)
-            .filter_by(room_id=payload.room_id, team_id=payload.team_id)
+            .filter_by(room_id=payload.room_id, team_id=payload.team_id, participant_id=None)
             .first()
         )
         if dupe:
             raise HTTPException(409, "This team is already assigned to this room")
+
+    # Data integrity: prevent duplicate participant assignment to the same room
+    if payload.participant_id:
+        dupe_p = (
+            db.query(models.AccommodationAssignment)
+            .filter_by(room_id=payload.room_id, participant_id=payload.participant_id)
+            .first()
+        )
+        if dupe_p:
+            raise HTTPException(409, "This participant is already assigned to this room")
 
     # Data integrity: do not exceed room capacity
     current = db.query(func.count(models.AccommodationAssignment.id)).filter_by(room_id=payload.room_id).scalar() or 0

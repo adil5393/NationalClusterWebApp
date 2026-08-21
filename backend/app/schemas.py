@@ -255,3 +255,64 @@ class DocumentLinkCreate(BaseModel):
     category: Optional[str] = None
     external_url: str
     knowledge_item_id: Optional[int] = None
+
+
+# --- Participants ---
+class ParticipantBase(BaseModel):
+    team_id: int
+    full_name: str
+    gender: Optional[str] = None
+    age: Optional[int] = None
+    role: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ParticipantCreate(ParticipantBase):
+    pass
+
+
+class ParticipantUpdate(BaseModel):
+    team_id: Optional[int] = None
+    full_name: Optional[str] = None
+    gender: Optional[str] = None
+    age: Optional[int] = None
+    role: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ParticipantRead(ORMModel, ParticipantBase):
+    id: int
+
+
+# --- Transport ---
+class DriverBase(BaseModel):
+    name: str
+    phone: Optional[str] = None
+    license_no: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class DriverCreate(DriverBase):
+    pass
+
+
+class DriverRead(ORMModel, DriverBase):
+    id: int
+
+
+class VehicleCreate(BaseModel):
+    label: str
+    vehicle_type: Optional[str] = None
+    capacity: Optional[int] = None
+    driver_id: Optional[int] = None
+    notes: Optional[str] = None
+
+
+class TransportAssignmentCreate(BaseModel):
+    vehicle_id: int
+    team_id: Optional[int] = None
+    pickup_location: Optional[str] = None
+    drop_location: Optional[str] = None
+    pickup_time: Optional[datetime] = None
+    route: Optional[str] = None
+    notes: Optional[str] = None
