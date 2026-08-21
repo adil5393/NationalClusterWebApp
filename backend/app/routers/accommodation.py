@@ -51,6 +51,8 @@ def assignments(db: Session = Depends(get_db)):
             "team_name": a.team.name if a.team else None,
             "participant_id": a.participant_id,
             "participant_name": participant.full_name if participant else None,
+            "bed_id": a.bed_id,
+            "bed_label": a.bed.label if a.bed else None,
             "notes": a.notes,
         })
     return out
@@ -67,6 +69,14 @@ def create_assignment(payload: schemas.AssignmentCreate, db: Session = Depends(g
         raise HTTPException(404, "Team not found")
     if payload.participant_id and not db.get(models.Participant, payload.participant_id):
         raise HTTPException(404, "Participant not found")
+
+    # Bed-level assignment: bed must belong to the room and be free
+    if payload.bed_id:
+        bed = db.get(models.Bed, payload.bed_id)
+        if not bed or bed.room_id != payload.room_id:
+            raise HTTPException(400, "Bed does not belong to this room")
+        if bed.assignment:
+            raise HTTPException(409, f"Bed '{bed.label}' is already occupied")
 
     # Data integrity: prevent duplicate team assignment to the same room
     if payload.team_id and not payload.participant_id:
@@ -106,6 +116,59 @@ def delete_assignment(assignment_id: int, db: Session = Depends(get_db)):
     if not a:
         raise HTTPException(404, "Assignment not found")
     db.delete(a)
+    db.commit()
+
+
+@router.get("/rooms/{room_id}/beds")
+def list_beds(room_id: int, db: Session = Depends(get_db)):
+    room = db.get(models.Room, room_id)
+    if not room:
+        raise HTTPException(404, "Room not found")
+    out = []
+    for bed in room.beds:
+        occ = bed.assignment
+        participant = db.get(models.Participant, occ.participant_id) if occ and occ.participant_id else None
+        out.append({
+            "id": bed.id,
+            "label": bed.label,
+            "occupied": occ is not None,
+            "occupant": participant.full_name if participant else (occ.team.name if occ and occ.team else None),
+        })
+    return out
+
+
+@router.post("/rooms/{room_id}/beds", status_code=201)
+def create_bed(room_id: int, payload: schemas.BedCreate, db: Session = Depends(get_db)):
+    if not db.get(models.Room, room_id):
+        raise HTTPException(404, "Room not found")
+    bed = models.Bed(room_id=room_id, label=payload.label, notes=payload.notes)
+    db.add(bed)
+    db.commit()
+    db.refresh(bed)
+    return {"id": bed.id, "label": bed.label}
+
+
+@router.post("/rooms/{room_id}/beds/generate")
+def generate_beds(room_id: int, db: Session = Depends(get_db)):
+    room = db.get(models.Room, room_id)
+    if not room:
+        raise HTTPException(404, "Room not found")
+    existing = len(room.beds)
+    target = room.capacity or 0
+    created = 0
+    for n in range(existing + 1, target + 1):
+        db.add(models.Bed(room_id=room_id, label=f"Bed {n}"))
+        created += 1
+    db.commit()
+    return {"created": created, "total": existing + created}
+
+
+@router.delete("/beds/{bed_id}", status_code=204)
+def delete_bed(bed_id: int, db: Session = Depends(get_db)):
+    bed = db.get(models.Bed, bed_id)
+    if not bed:
+        raise HTTPException(404, "Bed not found")
+    db.delete(bed)
     db.commit()
 
 

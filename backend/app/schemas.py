@@ -239,7 +239,31 @@ class AssignmentCreate(BaseModel):
     room_id: int
     team_id: Optional[int] = None
     participant_id: Optional[int] = None
+    bed_id: Optional[int] = None
     notes: Optional[str] = None
+
+
+class BedCreate(BaseModel):
+    label: str
+    notes: Optional[str] = None
+
+
+class ScheduleEventCreate(BaseModel):
+    title: str
+    team_id: Optional[int] = None
+    venue_id: Optional[int] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    description: Optional[str] = None
+
+
+class ScheduleEventUpdate(BaseModel):
+    title: Optional[str] = None
+    team_id: Optional[int] = None
+    venue_id: Optional[int] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    description: Optional[str] = None
 
 
 # --- Knowledge comments ---

@@ -12,8 +12,9 @@ import { cn } from "@/lib/utils";
 interface RoomOpt { id: number; label: string; capacity: number; occupied: number }
 interface Assignment {
   id: number; room_name?: string; floor_name?: string; building_name?: string;
-  team_name?: string; participant_name?: string; notes?: string;
+  team_name?: string; participant_name?: string; bed_label?: string; notes?: string;
 }
+interface Bed { id: number; label: string; occupied: boolean; occupant?: string | null }
 interface Building {
   id: number; name: string; code?: string; rooms: number; capacity: number;
   occupied_rooms: number; assigned: number;
@@ -32,7 +33,14 @@ export default function Accommodation() {
   const [loading, setLoading] = useState(true);
 
   const [mode, setMode] = useState<Mode>("team");
-  const [form, setForm] = useState({ room_id: "", team_id: "", participant_id: "", notes: "" });
+  const [form, setForm] = useState({ room_id: "", team_id: "", participant_id: "", bed_id: "", notes: "" });
+  const [beds, setBeds] = useState<Bed[]>([]);
+  const [newBed, setNewBed] = useState("");
+
+  const loadBeds = (roomId: string) => {
+    if (!roomId) { setBeds([]); return; }
+    api.get<Bed[]>(`/accommodation/rooms/${roomId}/beds`).then((r) => setBeds(r.data));
+  };
 
   const load = () => {
     setLoading(true);
@@ -65,10 +73,12 @@ export default function Accommodation() {
         room_id: Number(form.room_id),
         team_id: Number(form.team_id),
         participant_id: mode === "participant" && form.participant_id ? Number(form.participant_id) : null,
+        bed_id: mode === "participant" && form.bed_id ? Number(form.bed_id) : null,
         notes: form.notes || null,
       });
       toast.success(mode === "participant" ? "Participant assigned to bed" : "Room assigned");
-      setForm({ room_id: "", team_id: "", participant_id: "", notes: "" });
+      setForm({ room_id: "", team_id: "", participant_id: "", bed_id: "", notes: "" });
+      setBeds([]);
       load();
     } catch (e: any) {
       toast.error(e?.response?.data?.detail ?? "Could not assign");
@@ -153,15 +163,46 @@ export default function Accommodation() {
           )}
           <div>
             <Label>Room</Label>
-            <Select value={form.room_id} onChange={(e) => setForm((f) => ({ ...f, room_id: e.target.value }))} data-testid="assign-room-select">
+            <Select value={form.room_id} onChange={(e) => { const v = e.target.value; setForm((f) => ({ ...f, room_id: v, bed_id: "" })); if (mode === "participant") loadBeds(v); }} data-testid="assign-room-select">
               <option value="">Select room…</option>
               {rooms.map((r) => <option key={r.id} value={r.id}>{r.label} ({r.occupied}/{r.capacity})</option>)}
             </Select>
           </div>
+          {mode === "participant" && (
+            <div>
+              <Label>Bed</Label>
+              <Select value={form.bed_id} onChange={(e) => setForm((f) => ({ ...f, bed_id: e.target.value }))} data-testid="assign-bed-select" disabled={!form.room_id}>
+                <option value="">{form.room_id ? "Any / no specific bed" : "Pick a room first"}</option>
+                {beds.filter((b) => !b.occupied).map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
+              </Select>
+            </div>
+          )}
           <div className="flex items-end">
             <Button onClick={assign} className="w-full" data-testid="assign-room-btn"><Plus className="h-4 w-4" /> Assign</Button>
           </div>
         </div>
+
+        {mode === "participant" && form.room_id && (
+          <div className="mt-4 rounded-md bg-slate-50 p-3" data-testid="bed-manager">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Beds in this room</p>
+              <div className="flex gap-2">
+                <Input value={newBed} onChange={(e) => setNewBed(e.target.value)} placeholder="Bed label" className="h-8 w-32" data-testid="new-bed-input" />
+                <Button size="sm" variant="outline" onClick={async () => { if (!newBed.trim()) return; await api.post(`/accommodation/rooms/${form.room_id}/beds`, { label: newBed }); setNewBed(""); loadBeds(form.room_id); }} data-testid="add-bed-btn"><Plus className="h-3.5 w-3.5" /> Add</Button>
+                <Button size="sm" variant="outline" onClick={async () => { await api.post(`/accommodation/rooms/${form.room_id}/beds/generate`); loadBeds(form.room_id); toast.success("Beds generated"); }} data-testid="generate-beds-btn">Generate to capacity</Button>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {beds.length === 0 && <span className="text-sm text-slate-400">No beds labelled yet.</span>}
+              {beds.map((b) => (
+                <span key={b.id} className={cn("inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs font-semibold", b.occupied ? "border-slate-200 bg-slate-100 text-slate-500" : "border-emerald-200 bg-emerald-50 text-emerald-700")} data-testid={`bed-chip-${b.id}`}>
+                  {b.label}{b.occupied ? ` · ${b.occupant ?? "occupied"}` : ""}
+                  {!b.occupied && <button onClick={async () => { await api.delete(`/accommodation/beds/${b.id}`); loadBeds(form.room_id); }} className="text-slate-300 hover:text-red-500"><Trash2 className="h-3 w-3" /></button>}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Assignments table */}
@@ -179,7 +220,7 @@ export default function Accommodation() {
               {assignments.map((a) => (
                 <TR key={a.id} data-testid={`assignment-row-${a.id}`}>
                   <TD className="font-bold text-slate-900">{a.team_name || "—"}</TD>
-                  <TD>{a.participant_name ? a.participant_name : <Badge tone="neutral">Whole team</Badge>}</TD>
+                  <TD>{a.participant_name ? <span>{a.participant_name}{a.bed_label && <span className="text-slate-400"> · {a.bed_label}</span>}</span> : <Badge tone="neutral">Whole team</Badge>}</TD>
                   <TD>{a.building_name || "—"}</TD>
                   <TD>{a.floor_name || "—"}</TD>
                   <TD className="font-semibold">{a.room_name || "—"}</TD>

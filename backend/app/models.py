@@ -125,6 +125,18 @@ class Room(TimestampMixin, Base):
     assignments = relationship(
         "AccommodationAssignment", back_populates="room", cascade="all, delete-orphan"
     )
+    beds = relationship("Bed", back_populates="room", cascade="all, delete-orphan", order_by="Bed.label")
+
+
+class Bed(TimestampMixin, Base):
+    __tablename__ = "beds"
+    id = Column(Integer, primary_key=True)
+    room_id = Column(Integer, ForeignKey("rooms.id", ondelete="CASCADE"), nullable=False)
+    label = Column(String(60), nullable=False)
+    notes = Column(Text)
+
+    room = relationship("Room", back_populates="beds")
+    assignment = relationship("AccommodationAssignment", back_populates="bed", uselist=False)
 
 
 class AccommodationAssignment(TimestampMixin, Base):
@@ -133,12 +145,14 @@ class AccommodationAssignment(TimestampMixin, Base):
     room_id = Column(Integer, ForeignKey("rooms.id", ondelete="CASCADE"), nullable=False)
     team_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"))
     participant_id = Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"))
+    bed_id = Column(Integer, ForeignKey("beds.id", ondelete="SET NULL"))
     checkin_date = Column(DateTime(timezone=True))
     checkout_date = Column(DateTime(timezone=True))
     notes = Column(Text)
 
     room = relationship("Room", back_populates="assignments")
     team = relationship("Team", back_populates="accommodation")
+    bed = relationship("Bed", back_populates="assignment")
 
 
 class Venue(TimestampMixin, Base):

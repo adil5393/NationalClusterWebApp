@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea, Select } from "@/components/ui/input";
 import { Table, THead, TH, TR, TD } from "@/components/ui/table";
 import { Dialog } from "@/components/ui/dialog";
+import { ImportDialog } from "@/components/admin/ImportDialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 
 interface Team { id: number; name: string }
@@ -21,6 +22,7 @@ export default function Participants() {
   const [loading, setLoading] = useState(true);
   const [teamFilter, setTeamFilter] = useState("");
   const [open, setOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [form, setForm] = useState<Partial<Participant>>(empty);
 
   const load = () => {
@@ -69,6 +71,9 @@ export default function Participants() {
           <p className="mt-1 text-sm text-slate-500">{participants.length} participants across {teams.length} teams</p>
         </div>
         <Button onClick={() => { setForm(empty); setOpen(true); }} data-testid="add-participant-btn"><Plus className="h-4 w-4" /> Add Participant</Button>
+      </div>
+      <div className="mt-3">
+        <Button variant="outline" onClick={() => setImportOpen(true)} data-testid="import-participants-btn"><Upload className="h-4 w-4" /> Import from spreadsheet</Button>
       </div>
 
       <div className="mt-6">
@@ -132,6 +137,8 @@ export default function Participants() {
           </div>
         </div>
       </Dialog>
+
+      <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} type="participants" onDone={load} />
     </div>
   );
 }

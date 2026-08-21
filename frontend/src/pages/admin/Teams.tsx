@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Pencil, Trash2, QrCode } from "lucide-react";
+import { Plus, Pencil, Trash2, QrCode, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { Input, Label, Textarea } from "@/components/ui/input";
 import { Table, THead, TH, TR, TD } from "@/components/ui/table";
 import { Dialog } from "@/components/ui/dialog";
 import { QRDialog } from "@/components/admin/QRDialog";
+import { ImportDialog } from "@/components/admin/ImportDialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 
@@ -30,6 +31,7 @@ export default function AdminTeams() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [qrTeam, setQrTeam] = useState<{ id: number; name: string } | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const [form, setForm] = useState<Partial<Team>>(empty);
 
   const load = () => {
@@ -68,9 +70,12 @@ export default function AdminTeams() {
           <h1 className="font-heading text-2xl font-black tracking-tight text-slate-950">Teams</h1>
           <p className="mt-1 text-sm text-slate-500">{teams.length} teams registered</p>
         </div>
-        <Button onClick={() => { setForm(empty); setOpen(true); }} data-testid="add-team-btn">
-          <Plus className="h-4 w-4" /> Add Team
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setImportOpen(true)} data-testid="import-teams-btn"><Upload className="h-4 w-4" /> Import</Button>
+          <Button onClick={() => { setForm(empty); setOpen(true); }} data-testid="add-team-btn">
+            <Plus className="h-4 w-4" /> Add Team
+          </Button>
+        </div>
       </div>
 
       <div className="mt-6 rounded-lg border border-slate-200 bg-white">
@@ -147,6 +152,8 @@ export default function AdminTeams() {
         url={qrTeam ? `${window.location.origin}/teams/${qrTeam.id}` : ""}
         title={qrTeam?.name ?? ""}
       />
+
+      <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} type="teams" onDone={load} />
     </div>
   );
 }
