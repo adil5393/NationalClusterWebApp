@@ -35,7 +35,8 @@ AND the reasoning (WHY). Build a strong foundation first (Phase 1), extend incre
 - Phase 3: Participant beds (assign individual participants to rooms) + Participants CRUD;
   Transport setup (drivers, vehicles/buses, team transport assignments) flowing into the team portal;
   QR codes per team (printable, opens the public portal) on both the portal and admin Teams table.
-- Tested: iteration_1 (30/30), iteration_2 (11/11), iteration_3 (24/24), iteration_4 (8/8) — all green.
+- Tested: iteration_1 (30/30), iteration_2 (11/11), iteration_3 (24/24), iteration_4 (8/8), iteration_5 (12/12) — all green.
+- Phase 5: Room View (visual bed-by-bed map per building/floor/room); Venue Manager (venue CRUD + venue on schedule events, surfaced on team portals); Export Lists (participant + room-allocation CSV downloads).
 - Phase 4: Bed Numbers (label/generate beds per room + assign participants to a specific bed, double-book/wrong-room guards);
   Schedule Builder (fixtures/ceremonies, team-linked events surface on team portals); Bulk Import (CSV/XLSX for teams & participants).
   AccommodationAssignment, Venue, ScheduleEvent, Announcement, Driver, TransportVehicle,

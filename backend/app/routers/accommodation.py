@@ -172,6 +172,35 @@ def delete_bed(bed_id: int, db: Session = Depends(get_db)):
     db.commit()
 
 
+@router.get("/map")
+def room_map(db: Session = Depends(get_db)):
+    out = []
+    for b in db.query(models.Building).order_by(models.Building.name).all():
+        floors = []
+        for f in b.floors:
+            rooms = []
+            for r in f.rooms:
+                beds = []
+                for bed in r.beds:
+                    occ = bed.assignment
+                    p = db.get(models.Participant, occ.participant_id) if occ and occ.participant_id else None
+                    name = p.full_name if p else (occ.team.name if occ and occ.team else None)
+                    beds.append({"id": bed.id, "label": bed.label, "occupant": name})
+                loose = []
+                for a in r.assignments:
+                    if a.bed_id:
+                        continue
+                    if a.participant_id:
+                        p = db.get(models.Participant, a.participant_id)
+                        loose.append(p.full_name if p else "Participant")
+                    elif a.team_id and a.team:
+                        loose.append(f"{a.team.name} (whole team)")
+                rooms.append({"id": r.id, "name": r.name, "capacity": r.capacity or 0, "beds": beds, "loose": loose})
+            floors.append({"id": f.id, "name": f.name, "rooms": rooms})
+        out.append({"id": b.id, "name": b.name, "code": b.code, "floors": floors})
+    return out
+
+
 @router.get("/occupancy")
 def occupancy(db: Session = Depends(get_db)):
     out = []

@@ -16,6 +16,8 @@ import BuildingsRooms from "@/pages/admin/BuildingsRooms";
 import Accommodation from "@/pages/admin/Accommodation";
 import Transport from "@/pages/admin/Transport";
 import Schedule from "@/pages/admin/Schedule";
+import Venues from "@/pages/admin/Venues";
+import RoomMap from "@/pages/admin/RoomMap";
 import Knowledge from "@/pages/admin/Knowledge";
 import Procurement from "@/pages/admin/Procurement";
 import AdminAnnouncements from "@/pages/admin/Announcements";
@@ -48,9 +50,10 @@ export default function App() {
         <Route path="/admin/announcements" element={<AdminAnnouncements />} />
         <Route path="/admin/participants" element={<Participants />} />
         <Route path="/admin/accommodation" element={<Accommodation />} />
+        <Route path="/admin/room-map" element={<RoomMap />} />
         <Route path="/admin/food" element={<ComingSoon title="Food Planning" />} />
         <Route path="/admin/transport" element={<Transport />} />
-        <Route path="/admin/venues" element={<ComingSoon title="Venues" />} />
+        <Route path="/admin/venues" element={<Venues />} />
         <Route path="/admin/schedule" element={<Schedule />} />
         <Route path="/admin/tasks" element={<ComingSoon title="Tasks" />} />
         <Route path="/admin/documents" element={<ComingSoon title="Documents" />} />

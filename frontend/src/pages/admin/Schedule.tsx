@@ -11,24 +11,26 @@ import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/meta";
 
 interface Team { id: number; name: string }
+interface Venue { id: number; name: string }
 interface Event {
-  id: number; title: string; team_id?: number; team_name?: string;
+  id: number; title: string; team_id?: number; team_name?: string; venue_name?: string;
   start_time?: string; end_time?: string; description?: string;
 }
 
-const empty = { title: "", team_id: "", start_time: "", end_time: "", description: "" };
+const empty = { title: "", team_id: "", venue_id: "", start_time: "", end_time: "", description: "" };
 
 export default function Schedule() {
   const [events, setEvents] = useState<Event[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
+  const [venues, setVenues] = useState<Venue[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Record<string, string>>(empty);
 
   const load = () => {
     setLoading(true);
-    Promise.all([api.get<Event[]>("/schedule"), api.get<Team[]>("/teams")])
-      .then(([e, t]) => { setEvents(e.data); setTeams(t.data); })
+    Promise.all([api.get<Event[]>("/schedule"), api.get<Team[]>("/teams"), api.get<Venue[]>("/venues")])
+      .then(([e, t, v]) => { setEvents(e.data); setTeams(t.data); setVenues(v.data); })
       .finally(() => setLoading(false));
   };
   useEffect(load, []);
@@ -39,6 +41,7 @@ export default function Schedule() {
       await api.post("/schedule", {
         title: form.title,
         team_id: form.team_id ? Number(form.team_id) : null,
+        venue_id: form.venue_id ? Number(form.venue_id) : null,
         start_time: form.start_time || null,
         end_time: form.end_time || null,
         description: form.description || null,
@@ -80,7 +83,7 @@ export default function Schedule() {
           <Table>
             <THead>
               <TR className="hover:bg-transparent">
-                <TH>Event</TH><TH>Team</TH><TH>Starts</TH><TH>Ends</TH><TH className="text-right">Actions</TH>
+                <TH>Event</TH><TH>Team</TH><TH>Venue</TH><TH>Starts</TH><TH>Ends</TH><TH className="text-right">Actions</TH>
               </TR>
             </THead>
             <tbody>
@@ -88,6 +91,7 @@ export default function Schedule() {
                 <TR key={e.id} data-testid={`event-row-${e.id}`}>
                   <TD className="font-bold text-slate-900">{e.title}{e.description && <div className="text-xs font-normal text-slate-500">{e.description}</div>}</TD>
                   <TD>{e.team_name ? <Badge tone="coral">{e.team_name}</Badge> : <span className="text-slate-400">All teams</span>}</TD>
+                  <TD className="text-slate-600">{e.venue_name || "—"}</TD>
                   <TD>{e.start_time ? formatDate(e.start_time) : "—"}</TD>
                   <TD>{e.end_time ? formatDate(e.end_time) : "—"}</TD>
                   <TD><div className="flex justify-end"><Button variant="ghost" size="icon" onClick={() => remove(e.id)} data-testid={`delete-event-${e.id}`}><Trash2 className="h-4 w-4 text-red-500" /></Button></div></TD>
@@ -106,6 +110,13 @@ export default function Schedule() {
             <Select value={form.team_id} onChange={(e) => set("team_id", e.target.value)} data-testid="event-team-select">
               <option value="">All teams / general</option>
               {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </Select>
+          </div>
+          <div>
+            <Label>Venue (optional)</Label>
+            <Select value={form.venue_id} onChange={(e) => set("venue_id", e.target.value)} data-testid="event-venue-select">
+              <option value="">No venue</option>
+              {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
             </Select>
           </div>
           <div className="grid grid-cols-2 gap-4">

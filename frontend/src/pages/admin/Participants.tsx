@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, Upload } from "lucide-react";
+import { Plus, Pencil, Trash2, Upload, Download } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -72,8 +72,9 @@ export default function Participants() {
         </div>
         <Button onClick={() => { setForm(empty); setOpen(true); }} data-testid="add-participant-btn"><Plus className="h-4 w-4" /> Add Participant</Button>
       </div>
-      <div className="mt-3">
+      <div className="mt-3 flex gap-2">
         <Button variant="outline" onClick={() => setImportOpen(true)} data-testid="import-participants-btn"><Upload className="h-4 w-4" /> Import from spreadsheet</Button>
+        <a href={`${(import.meta.env.REACT_APP_BACKEND_URL ?? "")}/api/export/participants.csv`} className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50" data-testid="export-participants-btn"><Download className="h-4 w-4" /> Export CSV</a>
       </div>
 
       <div className="mt-6">

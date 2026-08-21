@@ -10,6 +10,7 @@ from .routers import (
     announcements,
     attachments,
     dashboard,
+    exports,
     health,
     imports,
     knowledge,
@@ -21,6 +22,7 @@ from .routers import (
     structure,
     teams,
     transport,
+    venues,
 )
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -72,6 +74,7 @@ for module in (
     structure,
     accommodation,
     transport,
+    venues,
     schedule,
     knowledge,
     attachments,
@@ -80,5 +83,6 @@ for module in (
     public,
     search,
     imports,
+    exports,
 ):
     app.include_router(module.router)

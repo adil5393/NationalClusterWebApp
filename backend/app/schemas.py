@@ -266,6 +266,26 @@ class ScheduleEventUpdate(BaseModel):
     description: Optional[str] = None
 
 
+class VenueCreate(BaseModel):
+    name: str
+    venue_type: Optional[str] = None
+    capacity: Optional[int] = None
+    location: Optional[str] = None
+    description: Optional[str] = None
+
+
+class VenueUpdate(BaseModel):
+    name: Optional[str] = None
+    venue_type: Optional[str] = None
+    capacity: Optional[int] = None
+    location: Optional[str] = None
+    description: Optional[str] = None
+
+
+class VenueRead(ORMModel, VenueCreate):
+    id: int
+
+
 # --- Knowledge comments ---
 class CommentCreate(BaseModel):
     author: Optional[str] = "Organizer"
