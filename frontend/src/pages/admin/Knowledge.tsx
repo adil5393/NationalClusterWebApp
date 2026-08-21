@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Paperclip } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { Input, Label, Textarea, Select } from "@/components/ui/input";
 import { Dialog } from "@/components/ui/dialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
+import { KnowledgeDetail } from "@/components/admin/KnowledgeDetail";
 import { knowledgeStatusTone, formatDate } from "@/lib/meta";
 
 interface KItem {
@@ -36,6 +37,7 @@ export default function Knowledge() {
   const [fStatus, setFStatus] = useState("");
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
+  const [detailId, setDetailId] = useState<number | null>(null);
   const [form, setForm] = useState<Record<string, string>>(emptyForm);
 
   const load = () => {
@@ -140,6 +142,7 @@ export default function Knowledge() {
                   )}
                 </div>
                 <div className="flex shrink-0 gap-1">
+                  <Button variant="ghost" size="icon" onClick={() => setDetailId(it.id)} data-testid={`details-knowledge-${it.id}`}><Paperclip className="h-4 w-4" /></Button>
                   <Button variant="ghost" size="icon" onClick={() => openEdit(it)} data-testid={`edit-knowledge-${it.id}`}><Pencil className="h-4 w-4" /></Button>
                   <Button variant="ghost" size="icon" onClick={() => remove(it.id)} data-testid={`delete-knowledge-${it.id}`}><Trash2 className="h-4 w-4 text-red-500" /></Button>
                 </div>
@@ -180,6 +183,8 @@ export default function Knowledge() {
           </div>
         </div>
       </Dialog>
+
+      <KnowledgeDetail itemId={detailId} onClose={() => setDetailId(null)} />
     </div>
   );
 }

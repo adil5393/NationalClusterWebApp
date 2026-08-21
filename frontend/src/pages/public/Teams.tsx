@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Search } from "lucide-react";
 import { api } from "@/lib/api";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
@@ -59,7 +60,7 @@ export default function PublicTeams() {
       ) : (
         <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3" data-testid="team-grid">
           {filtered.map((t) => (
-            <div key={t.id} className="rounded-lg border border-slate-200 bg-white p-5 transition-transform hover:-translate-y-1">
+            <Link key={t.id} to={`/teams/${t.id}`} data-testid={`team-card-${t.id}`} className="block rounded-lg border border-slate-200 bg-white p-5 transition-transform hover:-translate-y-1 hover:border-coral">
               <div className="flex items-start justify-between gap-3">
                 <h3 className="font-heading text-lg font-bold leading-snug text-slate-950">{t.name}</h3>
                 <Badge tone={t.country === "India" ? "coral" : "blue"}>{t.country}</Badge>
@@ -69,7 +70,7 @@ export default function PublicTeams() {
                 <span className="text-slate-500">Members</span>
                 <span className="font-bold text-slate-900">{t.member_count ?? "—"}</span>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       )}

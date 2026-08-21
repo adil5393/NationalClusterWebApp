@@ -6,7 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .routers import (
+    accommodation,
     announcements,
+    attachments,
     dashboard,
     health,
     knowledge,
@@ -63,7 +65,9 @@ for module in (
     dashboard,
     teams,
     structure,
+    accommodation,
     knowledge,
+    attachments,
     procurement,
     announcements,
     public,

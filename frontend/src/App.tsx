@@ -6,11 +6,13 @@ import { PlaceholderPage } from "@/pages/public/PlaceholderPage";
 
 import Home from "@/pages/public/Home";
 import PublicTeams from "@/pages/public/Teams";
+import TeamPortal from "@/pages/public/TeamPortal";
 import PublicAnnouncements from "@/pages/public/Announcements";
 
 import Dashboard from "@/pages/admin/Dashboard";
 import AdminTeams from "@/pages/admin/Teams";
 import BuildingsRooms from "@/pages/admin/BuildingsRooms";
+import Accommodation from "@/pages/admin/Accommodation";
 import Knowledge from "@/pages/admin/Knowledge";
 import Procurement from "@/pages/admin/Procurement";
 import AdminAnnouncements from "@/pages/admin/Announcements";
@@ -21,6 +23,7 @@ export default function App() {
       <Route element={<PublicLayout />}>
         <Route path="/" element={<Home />} />
         <Route path="/teams" element={<PublicTeams />} />
+        <Route path="/teams/:id" element={<TeamPortal />} />
         <Route path="/announcements" element={<PublicAnnouncements />} />
         <Route path="/about" element={<PlaceholderPage title="About the Event" section="About" />} />
         <Route path="/schedule" element={<PlaceholderPage title="Schedule" section="Schedule" />} />
@@ -41,7 +44,7 @@ export default function App() {
         <Route path="/admin/procurement" element={<Procurement />} />
         <Route path="/admin/announcements" element={<AdminAnnouncements />} />
         <Route path="/admin/participants" element={<ComingSoon title="Participants" />} />
-        <Route path="/admin/accommodation" element={<ComingSoon title="Accommodation Management" />} />
+        <Route path="/admin/accommodation" element={<Accommodation />} />
         <Route path="/admin/food" element={<ComingSoon title="Food Planning" />} />
         <Route path="/admin/transport" element={<ComingSoon title="Transport" />} />
         <Route path="/admin/venues" element={<ComingSoon title="Venues" />} />

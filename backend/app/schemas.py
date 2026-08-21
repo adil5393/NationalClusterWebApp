@@ -232,3 +232,26 @@ class AnnouncementRead(ORMModel, AnnouncementBase):
     published_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+
+
+# --- Accommodation assignments ---
+class AssignmentCreate(BaseModel):
+    room_id: int
+    team_id: Optional[int] = None
+    participant_id: Optional[int] = None
+    notes: Optional[str] = None
+
+
+# --- Knowledge comments ---
+class CommentCreate(BaseModel):
+    author: Optional[str] = "Organizer"
+    body: str
+
+
+# --- Documents (link only; uploads use multipart form) ---
+class DocumentLinkCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    category: Optional[str] = None
+    external_url: str
+    knowledge_item_id: Optional[int] = None

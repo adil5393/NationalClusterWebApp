@@ -242,6 +242,9 @@ class KnowledgeItem(TimestampMixin, Base):
 
     tasks = relationship("Task", back_populates="knowledge_item")
     documents = relationship("Document", back_populates="knowledge_item")
+    comments = relationship(
+        "Comment", back_populates="knowledge_item", cascade="all, delete-orphan"
+    )
 
 
 class Task(TimestampMixin, Base):
@@ -265,10 +268,24 @@ class Document(TimestampMixin, Base):
     description = Column(Text)
     category = Column(String(60))
     file_name = Column(String(300))
-    file_url = Column(String(600))
+    file_url = Column(String(600))  # external link for non-uploaded documents
+    storage_path = Column(String(600))  # local disk path for uploaded files
+    content_type = Column(String(120))
+    size_bytes = Column(Integer)
+    is_upload = Column(Boolean, default=False)
     knowledge_item_id = Column(Integer, ForeignKey("knowledge_items.id", ondelete="SET NULL"))
 
     knowledge_item = relationship("KnowledgeItem", back_populates="documents")
+
+
+class Comment(TimestampMixin, Base):
+    __tablename__ = "comments"
+    id = Column(Integer, primary_key=True)
+    knowledge_item_id = Column(Integer, ForeignKey("knowledge_items.id", ondelete="CASCADE"), nullable=False)
+    author = Column(String(160), default="Organizer")
+    body = Column(Text, nullable=False)
+
+    knowledge_item = relationship("KnowledgeItem", back_populates="comments")
 
 
 class Contact(TimestampMixin, Base):

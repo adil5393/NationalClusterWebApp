@@ -1,0 +1,120 @@
+"""Accommodation: assign teams/participants to rooms + live occupancy per building."""
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from .. import models, schemas
+from ..database import get_db
+
+router = APIRouter(prefix="/api/accommodation", tags=["accommodation"])
+
+
+def _room_context(room: models.Room):
+    floor = room.floor
+    building = floor.building if floor else None
+    return floor, building
+
+
+@router.get("/rooms")
+def rooms(db: Session = Depends(get_db)):
+    out = []
+    for r in db.query(models.Room).all():
+        floor, building = _room_context(r)
+        occupied = db.query(func.count(models.AccommodationAssignment.id)).filter_by(room_id=r.id).scalar() or 0
+        out.append({
+            "id": r.id,
+            "name": r.name,
+            "floor": floor.name if floor else None,
+            "building": building.name if building else None,
+            "label": f"{(building.code or building.name) if building else '?'} · {floor.name if floor else '?'} · {r.name}",
+            "capacity": r.capacity or 0,
+            "occupied": occupied,
+        })
+    return out
+
+
+@router.get("/assignments")
+def assignments(db: Session = Depends(get_db)):
+    rows = db.query(models.AccommodationAssignment).order_by(models.AccommodationAssignment.id.desc()).all()
+    out = []
+    for a in rows:
+        room = a.room
+        floor, building = _room_context(room) if room else (None, None)
+        out.append({
+            "id": a.id,
+            "room_id": a.room_id,
+            "room_name": room.name if room else None,
+            "floor_name": floor.name if floor else None,
+            "building_name": building.name if building else None,
+            "team_id": a.team_id,
+            "team_name": a.team.name if a.team else None,
+            "participant_id": a.participant_id,
+            "notes": a.notes,
+        })
+    return out
+
+
+@router.post("/assignments", status_code=201)
+def create_assignment(payload: schemas.AssignmentCreate, db: Session = Depends(get_db)):
+    room = db.get(models.Room, payload.room_id)
+    if not room:
+        raise HTTPException(404, "Room not found")
+    if not payload.team_id and not payload.participant_id:
+        raise HTTPException(400, "Provide a team or a participant to assign")
+    if payload.team_id and not db.get(models.Team, payload.team_id):
+        raise HTTPException(404, "Team not found")
+    if payload.participant_id and not db.get(models.Participant, payload.participant_id):
+        raise HTTPException(404, "Participant not found")
+
+    # Data integrity: prevent duplicate team assignment to the same room
+    if payload.team_id:
+        dupe = (
+            db.query(models.AccommodationAssignment)
+            .filter_by(room_id=payload.room_id, team_id=payload.team_id)
+            .first()
+        )
+        if dupe:
+            raise HTTPException(409, "This team is already assigned to this room")
+
+    # Data integrity: do not exceed room capacity
+    current = db.query(func.count(models.AccommodationAssignment.id)).filter_by(room_id=payload.room_id).scalar() or 0
+    if room.capacity and current >= room.capacity:
+        raise HTTPException(409, f"Room '{room.name}' is at full capacity ({room.capacity})")
+
+    a = models.AccommodationAssignment(**payload.model_dump())
+    db.add(a)
+    db.commit()
+    db.refresh(a)
+    return {"id": a.id}
+
+
+@router.delete("/assignments/{assignment_id}", status_code=204)
+def delete_assignment(assignment_id: int, db: Session = Depends(get_db)):
+    a = db.get(models.AccommodationAssignment, assignment_id)
+    if not a:
+        raise HTTPException(404, "Assignment not found")
+    db.delete(a)
+    db.commit()
+
+
+@router.get("/occupancy")
+def occupancy(db: Session = Depends(get_db)):
+    out = []
+    for b in db.query(models.Building).order_by(models.Building.name).all():
+        cap = rooms = occ_rooms = assigned = 0
+        room_rows = []
+        for f in b.floors:
+            for r in f.rooms:
+                rooms += 1
+                cap += r.capacity or 0
+                c = db.query(func.count(models.AccommodationAssignment.id)).filter_by(room_id=r.id).scalar() or 0
+                assigned += c
+                if c > 0:
+                    occ_rooms += 1
+                room_rows.append({"id": r.id, "name": r.name, "floor": f.name, "capacity": r.capacity or 0, "occupied": c})
+        out.append({
+            "id": b.id, "name": b.name, "code": b.code,
+            "rooms": rooms, "capacity": cap, "occupied_rooms": occ_rooms,
+            "assigned": assigned, "room_rows": room_rows,
+        })
+    return out
