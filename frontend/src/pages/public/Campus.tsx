@@ -58,14 +58,35 @@ export default function Campus() {
     return { x, y };
   };
 
+  // Applying the "animate" class and changing the transform in the same React commit
+  // often makes the browser skip the transition entirely (it never paints a frame with
+  // the transition active but the old transform value, so it has nothing to animate
+  // from — the map just jumps). Deferring the actual transform change by two frames
+  // guarantees the transition is committed and painted first, so the move genuinely
+  // animates instead of snapping straight to the destination.
+  const applyTransform = useCallback((nextPos: { x: number; y: number }, nextScale: number, animate: boolean) => {
+    if (!animate) {
+      setAnimated(false);
+      setScale(nextScale);
+      setPos(nextPos);
+      return;
+    }
+    setAnimated(true);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setScale(nextScale);
+        setPos(nextPos);
+      });
+    });
+  }, []);
+
   const centerAt = useCallback((x: number, y: number, targetScale: number, animate = true) => {
     const { w, h } = viewportRef.current
       ? { w: viewportRef.current.clientWidth, h: viewportRef.current.clientHeight }
       : viewportSize;
-    setAnimated(animate);
-    setScale(targetScale);
-    setPos(clampPan({ x: w / 2 - x * targetScale, y: h / 2 - y * targetScale }, targetScale, w, h));
-  }, [viewportSize]);
+    const next = clampPan({ x: w / 2 - x * targetScale, y: h / 2 - y * targetScale }, targetScale, w, h);
+    applyTransform(next, targetScale, animate);
+  }, [viewportSize, applyTransform]);
 
   // Fit the whole map into the viewport, centered.
   const fitToViewport = useCallback((animate = false) => {
@@ -100,9 +121,7 @@ export default function Campus() {
     const layerX = (cx - pos.x) / scale;
     const layerY = (cy - pos.y) / scale;
     const next = clamp(scale * factor, fitScale * MIN_ZOOM_MULT, fitScale * MAX_ZOOM_MULT);
-    setAnimated(true);
-    setScale(next);
-    setPos(clampPan({ x: cx - layerX * next, y: cy - layerY * next }, next, w, h));
+    applyTransform(clampPan({ x: cx - layerX * next, y: cy - layerY * next }, next, w, h), next, true);
   };
 
   // Wheel-zoom is attached as a native, non-passive listener: React's onWheel is
