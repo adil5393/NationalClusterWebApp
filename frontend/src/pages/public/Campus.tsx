@@ -329,7 +329,7 @@ export default function Campus() {
           data-testid="campus-map-viewport"
         >
           <div
-            className={cn("absolute left-0 top-0 origin-top-left", animated && "transition-transform duration-500 ease-out")}
+            className={cn("absolute left-0 top-0 origin-top-left will-change-transform", animated && "transition-transform duration-500 ease-out")}
             style={{ transform: `translate(${pos.x}px, ${pos.y}px) scale(${scale})`, width: MAP_VIEWBOX.width, height: MAP_VIEWBOX.height }}
           >
             <img
@@ -356,10 +356,13 @@ export default function Campus() {
                   className={cn(
                     "h-full w-full rounded-md",
                     i === activeIdx
-                      ? "border-[3px] border-coral bg-coral/35 animate-room-pulse"
+                      ? "border-[3px] border-coral bg-coral/35 shadow-[0_0_24px_8px_rgba(255,69,0,0.55)]"
                       : "border-2 border-slate-400 bg-slate-400/10",
                   )}
                 />
+                {i === activeIdx && (
+                  <div className="absolute inset-0 rounded-md border-2 border-coral animate-ping" />
+                )}
               </div>
             ))}
           </div>
