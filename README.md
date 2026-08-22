@@ -81,6 +81,16 @@ dataset once the stack is running:
 docker compose exec backend python -m app.seed
 ```
 
+To initialize the real campus structure (Buildings → Floors → Rooms, named to match the
+interactive map at `/campus` so "Find My Room" can resolve them — see `app/seed_campus.py`):
+
+```bash
+docker compose exec backend python -m app.seed_campus
+```
+
+This is idempotent (safe to run on every deploy) — it skips any Building whose name already
+exists, so it never duplicates rooms or overwrites capacities an organizer has since edited.
+
 ---
 
 ## Local Development (without Docker)
@@ -93,6 +103,7 @@ pip install -r requirements.txt
 #   DATABASE_URL=postgresql+psycopg2://cluster:clusterpass@localhost:5432/cluster_nationals
 alembic upgrade head          # apply migrations
 python -m app.seed            # optional: load DEVELOPMENT data
+python -m app.seed_campus     # initialize real campus Buildings/Floors/Rooms for the map
 uvicorn server:app --host 0.0.0.0 --port 8001 --reload
 ```
 

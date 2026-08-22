@@ -18,6 +18,7 @@ PROCUREMENT_STATUSES = [
 ]
 ANNOUNCEMENT_PRIORITIES = ["low", "normal", "high", "urgent"]
 ANNOUNCEMENT_AUDIENCES = ["everyone", "team", "organizers", "staff", "coaches"]
+DUTY_TYPES = ["Fooding", "Cleaning", "Medical", "Security", "Transport", "Reception", "Electricity"]
 
 
 class ORMModel(BaseModel):
@@ -359,4 +360,47 @@ class TransportAssignmentCreate(BaseModel):
     drop_location: Optional[str] = None
     pickup_time: Optional[datetime] = None
     route: Optional[str] = None
+    notes: Optional[str] = None
+
+
+# --- Staff & Duties ---
+class StaffBase(BaseModel):
+    full_name: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    department: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class StaffCreate(StaffBase):
+    pass
+
+
+class StaffUpdate(BaseModel):
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    department: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class StaffRead(ORMModel, StaffBase):
+    id: int
+
+
+class DutyAssignmentCreate(BaseModel):
+    staff_id: int
+    room_id: int
+    duty_type: str
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    notes: Optional[str] = None
+
+
+class DutyAssignmentUpdate(BaseModel):
+    staff_id: Optional[int] = None
+    room_id: Optional[int] = None
+    duty_type: Optional[str] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
     notes: Optional[str] = None

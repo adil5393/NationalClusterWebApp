@@ -20,6 +20,15 @@ export default {
         md: '6px',
         sm: '4px',
       },
+      keyframes: {
+        'room-pulse': {
+          '0%, 100%': { boxShadow: '0 0 0 0 rgba(255,69,0,0.45)', transform: 'scale(1)' },
+          '50%': { boxShadow: '0 0 22px 8px rgba(255,69,0,0.28)', transform: 'scale(1.035)' },
+        },
+      },
+      animation: {
+        'room-pulse': 'room-pulse 1.8s ease-in-out infinite',
+      },
     },
   },
   plugins: [],

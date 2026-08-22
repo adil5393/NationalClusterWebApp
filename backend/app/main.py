@@ -19,6 +19,7 @@ from .routers import (
     public,
     schedule,
     search,
+    staff,
     structure,
     teams,
     transport,
@@ -84,5 +85,6 @@ for module in (
     search,
     imports,
     exports,
+    staff,
 ):
     app.include_router(module.router)

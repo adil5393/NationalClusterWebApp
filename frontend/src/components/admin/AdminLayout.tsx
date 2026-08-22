@@ -3,7 +3,7 @@ import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, UserSquare2, BedDouble, Building2, UtensilsCrossed, Bus,
   MapPin, CalendarDays, Megaphone, ShoppingCart, CheckSquare, BookOpen, FileText,
-  Contact as ContactIcon, Settings, Search, ExternalLink, LayoutGrid,
+  Contact as ContactIcon, Settings, Search, ExternalLink, LayoutGrid, HardHat,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -15,6 +15,7 @@ const NAV = [
   { to: "/admin/accommodation", label: "Accommodation", icon: BedDouble },
   { to: "/admin/room-map", label: "Room Map", icon: LayoutGrid },
   { to: "/admin/buildings", label: "Buildings & Rooms", icon: Building2 },
+  { to: "/admin/staff", label: "Staff & Duties", icon: HardHat },
   { to: "/admin/food", label: "Food", icon: UtensilsCrossed },
   { to: "/admin/transport", label: "Transport", icon: Bus },
   { to: "/admin/venues", label: "Venues", icon: MapPin },

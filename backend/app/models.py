@@ -126,6 +126,9 @@ class Room(TimestampMixin, Base):
         "AccommodationAssignment", back_populates="room", cascade="all, delete-orphan"
     )
     beds = relationship("Bed", back_populates="room", cascade="all, delete-orphan", order_by="Bed.label")
+    duty_assignments = relationship(
+        "DutyAssignment", back_populates="room", cascade="all, delete-orphan"
+    )
 
 
 class Bed(TimestampMixin, Base):
@@ -311,3 +314,29 @@ class Contact(TimestampMixin, Base):
     email = Column(String(200))
     category = Column(String(60))
     notes = Column(Text)
+
+
+class StaffMember(TimestampMixin, Base):
+    __tablename__ = "staff_members"
+    id = Column(Integer, primary_key=True)
+    full_name = Column(String(160), nullable=False)
+    phone = Column(String(60))
+    email = Column(String(200))
+    department = Column(String(80))  # free text, e.g. Cleaning / Medical / Security
+    notes = Column(Text)
+
+    duties = relationship("DutyAssignment", back_populates="staff", cascade="all, delete-orphan")
+
+
+class DutyAssignment(TimestampMixin, Base):
+    __tablename__ = "duty_assignments"
+    id = Column(Integer, primary_key=True)
+    staff_id = Column(Integer, ForeignKey("staff_members.id", ondelete="CASCADE"), nullable=False)
+    room_id = Column(Integer, ForeignKey("rooms.id", ondelete="CASCADE"), nullable=False)
+    duty_type = Column(String(80), nullable=False)  # free text; suggestions from DUTY_TYPES
+    start_time = Column(DateTime(timezone=True))
+    end_time = Column(DateTime(timezone=True))
+    notes = Column(Text)
+
+    staff = relationship("StaffMember", back_populates="duties")
+    room = relationship("Room", back_populates="duty_assignments")

@@ -8,6 +8,7 @@ import Home from "@/pages/public/Home";
 import PublicTeams from "@/pages/public/Teams";
 import TeamPortal from "@/pages/public/TeamPortal";
 import PublicAnnouncements from "@/pages/public/Announcements";
+import Campus from "@/pages/public/Campus";
 
 import Dashboard from "@/pages/admin/Dashboard";
 import AdminTeams from "@/pages/admin/Teams";
@@ -21,6 +22,7 @@ import RoomMap from "@/pages/admin/RoomMap";
 import Knowledge from "@/pages/admin/Knowledge";
 import Procurement from "@/pages/admin/Procurement";
 import AdminAnnouncements from "@/pages/admin/Announcements";
+import Staff from "@/pages/admin/Staff";
 
 export default function App() {
   return (
@@ -36,7 +38,7 @@ export default function App() {
         <Route path="/accommodation" element={<PlaceholderPage title="Accommodation" section="Accommodation" />} />
         <Route path="/food" element={<PlaceholderPage title="Food & Dining" section="Food" />} />
         <Route path="/transport" element={<PlaceholderPage title="Transport" section="Transport" />} />
-        <Route path="/campus" element={<PlaceholderPage title="Campus Map" section="Campus" />} />
+        <Route path="/campus" element={<Campus />} />
         <Route path="/contacts" element={<PlaceholderPage title="Important Contacts" section="Contacts" />} />
         <Route path="/faq" element={<PlaceholderPage title="Frequently Asked Questions" section="FAQ" />} />
       </Route>
@@ -45,6 +47,7 @@ export default function App() {
         <Route path="/admin" element={<Dashboard />} />
         <Route path="/admin/teams" element={<AdminTeams />} />
         <Route path="/admin/buildings" element={<BuildingsRooms />} />
+        <Route path="/admin/staff" element={<Staff />} />
         <Route path="/admin/knowledge" element={<Knowledge />} />
         <Route path="/admin/procurement" element={<Procurement />} />
         <Route path="/admin/announcements" element={<AdminAnnouncements />} />
