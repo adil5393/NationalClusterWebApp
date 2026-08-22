@@ -128,15 +128,54 @@ export default function Campus() {
     return () => el.removeEventListener("wheel", handler);
   }, []);
 
+  // Two-finger pinch-to-zoom (mobile). The viewport has touch-action:none (so the
+  // browser doesn't fight us with its own page-zoom gesture), which means pinch has
+  // to be reimplemented by hand from raw pointer events — tracked here as a map of
+  // active touch points, switching between single-finger pan and two-finger pinch.
+  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchRef = useRef<{ startDist: number; startScale: number } | null>(null);
+
   const onPointerDown = (e: React.PointerEvent) => {
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    dragRef.current = { startX: e.clientX, startY: e.clientY, startPosX: pos.x, startPosY: pos.y, dragging: true };
+    try { (e.target as HTMLElement).setPointerCapture(e.pointerId); } catch { /* not capturable (e.g. synthetic pointer) — still handle the gesture */ }
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     setAnimated(false);
+
+    if (pointersRef.current.size === 2) {
+      dragRef.current.dragging = false;
+      const [a, b] = Array.from(pointersRef.current.values());
+      pinchRef.current = { startDist: Math.hypot(a.x - b.x, a.y - b.y), startScale: scale };
+    } else if (pointersRef.current.size === 1) {
+      dragRef.current = { startX: e.clientX, startY: e.clientY, startPosX: pos.x, startPosY: pos.y, dragging: true };
+    }
   };
+
   const onPointerMove = (e: React.PointerEvent) => {
-    if (!dragRef.current.dragging) return;
     const el = viewportRef.current;
     if (!el) return;
+    if (pointersRef.current.has(e.pointerId)) {
+      pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    }
+
+    if (pointersRef.current.size === 2 && pinchRef.current) {
+      const [a, b] = Array.from(pointersRef.current.values());
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
+      const rect = el.getBoundingClientRect();
+      const localX = midX - rect.left, localY = midY - rect.top;
+
+      const next = clamp(
+        pinchRef.current.startScale * (dist / pinchRef.current.startDist),
+        fitScale * MIN_ZOOM_MULT, fitScale * MAX_ZOOM_MULT,
+      );
+      // Keep the pinch midpoint stationary on screen while the scale changes.
+      const layerX = (localX - pos.x) / scale;
+      const layerY = (localY - pos.y) / scale;
+      setScale(next);
+      setPos(clampPan({ x: localX - layerX * next, y: localY - layerY * next }, next, el.clientWidth, el.clientHeight));
+      return;
+    }
+
+    if (!dragRef.current.dragging) return;
     const dx = e.clientX - dragRef.current.startX;
     const dy = e.clientY - dragRef.current.startY;
     setPos(clampPan(
@@ -144,7 +183,18 @@ export default function Campus() {
       scale, el.clientWidth, el.clientHeight,
     ));
   };
-  const onPointerUp = () => { dragRef.current.dragging = false; };
+
+  const onPointerUp = (e: React.PointerEvent) => {
+    pointersRef.current.delete(e.pointerId);
+    if (pointersRef.current.size < 2) pinchRef.current = null;
+    if (pointersRef.current.size === 1) {
+      // Resume single-finger panning from the remaining finger without a jump.
+      const [[, p]] = Array.from(pointersRef.current.entries());
+      dragRef.current = { startX: p.x, startY: p.y, startPosX: pos.x, startPosY: pos.y, dragging: true };
+    } else {
+      dragRef.current.dragging = false;
+    }
+  };
 
   const selectTeam = async (id: string) => {
     setTeamId(id);
@@ -255,6 +305,7 @@ export default function Campus() {
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerLeave={onPointerUp}
+          onPointerCancel={onPointerUp}
           className="relative h-[70vh] min-h-[420px] w-full cursor-grab touch-none select-none active:cursor-grabbing"
           data-testid="campus-map-viewport"
         >
