@@ -49,8 +49,10 @@ export default function AdminTeams() {
       toast.success(form.id ? "Team updated" : "Team created");
       setOpen(false);
       load();
-    } catch {
-      toast.error("Could not save team");
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail;
+      const msg = typeof detail === "string" ? detail : e?.message;
+      toast.error(msg ? `Could not save team: ${msg}` : "Could not save team");
     }
   };
 
