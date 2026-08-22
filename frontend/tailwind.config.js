@@ -22,12 +22,12 @@ export default {
       },
       keyframes: {
         'room-pulse': {
-          '0%, 100%': { boxShadow: '0 0 0 0 rgba(255,69,0,0.45)', transform: 'scale(1)' },
-          '50%': { boxShadow: '0 0 22px 8px rgba(255,69,0,0.28)', transform: 'scale(1.035)' },
+          '0%, 100%': { boxShadow: '0 0 0 4px rgba(255,69,0,0.55), 0 0 30px 6px rgba(255,69,0,0.55)', transform: 'scale(1)' },
+          '50%': { boxShadow: '0 0 0 4px rgba(255,69,0,0.85), 0 0 46px 16px rgba(255,69,0,0.75)', transform: 'scale(1.07)' },
         },
       },
       animation: {
-        'room-pulse': 'room-pulse 1.8s ease-in-out infinite',
+        'room-pulse': 'room-pulse 1.4s ease-in-out infinite',
       },
     },
   },

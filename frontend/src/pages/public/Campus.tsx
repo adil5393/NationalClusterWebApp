@@ -284,10 +284,10 @@ export default function Campus() {
               >
                 <div
                   className={cn(
-                    "h-full w-full rounded-md border-2",
+                    "h-full w-full rounded-md",
                     i === activeIdx
-                      ? "border-coral bg-coral/20 animate-room-pulse"
-                      : "border-slate-400 bg-slate-400/10",
+                      ? "border-[3px] border-coral bg-coral/35 animate-room-pulse"
+                      : "border-2 border-slate-400 bg-slate-400/10",
                   )}
                 />
               </div>
