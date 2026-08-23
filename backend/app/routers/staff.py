@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api/staff", tags=["staff"])
 
 @router.get("/meta")
 def meta():
-    return {"duty_types": schemas.DUTY_TYPES}
+    return {"duty_types": schemas.DUTY_TYPES, "staff_categories": schemas.STAFF_CATEGORIES}
 
 
 # ---------- Staff members ----------
@@ -62,7 +62,7 @@ def _duty_dict(a: models.DutyAssignment):
         "id": a.id,
         "staff_id": a.staff_id,
         "staff_name": a.staff.full_name if a.staff else None,
-        "department": a.staff.department if a.staff else None,
+        "category": a.staff.category if a.staff else None,
         "room_id": a.room_id,
         "room_name": a.room.name if a.room else None,
         "floor_id": floor.id if floor else None,

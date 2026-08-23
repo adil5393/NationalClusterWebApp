@@ -3,7 +3,9 @@
 # IDE and editors
 .idea/
 .vscode/
-*.xlsx
+/*.xlsx
+/excel_exports
+
 # Dependencies
 node_modules/
 /node_modules

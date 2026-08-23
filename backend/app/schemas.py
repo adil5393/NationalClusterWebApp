@@ -18,7 +18,11 @@ PROCUREMENT_STATUSES = [
 ]
 ANNOUNCEMENT_PRIORITIES = ["low", "normal", "high", "urgent"]
 ANNOUNCEMENT_AUDIENCES = ["everyone", "team", "organizers", "staff", "coaches"]
-DUTY_TYPES = ["Fooding", "Cleaning", "Medical", "Security", "Transport", "Reception", "Electricity"]
+DUTY_TYPES = ["Fooding", "Lodging", "Cleaning", "Medical", "Security", "Transport", "Reception", "Electricity"]
+# A staff member's broad category (who they are) — separate from duty_type (what
+# they're doing on a given assignment, e.g. Fooding/Lodging), which is decided at
+# allotment time, not when the person is added.
+STAFF_CATEGORIES = ["Academic & Administrative", "Support & Housekeeping", "Transport"]
 
 
 class ORMModel(BaseModel):
@@ -368,7 +372,7 @@ class StaffBase(BaseModel):
     full_name: str
     phone: Optional[str] = None
     email: Optional[str] = None
-    department: Optional[str] = None
+    category: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -380,7 +384,7 @@ class StaffUpdate(BaseModel):
     full_name: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
-    department: Optional[str] = None
+    category: Optional[str] = None
     notes: Optional[str] = None
 
 

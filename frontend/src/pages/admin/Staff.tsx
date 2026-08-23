@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, X, HardHat, ClipboardList } from "lucide-react";
+import { Plus, Pencil, Trash2, X, HardHat, ClipboardList, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -10,10 +10,10 @@ import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/meta";
 import { cn } from "@/lib/utils";
 
-interface StaffMember { id: number; full_name: string; phone?: string; email?: string; department?: string; notes?: string }
+interface StaffMember { id: number; full_name: string; phone?: string; email?: string; category?: string; notes?: string }
 interface RoomOpt { id: number; name: string; floor: string; building: string; label: string }
 interface Duty {
-  id: number; staff_id: number; staff_name?: string; department?: string;
+  id: number; staff_id: number; staff_name?: string; category?: string;
   room_id: number; room_name?: string; floor_id?: number; floor_name?: string;
   building_id?: number; building_name?: string;
   duty_type: string; start_time?: string; end_time?: string; notes?: string;
@@ -24,9 +24,13 @@ export default function Staff() {
   const [rooms, setRooms] = useState<RoomOpt[]>([]);
   const [duties, setDuties] = useState<Duty[]>([]);
   const [dutyTypes, setDutyTypes] = useState<string[]>([]);
+  const [staffCategories, setStaffCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [staffPage, setStaffPage] = useState(1);
+  const [staffSearch, setStaffSearch] = useState("");
+  const STAFF_PAGE_SIZE = 5;
 
-  const emptyMember = { full_name: "", phone: "", email: "", department: "", notes: "" };
+  const emptyMember = { full_name: "", phone: "", email: "", category: "", notes: "" };
   const [member, setMember] = useState(emptyMember);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [assign, setAssign] = useState({
@@ -39,9 +43,10 @@ export default function Staff() {
       api.get<StaffMember[]>("/staff"),
       api.get<RoomOpt[]>("/accommodation/rooms"),
       api.get<Duty[]>("/staff/duties"),
-      api.get<{ duty_types: string[] }>("/staff/meta"),
+      api.get<{ duty_types: string[]; staff_categories: string[] }>("/staff/meta"),
     ]).then(([s, r, d, m]) => {
-      setStaff(s.data); setRooms(r.data); setDuties(d.data); setDutyTypes(m.data.duty_types);
+      setStaff(s.data); setRooms(r.data); setDuties(d.data);
+      setDutyTypes(m.data.duty_types); setStaffCategories(m.data.staff_categories);
     }).finally(() => setLoading(false));
   };
   useEffect(load, []);
@@ -52,7 +57,7 @@ export default function Staff() {
       full_name: member.full_name,
       phone: member.phone || null,
       email: member.email || null,
-      department: member.department || null,
+      category: member.category || null,
       notes: member.notes || null,
     };
     try {
@@ -75,7 +80,7 @@ export default function Staff() {
     setEditingId(s.id);
     setMember({
       full_name: s.full_name, phone: s.phone ?? "", email: s.email ?? "",
-      department: s.department ?? "", notes: s.notes ?? "",
+      category: s.category ?? "", notes: s.notes ?? "",
     });
   };
 
@@ -139,6 +144,18 @@ export default function Staff() {
     return map;
   }, [grouped]);
 
+  const filteredStaff = useMemo(() => {
+    const q = staffSearch.trim().toLowerCase();
+    if (!q) return staff;
+    return staff.filter((s) => s.full_name.toLowerCase().includes(q));
+  }, [staff, staffSearch]);
+  useEffect(() => { setStaffPage(1); }, [staffSearch]);
+  const staffPageCount = Math.max(1, Math.ceil(filteredStaff.length / STAFF_PAGE_SIZE));
+  useEffect(() => {
+    if (staffPage > staffPageCount) setStaffPage(staffPageCount);
+  }, [staffPage, staffPageCount]);
+  const pagedStaff = filteredStaff.slice((staffPage - 1) * STAFF_PAGE_SIZE, staffPage * STAFF_PAGE_SIZE);
+
   if (loading) return <Spinner label="Loading staff…" />;
 
   return (
@@ -152,7 +169,10 @@ export default function Staff() {
           <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-slate-950"><HardHat className="h-4 w-4" /> Staff Members</h2>
           <div className="mt-4 grid grid-cols-2 gap-2">
             <Input placeholder="Full name" value={member.full_name} onChange={(e) => setMember((m) => ({ ...m, full_name: e.target.value }))} data-testid="staff-name-input" />
-            <Input placeholder="Department" list="duty-type-suggestions" value={member.department} onChange={(e) => setMember((m) => ({ ...m, department: e.target.value }))} />
+            <Select value={member.category} onChange={(e) => setMember((m) => ({ ...m, category: e.target.value }))} data-testid="staff-category-select">
+              <option value="">Category…</option>
+              {staffCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+            </Select>
             <Input placeholder="Phone" value={member.phone} onChange={(e) => setMember((m) => ({ ...m, phone: e.target.value }))} />
             <Input placeholder="Email" value={member.email} onChange={(e) => setMember((m) => ({ ...m, email: e.target.value }))} />
             <Textarea placeholder="Notes" className="col-span-2" rows={2} value={member.notes} onChange={(e) => setMember((m) => ({ ...m, notes: e.target.value }))} data-testid="staff-notes-input" />
@@ -165,9 +185,24 @@ export default function Staff() {
               <Button variant="outline" onClick={cancelEdit} data-testid="cancel-edit-staff-btn"><X className="h-4 w-4" /></Button>
             )}
           </div>
+          {staff.length > 0 && (
+            <div className="relative mt-4">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                placeholder="Search staff by name…"
+                value={staffSearch}
+                onChange={(e) => setStaffSearch(e.target.value)}
+                className="pl-9"
+                data-testid="staff-search-input"
+              />
+            </div>
+          )}
           <div className="mt-4 space-y-2">
             {staff.length === 0 && <p className="text-sm text-slate-400">No staff members yet.</p>}
-            {staff.map((s) => (
+            {staff.length > 0 && filteredStaff.length === 0 && (
+              <p className="text-sm text-slate-400">No staff member named "{staffSearch}".</p>
+            )}
+            {pagedStaff.map((s) => (
               <div
                 key={s.id}
                 className={cn(
@@ -178,7 +213,7 @@ export default function Staff() {
               >
                 <span>
                   <span className="font-bold text-slate-900">{s.full_name}</span>
-                  {s.department && <span className="text-slate-500"> · {s.department}</span>}
+                  {s.category && <span className="text-slate-500"> · {s.category}</span>}
                   {s.phone && <span className="text-slate-500"> · {s.phone}</span>}
                 </span>
                 <span className="flex items-center gap-1">
@@ -188,6 +223,29 @@ export default function Staff() {
               </div>
             ))}
           </div>
+          {filteredStaff.length > STAFF_PAGE_SIZE && (
+            <div className="mt-3 flex items-center justify-between text-xs text-slate-500" data-testid="staff-pagination">
+              <span>Page {staffPage} of {staffPageCount} · {filteredStaff.length} staff</span>
+              <div className="flex gap-1">
+                <Button
+                  variant="outline" size="icon"
+                  disabled={staffPage <= 1}
+                  onClick={() => setStaffPage((p) => Math.max(1, p - 1))}
+                  data-testid="staff-page-prev"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline" size="icon"
+                  disabled={staffPage >= staffPageCount}
+                  onClick={() => setStaffPage((p) => Math.min(staffPageCount, p + 1))}
+                  data-testid="staff-page-next"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Assign duty */}

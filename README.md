@@ -91,6 +91,16 @@ docker compose exec backend python -m app.seed_campus
 This is idempotent (safe to run on every deploy) — it skips any Building whose name already
 exists, so it never duplicates rooms or overwrites capacities an organizer has since edited.
 
+To sync Staff Members from `backend/app/data/staff.xlsx` (two columns: "Employee Name",
+"Designation" — see `app/seed_staff.py`). Unlike the scripts above, this one is meant to be
+**re-run every time the spreadsheet changes**: it upserts by name (updates an existing staff
+member's category, adds new names) and never deletes anyone missing from the sheet — it just
+reports them so you can decide by hand:
+
+```bash
+docker compose exec backend python -m app.seed_staff
+```
+
 ---
 
 ## Local Development (without Docker)
@@ -104,6 +114,7 @@ pip install -r requirements.txt
 alembic upgrade head          # apply migrations
 python -m app.seed            # optional: load DEVELOPMENT data
 python -m app.seed_campus     # initialize real campus Buildings/Floors/Rooms for the map
+python -m app.seed_staff      # sync Staff Members from app/data/staff.xlsx
 uvicorn server:app --host 0.0.0.0 --port 8001 --reload
 ```
 

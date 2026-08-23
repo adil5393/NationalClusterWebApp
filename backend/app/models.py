@@ -322,7 +322,7 @@ class StaffMember(TimestampMixin, Base):
     full_name = Column(String(160), nullable=False)
     phone = Column(String(60))
     email = Column(String(200))
-    department = Column(String(80))  # free text, e.g. Cleaning / Medical / Security
+    category = Column(String(80))  # one of schemas.STAFF_CATEGORIES — who they are, not what duty they're on
     notes = Column(Text)
 
     duties = relationship("DutyAssignment", back_populates="staff", cascade="all, delete-orphan")
