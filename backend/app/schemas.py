@@ -314,6 +314,7 @@ class ParticipantBase(BaseModel):
     full_name: str
     gender: Optional[str] = None
     age: Optional[int] = None
+    age_group: Optional[str] = None
     role: Optional[str] = None
     notes: Optional[str] = None
 
@@ -327,6 +328,7 @@ class ParticipantUpdate(BaseModel):
     full_name: Optional[str] = None
     gender: Optional[str] = None
     age: Optional[int] = None
+    age_group: Optional[str] = None
     role: Optional[str] = None
     notes: Optional[str] = None
 

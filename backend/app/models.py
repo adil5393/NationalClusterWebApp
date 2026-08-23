@@ -70,6 +70,7 @@ class Participant(TimestampMixin, Base):
     full_name = Column(String(200), nullable=False)
     gender = Column(String(20))
     age = Column(Integer)
+    age_group = Column(String(40))
     role = Column(String(80))
     notes = Column(Text)
 

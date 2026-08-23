@@ -12,10 +12,25 @@ import { formatDate } from "@/lib/meta";
 interface TeamDetail {
   id: number; name: string; school?: string; region?: string; country?: string; member_count?: number;
   coaches: { full_name: string; email?: string; phone?: string }[];
-  participants: { full_name: string; role?: string }[];
+  participants: { full_name: string; role?: string; age_group?: string }[];
   accommodation: { room?: string; floor?: string; building?: string; notes?: string }[];
   transport: { vehicle?: string; pickup_location?: string; drop_location?: string; pickup_time?: string; route?: string }[];
   schedule: { title: string; venue?: string; start_time?: string; end_time?: string }[];
+}
+
+function ageGroupRank(g: string) {
+  const m = g.match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : 999;
+}
+
+function groupByAge(participants: TeamDetail["participants"]) {
+  const groups = new Map<string, TeamDetail["participants"]>();
+  for (const p of participants) {
+    const key = p.age_group || "Age group not specified";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(p);
+  }
+  return Array.from(groups.entries()).sort(([a], [b]) => ageGroupRank(a) - ageGroupRank(b) || a.localeCompare(b));
 }
 
 function Section({ icon: Icon, title, children }: { icon: any; title: string; children: React.ReactNode }) {
@@ -139,12 +154,22 @@ export default function TeamPortal() {
       <div className="mt-5">
         <Section icon={Users} title="Team Members">
           {team.participants.length === 0 ? <p className="text-sm text-slate-500">Roster not published yet.</p> : (
-            <div className="flex flex-wrap gap-2">
-              {team.participants.map((p, i) => (
-                <span key={i} className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm">
-                  <span className="font-semibold text-slate-800">{p.full_name}</span>
-                  {p.role && <Badge tone="neutral">{p.role}</Badge>}
-                </span>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {groupByAge(team.participants).map(([group, members]) => (
+                <div key={group} className="rounded-md border border-slate-200 bg-slate-50/70">
+                  <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
+                    <h3 className="text-sm font-bold text-slate-900">{group}</h3>
+                    <Badge tone="neutral">{members.length}</Badge>
+                  </div>
+                  <ol className="divide-y divide-slate-200/70">
+                    {[...members].sort((a, b) => a.full_name.localeCompare(b.full_name)).map((p, i) => (
+                      <li key={i} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
+                        <span className="text-slate-800"><span className="text-slate-400">{i + 1}.</span> {p.full_name}</span>
+                        {p.role && <span className="shrink-0 text-xs font-semibold text-slate-500">{p.role}</span>}
+                      </li>
+                    ))}
+                  </ol>
+                </div>
               ))}
             </div>
           )}

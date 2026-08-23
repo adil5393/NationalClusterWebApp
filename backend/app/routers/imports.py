@@ -202,20 +202,23 @@ async def import_attendance_list(file: UploadFile = File(...), db: Session = Dep
             continue
 
         age = _age_from_dob(row.get("dob"))
+        age_group = _val(row, "agegroup")
         participant = existing_by_reg.get(reg_no)
         if participant is None:
             participant = models.Participant(
                 registration_no=reg_no, team_id=team.id, full_name=full_name,
-                gender="Male", age=age, role="Player",
+                gender="Male", age=age, age_group=age_group, role="Player",
             )
             db.add(participant)
             existing_by_reg[reg_no] = participant
             participants_created += 1
         else:
-            changed = (participant.team_id != team.id or participant.full_name != full_name or participant.age != age)
+            changed = (participant.team_id != team.id or participant.full_name != full_name
+                       or participant.age != age or participant.age_group != age_group)
             participant.team_id = team.id
             participant.full_name = full_name
             participant.age = age
+            participant.age_group = age_group
             if changed:
                 participants_updated += 1
 

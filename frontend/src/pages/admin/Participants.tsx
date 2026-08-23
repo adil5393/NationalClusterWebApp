@@ -11,7 +11,7 @@ import { Spinner, EmptyState } from "@/components/ui/feedback";
 
 interface Team { id: number; name: string }
 interface Participant {
-  id: number; team_id: number; full_name: string; gender?: string; age?: number; role?: string; notes?: string;
+  id: number; team_id: number; full_name: string; gender?: string; age?: number; age_group?: string; role?: string; notes?: string;
 }
 
 const empty: Partial<Participant> = { full_name: "", role: "", gender: "", team_id: undefined };
@@ -21,6 +21,7 @@ export default function Participants() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [teamFilter, setTeamFilter] = useState("");
+  const [ageGroupFilter, setAgeGroupFilter] = useState("");
   const [open, setOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [form, setForm] = useState<Partial<Participant>>(empty);
@@ -34,9 +35,21 @@ export default function Participants() {
   useEffect(load, []);
 
   const teamName = (id: number) => teams.find((t) => t.id === id)?.name ?? "—";
+
+  const ageGroupRank = (g: string) => {
+    const m = g.match(/(\d+)/);
+    return m ? parseInt(m[1], 10) : 999;
+  };
+  const ageGroups = useMemo(() => {
+    const set = new Set(participants.map((p) => p.age_group).filter(Boolean) as string[]);
+    return Array.from(set).sort((a, b) => ageGroupRank(a) - ageGroupRank(b) || a.localeCompare(b));
+  }, [participants]);
+
   const filtered = useMemo(
-    () => (teamFilter ? participants.filter((p) => p.team_id === Number(teamFilter)) : participants),
-    [participants, teamFilter],
+    () => participants
+      .filter((p) => (teamFilter ? p.team_id === Number(teamFilter) : true))
+      .filter((p) => (ageGroupFilter ? p.age_group === ageGroupFilter : true)),
+    [participants, teamFilter, ageGroupFilter],
   );
 
   const save = async () => {
@@ -77,11 +90,17 @@ export default function Participants() {
         <a href={`${(import.meta.env.REACT_APP_BACKEND_URL ?? "")}/api/export/participants.csv`} className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50" data-testid="export-participants-btn"><Download className="h-4 w-4" /> Export CSV</a>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-6 flex flex-wrap gap-3">
         <Select value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)} className="w-auto" data-testid="participant-team-filter">
           <option value="">All Teams</option>
           {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </Select>
+        {ageGroups.length > 0 && (
+          <Select value={ageGroupFilter} onChange={(e) => setAgeGroupFilter(e.target.value)} className="w-auto" data-testid="participant-age-group-filter">
+            <option value="">All Age Groups</option>
+            {ageGroups.map((g) => <option key={g} value={g}>{g}</option>)}
+          </Select>
+        )}
       </div>
 
       <div className="mt-4 rounded-lg border border-slate-200 bg-white">
@@ -93,7 +112,7 @@ export default function Participants() {
           <Table>
             <THead>
               <TR className="hover:bg-transparent">
-                <TH>#</TH><TH>Name</TH><TH>Team</TH><TH>Role</TH><TH className="text-right">Age</TH><TH className="text-right">Actions</TH>
+                <TH>#</TH><TH>Name</TH><TH>Team</TH><TH>Role</TH><TH className="text-right">Age</TH><TH>Age Group</TH><TH className="text-right">Actions</TH>
               </TR>
             </THead>
             <tbody>
@@ -104,6 +123,7 @@ export default function Participants() {
                   <TD className="text-slate-600">{teamName(p.team_id)}</TD>
                   <TD>{p.role || "—"}</TD>
                   <TD className="text-right">{p.age ?? "—"}</TD>
+                  <TD className="text-slate-600">{p.age_group || "—"}</TD>
                   <TD>
                     <div className="flex justify-end gap-1">
                       <Button variant="ghost" size="icon" onClick={() => { setForm(p); setOpen(true); }} data-testid={`edit-participant-${p.id}`}><Pencil className="h-4 w-4" /></Button>
@@ -132,6 +152,7 @@ export default function Participants() {
             <div><Label>Gender</Label><Input value={form.gender ?? ""} onChange={(e) => set("gender", e.target.value)} /></div>
             <div><Label>Age</Label><Input type="number" value={form.age ?? ""} onChange={(e) => set("age", e.target.value)} /></div>
           </div>
+          <div><Label>Age Group</Label><Input value={form.age_group ?? ""} onChange={(e) => set("age_group", e.target.value)} placeholder="e.g. Under 14" /></div>
           <div><Label>Notes</Label><Textarea value={form.notes ?? ""} onChange={(e) => set("notes", e.target.value)} /></div>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>

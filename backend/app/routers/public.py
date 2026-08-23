@@ -42,7 +42,7 @@ def public_team_detail(team_id: int, db: Session = Depends(get_db)):
         {"full_name": c.full_name, "email": c.email, "phone": c.phone} for c in team.coaches
     ]
     participants = [
-        {"full_name": p.full_name, "role": p.role} for p in team.participants
+        {"full_name": p.full_name, "role": p.role, "age_group": p.age_group} for p in team.participants
     ]
 
     accommodation = []
