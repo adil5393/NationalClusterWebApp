@@ -23,6 +23,7 @@ import Knowledge from "@/pages/admin/Knowledge";
 import Procurement from "@/pages/admin/Procurement";
 import AdminAnnouncements from "@/pages/admin/Announcements";
 import Staff from "@/pages/admin/Staff";
+import Login from "@/pages/admin/Login";
 
 export default function App() {
   return (
@@ -42,6 +43,8 @@ export default function App() {
         <Route path="/contacts" element={<PlaceholderPage title="Important Contacts" section="Contacts" />} />
         <Route path="/faq" element={<PlaceholderPage title="Frequently Asked Questions" section="FAQ" />} />
       </Route>
+
+      <Route path="/admin/login" element={<Login />} />
 
       <Route element={<AdminLayout />}>
         <Route path="/admin" element={<Dashboard />} />

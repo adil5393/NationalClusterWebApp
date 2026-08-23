@@ -22,6 +22,9 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-cluster}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-cluster_nationals}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
+      SESSION_SECRET: ${SESSION_SECRET:-dev-insecure-secret-change-me}
+      SESSION_HTTPS_ONLY: ${SESSION_HTTPS_ONLY:-false}
     depends_on:
       postgres:
         condition: service_healthy

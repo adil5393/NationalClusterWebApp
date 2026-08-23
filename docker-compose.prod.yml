@@ -20,6 +20,11 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       CORS_ORIGINS: ${CORS_ORIGINS}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      SESSION_SECRET: ${SESSION_SECRET}
+      # Flip to true once HTTPS (certbot/letsencrypt, below) is actually issued and
+      # serving — a secure cookie silently never gets set over plain HTTP.
+      SESSION_HTTPS_ONLY: ${SESSION_HTTPS_ONLY:-false}
     depends_on:
       postgres:
         condition: service_healthy

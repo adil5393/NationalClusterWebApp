@@ -138,6 +138,9 @@ All configuration comes from environment variables — **no secrets in code**. S
 | `CORS_ORIGINS`        | backend  | Comma-separated allowed origins              |
 | `POSTGRES_*`          | compose  | Postgres init credentials                    |
 | `REACT_APP_BACKEND_URL` | frontend | Base URL the browser uses for the API       |
+| `ADMIN_PASSWORD`      | backend  | Shared Organizer Portal login password       |
+| `SESSION_SECRET`      | backend  | Signs the login session cookie — changing it logs everyone out |
+| `SESSION_HTTPS_ONLY`  | backend  | `true` once served over real HTTPS; the session cookie won't set over plain HTTP |
 
 ---
 

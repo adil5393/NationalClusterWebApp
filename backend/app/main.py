@@ -1,14 +1,17 @@
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 
 from .config import settings
+from .security import require_auth
 from .routers import (
     accommodation,
     announcements,
     attachments,
+    auth,
     dashboard,
     exports,
     health,
@@ -53,6 +56,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Shared-password session cookie for the Organizer Portal (see security.py /
+# routers/auth.py). https_only stays env-driven: the current prod deployment is
+# plain HTTP on a bare IP, and a secure cookie silently never gets set over HTTP.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.session_secret,
+    session_cookie="cn_session",
+    same_site="lax",
+    https_only=settings.session_https_only,
+    max_age=60 * 60 * 24 * 7,  # 7 days
+)
+
 
 @app.on_event("startup")
 def _startup() -> None:
@@ -67,8 +82,15 @@ def root_health():
     return {"status": "ok", "service": "cluster-nationals-api"}
 
 
+# Open to the internet, no session required: health checks, the public read-only
+# site, and login itself (you can't log in to a route that requires being logged in).
+for module in (health, public, auth):
+    app.include_router(module.router)
+
+# Everything else is the Organizer Portal's own data — gated behind the shared
+# password session (see security.py), applied centrally here rather than editing
+# every router file.
 for module in (
-    health,
     dashboard,
     teams,
     participants,
@@ -81,10 +103,9 @@ for module in (
     attachments,
     procurement,
     announcements,
-    public,
     search,
     imports,
     exports,
     staff,
 ):
-    app.include_router(module.router)
+    app.include_router(module.router, dependencies=[Depends(require_auth)])

@@ -3,10 +3,11 @@ import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, UserSquare2, BedDouble, Building2, UtensilsCrossed, Bus,
   MapPin, CalendarDays, Megaphone, ShoppingCart, CheckSquare, BookOpen, FileText,
-  Contact as ContactIcon, Settings, Search, ExternalLink, LayoutGrid, HardHat,
+  Contact as ContactIcon, Settings, Search, ExternalLink, LayoutGrid, HardHat, LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { Spinner } from "@/components/ui/feedback";
 
 const NAV = [
   { to: "/admin", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -39,8 +40,24 @@ export function AdminLayout() {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<Result[]>([]);
   const [openSearch, setOpenSearch] = useState(false);
+  const [authed, setAuthed] = useState<boolean | null>(null);
   const navigate = useNavigate();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    api.get<{ authenticated: boolean }>("/auth/me")
+      .then((r) => {
+        if (r.data.authenticated) setAuthed(true);
+        else navigate("/admin/login");
+      })
+      .catch(() => navigate("/admin/login"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const logout = async () => {
+    await api.post("/auth/logout");
+    navigate("/admin/login");
+  };
 
   useEffect(() => {
     if (timer.current) clearTimeout(timer.current);
@@ -55,6 +72,14 @@ export function AdminLayout() {
       });
     }, 250);
   }, [q]);
+
+  if (authed === null) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <Spinner label="Checking session…" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen bg-slate-50">
@@ -86,9 +111,14 @@ export function AdminLayout() {
             </NavLink>
           ))}
         </nav>
-        <Link to="/" className="flex items-center gap-2 border-t border-white/10 px-5 py-4 text-xs font-semibold text-slate-400 hover:text-coral">
-          <ExternalLink className="h-3.5 w-3.5" /> View Public Site
-        </Link>
+        <div className="border-t border-white/10">
+          <Link to="/" className="flex items-center gap-2 px-5 py-3 text-xs font-semibold text-slate-400 hover:text-coral">
+            <ExternalLink className="h-3.5 w-3.5" /> View Public Site
+          </Link>
+          <button onClick={logout} data-testid="admin-logout-btn" className="flex w-full items-center gap-2 px-5 py-3 text-xs font-semibold text-slate-400 hover:text-coral">
+            <LogOut className="h-3.5 w-3.5" /> Log Out
+          </button>
+        </div>
       </aside>
 
       {/* MAIN */}
