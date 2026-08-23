@@ -35,7 +35,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - certbot_www:/var/www/certbot:ro
+      - certbot_www:/var/www/certbot
       - letsencrypt:/etc/letsencrypt:ro
   certbot:
     image: certbot/certbot:latest
