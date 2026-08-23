@@ -60,6 +60,8 @@ class TeamUpdate(BaseModel):
 
 class TeamRead(ORMModel, TeamBase):
     id: int
+    school_code: Optional[str] = None
+    participant_count: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
@@ -331,6 +333,7 @@ class ParticipantUpdate(BaseModel):
 
 class ParticipantRead(ORMModel, ParticipantBase):
     id: int
+    registration_no: Optional[str] = None
 
 
 # --- Transport ---

@@ -1,5 +1,6 @@
 """Bulk import of teams and participants from CSV / XLSX spreadsheets."""
 import io
+from datetime import date, datetime
 
 import pandas as pd
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -87,3 +88,141 @@ async def import_participants(file: UploadFile = File(...), db: Session = Depend
         created += 1
     db.commit()
     return {"entity": "participants", "created": created, "skipped": skipped, "errors": errors}
+
+
+REQUIRED_STUDENT_SHEET_COLUMNS = {"schcode", "SchoolName", "registrationNo", "studentname", "gender", "dob"}
+
+
+def _region_from_address(value) -> "str | None":
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    parts = [p.strip() for p in str(value).split(",")]
+    # Addresses end "...,STATE,PINCODE,DISTRICT" — only trust it when the pincode
+    # segment actually looks like a pincode, otherwise this is free text we can't parse.
+    if len(parts) < 3 or not pd.Series([parts[-2]]).str.fullmatch(r"\d{5,6}").iloc[0]:
+        return None
+    return parts[-3] or None
+
+
+def _age_from_dob(value) -> "int | None":
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    dob = None
+    if isinstance(value, (datetime, date)):
+        dob = value if isinstance(value, date) and not isinstance(value, datetime) else value.date()
+    else:
+        dob = pd.to_datetime(str(value).strip(), format="%d-%m-%Y", errors="coerce")
+        dob = dob.date() if dob is not None and not pd.isna(dob) else None
+    if dob is None:
+        return None
+    today = date.today()
+    return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+
+
+@router.post("/attendance-list")
+async def import_attendance_list(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Upload the raw school attendance list export — just the single 'Sheet' tab of
+    one row per student (schcode, SchoolName, registrationNo, studentname, gender, dob,
+    Address, ...). Teams are derived by grouping students by schcode (school name = the
+    most common spelling seen for that code, member_count = male students found for it
+    — matching the fact that only Male students are imported as participants — region =
+    best-effort parsed from the address's state segment) and upserted by
+    school_code; Participants are upserted by registration_no. Re-uploading a newer
+    export is safe — existing rows are only ever updated, never deleted, so adding a new
+    team or adding more players to an existing one just adds what's new.
+
+    Only Male students are imported as participants.
+    """
+    content = await file.read()
+    try:
+        sheet = pd.read_excel(io.BytesIO(content), sheet_name="Sheet")
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, f"Could not read this file — expected a 'Sheet' tab of one row per student: {e}")
+
+    sheet.columns = [str(c).strip() for c in sheet.columns]
+    if not REQUIRED_STUDENT_SHEET_COLUMNS.issubset(sheet.columns):
+        raise HTTPException(400, f"'Sheet' is missing expected columns: {REQUIRED_STUDENT_SHEET_COLUMNS - set(sheet.columns)}")
+
+    sheet["schcode"] = sheet["schcode"].astype(str).str.strip()
+
+    # ---------- Teams, derived from Sheet and upserted by school_code ----------
+    teams_by_code = {t.school_code: t for t in db.query(models.Team).filter(models.Team.school_code.isnot(None)).all()}
+    teams_created = teams_updated = 0
+    for code, group in sheet.groupby("schcode"):
+        if not code:
+            continue
+        names = group["SchoolName"].astype(str).str.strip()
+        names = names[names != ""]
+        if names.empty:
+            continue
+        school_name = names.mode().iloc[0]  # most common spelling for this schcode
+        member_count = int((group["gender"].astype(str).str.strip().str.lower() == "male").sum())
+        region = None
+        for addr in group.get("Address", pd.Series(dtype=object)).dropna():
+            region = _region_from_address(addr)
+            if region:
+                break
+
+        team = teams_by_code.get(code)
+        if team is None:
+            team = models.Team(school_code=code, name=school_name, school=school_name, region=region, country="India", member_count=member_count)
+            db.add(team)
+            teams_by_code[code] = team
+            teams_created += 1
+        else:
+            changed = (team.name != school_name or team.school != school_name or team.member_count != member_count
+                       or (region and team.region != region))
+            team.name = school_name
+            team.school = school_name
+            team.member_count = member_count
+            if region:
+                team.region = region  # only overwrite if this upload actually parsed one
+            if changed:
+                teams_updated += 1
+    db.flush()  # assign ids to newly-added teams before participants reference them
+
+    # ---------- Participants (male only), upserted by registration_no ----------
+    male_rows = sheet[sheet["gender"].astype(str).str.strip().str.lower() == "male"]
+    skipped_female = len(sheet) - len(male_rows)
+
+    existing_by_reg = {p.registration_no: p for p in db.query(models.Participant).filter(models.Participant.registration_no.isnot(None)).all()}
+    participants_created = participants_updated = 0
+    errors: list[str] = []
+
+    for i, row in male_rows.iterrows():
+        reg_no = _val(row, "registrationNo")
+        full_name = _val(row, "studentname")
+        code = _val(row, "schcode")
+        if not reg_no or not full_name:
+            errors.append(f"Row {i + 2}: missing registrationNo or studentname")
+            continue
+        team = teams_by_code.get(code)
+        if not team:
+            errors.append(f"Row {i + 2}: unknown school code '{code}'")
+            continue
+
+        age = _age_from_dob(row.get("dob"))
+        participant = existing_by_reg.get(reg_no)
+        if participant is None:
+            participant = models.Participant(
+                registration_no=reg_no, team_id=team.id, full_name=full_name,
+                gender="Male", age=age, role="Player",
+            )
+            db.add(participant)
+            existing_by_reg[reg_no] = participant
+            participants_created += 1
+        else:
+            changed = (participant.team_id != team.id or participant.full_name != full_name or participant.age != age)
+            participant.team_id = team.id
+            participant.full_name = full_name
+            participant.age = age
+            if changed:
+                participants_updated += 1
+
+    db.commit()
+    return {
+        "entity": "attendance-list",
+        "teams": {"created": teams_created, "updated": teams_updated},
+        "participants": {"created": participants_created, "updated": participants_updated, "skipped_female": int(skipped_female)},
+        "errors": errors,
+    }

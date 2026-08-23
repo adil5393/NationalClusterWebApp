@@ -8,6 +8,7 @@ import { Table, THead, TH, TR, TD } from "@/components/ui/table";
 import { Dialog } from "@/components/ui/dialog";
 import { QRDialog } from "@/components/admin/QRDialog";
 import { ImportDialog } from "@/components/admin/ImportDialog";
+import { AttendanceImportDialog } from "@/components/admin/AttendanceImportDialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 
@@ -22,6 +23,7 @@ interface Team {
   contact_phone?: string;
   member_count?: number;
   notes?: string;
+  participant_count?: number;
 }
 
 const empty: Partial<Team> = { name: "", school: "", region: "", country: "India", member_count: 0 };
@@ -32,6 +34,7 @@ export default function AdminTeams() {
   const [open, setOpen] = useState(false);
   const [qrTeam, setQrTeam] = useState<{ id: number; name: string } | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [attendanceImportOpen, setAttendanceImportOpen] = useState(false);
   const [form, setForm] = useState<Partial<Team>>(empty);
 
   const load = () => {
@@ -63,6 +66,16 @@ export default function AdminTeams() {
     load();
   };
 
+  const emptyTeamCount = teams.filter((t) => (t.participant_count ?? 0) === 0).length;
+
+  const removeEmptyTeams = async () => {
+    if (emptyTeamCount === 0) return toast.error("No teams with 0 players");
+    if (!confirm(`Delete ${emptyTeamCount} team(s) with 0 players? This cannot be undone.`)) return;
+    const r = await api.delete("/teams/empty");
+    toast.success(`Deleted ${r.data.deleted} team(s) with 0 players`);
+    load();
+  };
+
   const set = (k: keyof Team, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   return (
@@ -73,7 +86,13 @@ export default function AdminTeams() {
           <p className="mt-1 text-sm text-slate-500">{teams.length} teams registered</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setAttendanceImportOpen(true)} data-testid="import-attendance-list-btn"><Upload className="h-4 w-4" /> Import Attendance List</Button>
           <Button variant="outline" onClick={() => setImportOpen(true)} data-testid="import-teams-btn"><Upload className="h-4 w-4" /> Import</Button>
+          {emptyTeamCount > 0 && (
+            <Button variant="outline" onClick={removeEmptyTeams} data-testid="delete-empty-teams-btn">
+              <Trash2 className="h-4 w-4 text-red-500" /> Delete {emptyTeamCount} Team{emptyTeamCount === 1 ? "" : "s"} with 0 Players
+            </Button>
+          )}
           <Button onClick={() => { setForm(empty); setOpen(true); }} data-testid="add-team-btn">
             <Plus className="h-4 w-4" /> Add Team
           </Button>
@@ -158,6 +177,7 @@ export default function AdminTeams() {
       />
 
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} type="teams" onDone={load} />
+      <AttendanceImportDialog open={attendanceImportOpen} onClose={() => setAttendanceImportOpen(false)} onDone={load} />
     </div>
   );
 }

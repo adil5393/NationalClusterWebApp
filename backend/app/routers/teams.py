@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
@@ -7,9 +8,21 @@ from ..database import get_db
 router = APIRouter(prefix="/api/teams", tags=["teams"])
 
 
+def _participant_counts(db: Session) -> dict[int, int]:
+    return dict(
+        db.query(models.Participant.team_id, func.count(models.Participant.id))
+        .group_by(models.Participant.team_id)
+        .all()
+    )
+
+
 @router.get("", response_model=list[schemas.TeamRead])
 def list_teams(db: Session = Depends(get_db)):
-    return db.query(models.Team).order_by(models.Team.name).all()
+    counts = _participant_counts(db)
+    teams = db.query(models.Team).order_by(models.Team.name).all()
+    for t in teams:
+        t.participant_count = counts.get(t.id, 0)
+    return teams
 
 
 @router.post("", response_model=schemas.TeamRead, status_code=201)
@@ -18,7 +31,20 @@ def create_team(payload: schemas.TeamCreate, db: Session = Depends(get_db)):
     db.add(team)
     db.commit()
     db.refresh(team)
+    team.participant_count = 0
     return team
+
+
+# Registered before "/{team_id}" — otherwise FastAPI tries to parse "empty" as an int id.
+@router.delete("/empty")
+def delete_empty_teams(db: Session = Depends(get_db)):
+    counts = _participant_counts(db)
+    empty_teams = [t for t in db.query(models.Team).all() if counts.get(t.id, 0) == 0]
+    names = [t.name for t in empty_teams]
+    for t in empty_teams:
+        db.delete(t)
+    db.commit()
+    return {"deleted": len(names), "names": names}
 
 
 @router.get("/{team_id}", response_model=schemas.TeamRead)

@@ -45,6 +45,7 @@ class Event(TimestampMixin, Base):
 class Team(TimestampMixin, Base):
     __tablename__ = "teams"
     id = Column(Integer, primary_key=True)
+    school_code = Column(String(40), unique=True, index=True)
     name = Column(String(200), nullable=False)
     school = Column(String(200))
     region = Column(String(120))
@@ -65,6 +66,7 @@ class Participant(TimestampMixin, Base):
     __tablename__ = "participants"
     id = Column(Integer, primary_key=True)
     team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    registration_no = Column(String(60), unique=True, index=True)
     full_name = Column(String(200), nullable=False)
     gender = Column(String(20))
     age = Column(Integer)
