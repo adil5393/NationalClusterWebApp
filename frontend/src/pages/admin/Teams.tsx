@@ -89,6 +89,7 @@ export default function AdminTeams() {
           <Table>
             <THead>
               <TR className="hover:bg-transparent">
+                <TH>#</TH>
                 <TH>Team</TH>
                 <TH>Region</TH>
                 <TH>Country</TH>
@@ -98,8 +99,9 @@ export default function AdminTeams() {
               </TR>
             </THead>
             <tbody>
-              {teams.map((t) => (
+              {teams.map((t, i) => (
                 <TR key={t.id} data-testid={`team-row-${t.id}`}>
+                  <TD className="text-slate-400">{i + 1}</TD>
                   <TD className="font-bold text-slate-900">{t.name}<div className="text-xs font-normal text-slate-500">{t.school}</div></TD>
                   <TD>{t.region || "—"}</TD>
                   <TD><Badge tone={t.country === "India" ? "coral" : "blue"}>{t.country}</Badge></TD>

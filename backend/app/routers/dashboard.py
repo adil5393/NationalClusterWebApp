@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from .. import models
 from ..database import get_db
+from .accommodation import _room_headcount
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
@@ -17,6 +18,13 @@ def stats(db: Session = Depends(get_db)):
     rooms_capacity = db.query(func.coalesce(func.sum(models.Room.capacity), 0)).scalar() or 0
     rooms_occupied = (
         db.query(func.count(func.distinct(models.AccommodationAssignment.room_id))).scalar() or 0
+    )
+    # Real headcount per room (whole-team assignments count their actual roster,
+    # not "1 row") — same basis as the accommodation capacity check, so a room
+    # flagged here is the same one that would block a new over-capacity assignment.
+    rooms_over_capacity = sum(
+        1 for r in db.query(models.Room).all()
+        if r.capacity and _room_headcount(db, r.id) > r.capacity
     )
     vehicles = db.query(func.count(models.TransportVehicle.id)).scalar() or 0
     transport_assignments = db.query(func.count(models.TransportAssignment.id)).scalar() or 0
@@ -54,6 +62,7 @@ def stats(db: Session = Depends(get_db)):
             "occupied": rooms_occupied,
             "available": max(rooms_total - rooms_occupied, 0),
             "capacity": int(rooms_capacity),
+            "over_capacity": rooms_over_capacity,
         },
         "transport": {"vehicles": vehicles, "assignments": transport_assignments},
         "procurement": {"open": procurement_open},

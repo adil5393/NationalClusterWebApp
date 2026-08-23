@@ -156,12 +156,13 @@ export default function Transport() {
             <Table>
               <THead>
                 <TR className="hover:bg-transparent">
-                  <TH>Team</TH><TH>Vehicle</TH><TH>Pickup</TH><TH>Drop</TH><TH>Time</TH><TH className="text-right">Actions</TH>
+                  <TH>#</TH><TH>Team</TH><TH>Vehicle</TH><TH>Pickup</TH><TH>Drop</TH><TH>Time</TH><TH className="text-right">Actions</TH>
                 </TR>
               </THead>
               <tbody>
-                {assignments.map((a) => (
+                {assignments.map((a, i) => (
                   <TR key={a.id} data-testid={`ta-row-${a.id}`}>
+                    <TD className="text-slate-400">{i + 1}</TD>
                     <TD className="font-bold text-slate-900">{a.team_name || "—"}</TD>
                     <TD>{a.vehicle_label || "—"}</TD>
                     <TD>{a.pickup_location || "—"}</TD>

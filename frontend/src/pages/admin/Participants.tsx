@@ -93,12 +93,13 @@ export default function Participants() {
           <Table>
             <THead>
               <TR className="hover:bg-transparent">
-                <TH>Name</TH><TH>Team</TH><TH>Role</TH><TH className="text-right">Age</TH><TH className="text-right">Actions</TH>
+                <TH>#</TH><TH>Name</TH><TH>Team</TH><TH>Role</TH><TH className="text-right">Age</TH><TH className="text-right">Actions</TH>
               </TR>
             </THead>
             <tbody>
-              {filtered.map((p) => (
+              {filtered.map((p, i) => (
                 <TR key={p.id} data-testid={`participant-row-${p.id}`}>
+                  <TD className="text-slate-400">{i + 1}</TD>
                   <TD className="font-bold text-slate-900">{p.full_name}</TD>
                   <TD className="text-slate-600">{teamName(p.team_id)}</TD>
                   <TD>{p.role || "—"}</TD>

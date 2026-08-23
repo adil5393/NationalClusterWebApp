@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2, HardHat, ClipboardList } from "lucide-react";
+import { Plus, Pencil, Trash2, X, HardHat, ClipboardList } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Input, Label, Select } from "@/components/ui/input";
+import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { Table, THead, TH, TR, TD } from "@/components/ui/table";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/meta";
+import { cn } from "@/lib/utils";
 
-interface StaffMember { id: number; full_name: string; phone?: string; email?: string; department?: string }
+interface StaffMember { id: number; full_name: string; phone?: string; email?: string; department?: string; notes?: string }
 interface RoomOpt { id: number; name: string; floor: string; building: string; label: string }
 interface Duty {
   id: number; staff_id: number; staff_name?: string; department?: string;
@@ -25,7 +26,9 @@ export default function Staff() {
   const [dutyTypes, setDutyTypes] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [member, setMember] = useState({ full_name: "", phone: "", email: "", department: "" });
+  const emptyMember = { full_name: "", phone: "", email: "", department: "", notes: "" };
+  const [member, setMember] = useState(emptyMember);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [assign, setAssign] = useState({
     staff_id: "", room_id: "", duty_type: "", start_time: "", end_time: "", notes: "",
   });
@@ -43,17 +46,42 @@ export default function Staff() {
   };
   useEffect(load, []);
 
-  const addMember = async () => {
+  const saveMember = async () => {
     if (!member.full_name.trim()) return toast.error("Staff name required");
-    await api.post("/staff", {
+    const payload = {
       full_name: member.full_name,
       phone: member.phone || null,
       email: member.email || null,
       department: member.department || null,
+      notes: member.notes || null,
+    };
+    try {
+      if (editingId) {
+        await api.put(`/staff/${editingId}`, payload);
+        toast.success("Staff member updated");
+      } else {
+        await api.post("/staff", payload);
+        toast.success("Staff member added");
+      }
+      setMember(emptyMember);
+      setEditingId(null);
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not save staff member");
+    }
+  };
+
+  const startEdit = (s: StaffMember) => {
+    setEditingId(s.id);
+    setMember({
+      full_name: s.full_name, phone: s.phone ?? "", email: s.email ?? "",
+      department: s.department ?? "", notes: s.notes ?? "",
     });
-    setMember({ full_name: "", phone: "", email: "", department: "" });
-    toast.success("Staff member added");
-    load();
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setMember(emptyMember);
   };
 
   const addDuty = async () => {
@@ -80,6 +108,7 @@ export default function Staff() {
   const delMember = async (id: number) => {
     if (!confirm("Delete this staff member? Their duty assignments will be removed too.")) return;
     await api.delete(`/staff/${id}`);
+    if (editingId === id) cancelEdit();
     toast.success("Staff member removed");
     load();
   };
@@ -102,6 +131,14 @@ export default function Staff() {
     return Array.from(byFloor.values()).sort((a, b) => a.building.localeCompare(b.building) || a.floor.localeCompare(b.floor));
   }, [duties]);
 
+  // Continuous serial numbers across the grouped (floor-by-floor) roster.
+  const dutySerials = useMemo(() => {
+    const map = new Map<number, number>();
+    let n = 0;
+    for (const g of grouped) for (const d of g.rows) map.set(d.id, ++n);
+    return map;
+  }, [grouped]);
+
   if (loading) return <Spinner label="Loading staff…" />;
 
   return (
@@ -118,18 +155,36 @@ export default function Staff() {
             <Input placeholder="Department" list="duty-type-suggestions" value={member.department} onChange={(e) => setMember((m) => ({ ...m, department: e.target.value }))} />
             <Input placeholder="Phone" value={member.phone} onChange={(e) => setMember((m) => ({ ...m, phone: e.target.value }))} />
             <Input placeholder="Email" value={member.email} onChange={(e) => setMember((m) => ({ ...m, email: e.target.value }))} />
+            <Textarea placeholder="Notes" className="col-span-2" rows={2} value={member.notes} onChange={(e) => setMember((m) => ({ ...m, notes: e.target.value }))} data-testid="staff-notes-input" />
           </div>
-          <Button onClick={addMember} className="mt-2 w-full" data-testid="add-staff-btn"><Plus className="h-4 w-4" /> Add Staff Member</Button>
+          <div className="mt-2 flex gap-2">
+            <Button onClick={saveMember} className="flex-1" data-testid="save-staff-btn">
+              {editingId ? <><Pencil className="h-4 w-4" /> Update Staff Member</> : <><Plus className="h-4 w-4" /> Add Staff Member</>}
+            </Button>
+            {editingId && (
+              <Button variant="outline" onClick={cancelEdit} data-testid="cancel-edit-staff-btn"><X className="h-4 w-4" /></Button>
+            )}
+          </div>
           <div className="mt-4 space-y-2">
             {staff.length === 0 && <p className="text-sm text-slate-400">No staff members yet.</p>}
             {staff.map((s) => (
-              <div key={s.id} className="flex items-center justify-between rounded-md border border-slate-200 px-3 py-2 text-sm" data-testid={`staff-row-${s.id}`}>
+              <div
+                key={s.id}
+                className={cn(
+                  "flex items-center justify-between rounded-md border px-3 py-2 text-sm",
+                  editingId === s.id ? "border-coral bg-orange-50" : "border-slate-200",
+                )}
+                data-testid={`staff-row-${s.id}`}
+              >
                 <span>
                   <span className="font-bold text-slate-900">{s.full_name}</span>
                   {s.department && <span className="text-slate-500"> · {s.department}</span>}
                   {s.phone && <span className="text-slate-500"> · {s.phone}</span>}
                 </span>
-                <button onClick={() => delMember(s.id)} className="text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+                <span className="flex items-center gap-1">
+                  <button onClick={() => startEdit(s)} className="text-slate-300 hover:text-coral-600" data-testid={`edit-staff-${s.id}`}><Pencil className="h-4 w-4" /></button>
+                  <button onClick={() => delMember(s.id)} className="text-slate-300 hover:text-red-500" data-testid={`delete-staff-${s.id}`}><Trash2 className="h-4 w-4" /></button>
+                </span>
               </div>
             ))}
           </div>
@@ -180,12 +235,13 @@ export default function Staff() {
                 <Table className="mt-2">
                   <THead>
                     <TR className="hover:bg-transparent">
-                      <TH>Room</TH><TH>Duty</TH><TH>Staff</TH><TH>Shift</TH><TH className="text-right">Actions</TH>
+                      <TH>#</TH><TH>Room</TH><TH>Duty</TH><TH>Staff</TH><TH>Shift</TH><TH className="text-right">Actions</TH>
                     </TR>
                   </THead>
                   <tbody>
                     {g.rows.map((d) => (
                       <TR key={d.id} data-testid={`duty-row-${d.id}`}>
+                        <TD className="text-slate-400">{dutySerials.get(d.id)}</TD>
                         <TD className="font-semibold text-slate-900">{d.room_name || "—"}</TD>
                         <TD><Badge tone="coral">{d.duty_type}</Badge></TD>
                         <TD>{d.staff_name || "—"}</TD>

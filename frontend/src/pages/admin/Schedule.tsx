@@ -83,12 +83,13 @@ export default function Schedule() {
           <Table>
             <THead>
               <TR className="hover:bg-transparent">
-                <TH>Event</TH><TH>Team</TH><TH>Venue</TH><TH>Starts</TH><TH>Ends</TH><TH className="text-right">Actions</TH>
+                <TH>#</TH><TH>Event</TH><TH>Team</TH><TH>Venue</TH><TH>Starts</TH><TH>Ends</TH><TH className="text-right">Actions</TH>
               </TR>
             </THead>
             <tbody>
-              {events.map((e) => (
+              {events.map((e, i) => (
                 <TR key={e.id} data-testid={`event-row-${e.id}`}>
+                  <TD className="text-slate-400">{i + 1}</TD>
                   <TD className="font-bold text-slate-900">{e.title}{e.description && <div className="text-xs font-normal text-slate-500">{e.description}</div>}</TD>
                   <TD>{e.team_name ? <Badge tone="coral">{e.team_name}</Badge> : <span className="text-slate-400">All teams</span>}</TD>
                   <TD className="text-slate-600">{e.venue_name || "—"}</TD>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Users, UserSquare2, BedDouble, Bus, ShoppingCart, CheckSquare, ArrowRight } from "lucide-react";
+import { Users, UserSquare2, BedDouble, Bus, ShoppingCart, CheckSquare, ArrowRight, AlertTriangle } from "lucide-react";
 import { api } from "@/lib/api";
 import { StatCard } from "@/components/admin/StatCard";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -11,7 +11,7 @@ import { knowledgeStatusTone, priorityTone, formatDate } from "@/lib/meta";
 interface Stats {
   participants: { total: number; expected: number; member_sum: number };
   teams: { total: number };
-  rooms: { total: number; occupied: number; available: number; capacity: number };
+  rooms: { total: number; occupied: number; available: number; capacity: number; over_capacity: number };
   transport: { vehicles: number; assignments: number };
   procurement: { open: number };
   tasks: { pending: number; completed: number };
@@ -42,7 +42,7 @@ export default function Dashboard() {
         <StatCard
           icon={UserSquare2}
           label="Participants"
-          value={s.participants.member_sum || s.participants.total}
+          value={s.participants.total}
           sub={`Target ~${s.participants.expected}`}
           accent
           testId="stat-participants"
@@ -52,6 +52,18 @@ export default function Dashboard() {
         <StatCard icon={ShoppingCart} label="Procurement" value={s.procurement.open} sub="Open items" testId="stat-procurement" />
         <StatCard icon={CheckSquare} label="Tasks" value={`${s.tasks.pending}`} sub={`${s.tasks.completed} completed`} testId="stat-tasks" />
       </div>
+
+      {s.rooms.over_capacity > 0 && (
+        <Link
+          to="/admin/accommodation"
+          className="mt-4 flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 hover:bg-red-100"
+          data-testid="over-capacity-warning"
+        >
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          {s.rooms.over_capacity} room{s.rooms.over_capacity > 1 ? "s are" : " is"} over capacity — review in Accommodation
+          <ArrowRight className="ml-auto h-4 w-4 shrink-0" />
+        </Link>
+      )}
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <Card>

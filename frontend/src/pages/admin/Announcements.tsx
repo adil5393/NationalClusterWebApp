@@ -89,12 +89,13 @@ export default function AdminAnnouncements() {
           <Table>
             <THead>
               <TR className="hover:bg-transparent">
-                <TH>Title</TH><TH>Priority</TH><TH>Audience</TH><TH>Status</TH><TH>Published</TH><TH className="text-right">Actions</TH>
+                <TH>#</TH><TH>Title</TH><TH>Priority</TH><TH>Audience</TH><TH>Status</TH><TH>Published</TH><TH className="text-right">Actions</TH>
               </TR>
             </THead>
             <tbody>
-              {items.map((a) => (
+              {items.map((a, i) => (
                 <TR key={a.id} data-testid={`announcement-row-${a.id}`}>
+                  <TD className="text-slate-400">{i + 1}</TD>
                   <TD className="max-w-md font-bold text-slate-900">{a.title}<div className="truncate text-xs font-normal text-slate-500">{a.message}</div></TD>
                   <TD><Badge tone={priorityTone(a.priority)}>{a.priority.toUpperCase()}</Badge></TD>
                   <TD className="capitalize text-slate-600">{a.audience}</TD>

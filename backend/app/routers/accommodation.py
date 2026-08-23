@@ -15,12 +15,32 @@ def _room_context(room: models.Room):
     return floor, building
 
 
+def _team_size(db: Session, team_id: int) -> int:
+    """A team's real roster size — the actual Participant rows entered/imported for
+    it, not the self-reported Team.member_count (which can drift out of sync)."""
+    return db.query(func.count(models.Participant.id)).filter_by(team_id=team_id).scalar() or 0
+
+
+def _room_headcount(db: Session, room_id: int) -> int:
+    """Real person-count occupying a room: participant-level assignments count as 1
+    each; whole-team assignments count as that team's actual roster size — NOT as a
+    single row, which is what silently let over-capacity whole-team assignments
+    through before."""
+    total = 0
+    for a in db.query(models.AccommodationAssignment).filter_by(room_id=room_id).all():
+        if a.participant_id:
+            total += 1
+        elif a.team_id:
+            total += _team_size(db, a.team_id)
+    return total
+
+
 @router.get("/rooms")
 def rooms(db: Session = Depends(get_db)):
     out = []
     for r in db.query(models.Room).all():
         floor, building = _room_context(r)
-        occupied = db.query(func.count(models.AccommodationAssignment.id)).filter_by(room_id=r.id).scalar() or 0
+        occupied = _room_headcount(db, r.id)
         out.append({
             "id": r.id,
             "name": r.name,
@@ -98,16 +118,30 @@ def create_assignment(payload: schemas.AssignmentCreate, db: Session = Depends(g
         if dupe_p:
             raise HTTPException(409, "This participant is already assigned to this room")
 
-    # Data integrity: do not exceed room capacity
-    current = db.query(func.count(models.AccommodationAssignment.id)).filter_by(room_id=payload.room_id).scalar() or 0
-    if room.capacity and current >= room.capacity:
-        raise HTTPException(409, f"Room '{room.name}' is at full capacity ({room.capacity})")
+    # Capacity is a WARNING, not a hard block — organizers sometimes need to
+    # temporarily overbook a room, so the assignment still goes through. Measured
+    # in real people, not assignment rows, so a whole-team assignment is checked
+    # against its actual roster size rather than counting as a single occupant.
+    warning = None
+    if room.capacity:
+        current = _room_headcount(db, payload.room_id)
+        if payload.team_id and not payload.participant_id:
+            team = db.get(models.Team, payload.team_id)
+            adding = _team_size(db, payload.team_id)
+            if current + adding > room.capacity:
+                warning = (
+                    f"Assigning '{team.name}' ({adding} people) puts "
+                    f"{current + adding} people in '{room.name}' (capacity {room.capacity})"
+                )
+        else:
+            if current + 1 > room.capacity:
+                warning = f"'{room.name}' is now over capacity ({current + 1}/{room.capacity})"
 
     a = models.AccommodationAssignment(**payload.model_dump())
     db.add(a)
     db.commit()
     db.refresh(a)
-    return {"id": a.id}
+    return {"id": a.id, "warning": warning}
 
 
 @router.delete("/assignments/{assignment_id}", status_code=204)
@@ -192,9 +226,9 @@ def room_map(db: Session = Depends(get_db)):
                         continue
                     if a.participant_id:
                         p = db.get(models.Participant, a.participant_id)
-                        loose.append(p.full_name if p else "Participant")
+                        loose.append({"name": p.full_name if p else "Participant", "count": 1})
                     elif a.team_id and a.team:
-                        loose.append(f"{a.team.name} (whole team)")
+                        loose.append({"name": f"{a.team.name} (whole team)", "count": _team_size(db, a.team_id)})
                 rooms.append({"id": r.id, "name": r.name, "capacity": r.capacity or 0, "beds": beds, "loose": loose})
             floors.append({"id": f.id, "name": f.name, "rooms": rooms})
         out.append({"id": b.id, "name": b.name, "code": b.code, "floors": floors})
@@ -211,7 +245,7 @@ def occupancy(db: Session = Depends(get_db)):
             for r in f.rooms:
                 rooms += 1
                 cap += r.capacity or 0
-                c = db.query(func.count(models.AccommodationAssignment.id)).filter_by(room_id=r.id).scalar() or 0
+                c = _room_headcount(db, r.id)
                 assigned += c
                 if c > 0:
                     occ_rooms += 1

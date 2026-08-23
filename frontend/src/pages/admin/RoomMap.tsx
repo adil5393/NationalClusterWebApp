@@ -7,7 +7,8 @@ import { cn } from "@/lib/utils";
 const BACKEND = import.meta.env.REACT_APP_BACKEND_URL ?? "";
 
 interface Bed { id: number; label: string; occupant?: string | null }
-interface Room { id: number; name: string; capacity: number; beds: Bed[]; loose: string[] }
+interface LooseOccupant { name: string; count: number }
+interface Room { id: number; name: string; capacity: number; beds: Bed[]; loose: LooseOccupant[] }
 interface Floor { id: number; name: string; rooms: Room[] }
 interface Building { id: number; name: string; code?: string; floors: Floor[] }
 
@@ -44,7 +45,7 @@ export default function RoomMap() {
                 <p className="text-xs font-bold uppercase tracking-wide text-slate-400">{f.name}</p>
                 <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {f.rooms.map((r) => {
-                    const filled = r.beds.filter((x) => x.occupant).length + r.loose.length;
+                    const filled = r.beds.filter((x) => x.occupant).length + r.loose.reduce((n, l) => n + l.count, 0);
                     return (
                       <div key={r.id} className="rounded-lg border border-slate-200 bg-white p-4" data-testid={`map-room-${r.id}`}>
                         <div className="flex items-center justify-between">
@@ -61,7 +62,11 @@ export default function RoomMap() {
                         </div>
                         {r.loose.length > 0 && (
                           <div className="mt-2 flex flex-wrap gap-1">
-                            {r.loose.map((n, i) => <span key={i} className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">{n}</span>)}
+                            {r.loose.map((l, i) => (
+                              <span key={i} className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                                {l.name}{l.count > 1 ? ` (${l.count})` : ""}
+                              </span>
+                            ))}
                           </div>
                         )}
                       </div>

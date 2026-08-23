@@ -69,14 +69,18 @@ export default function Accommodation() {
     if (!form.team_id) return toast.error("Select a team");
     if (mode === "participant" && !form.participant_id) return toast.error("Select a participant");
     try {
-      await api.post("/accommodation/assignments", {
+      const r = await api.post("/accommodation/assignments", {
         room_id: Number(form.room_id),
         team_id: Number(form.team_id),
         participant_id: mode === "participant" && form.participant_id ? Number(form.participant_id) : null,
         bed_id: mode === "participant" && form.bed_id ? Number(form.bed_id) : null,
         notes: form.notes || null,
       });
-      toast.success(mode === "participant" ? "Participant assigned to bed" : "Room assigned");
+      if (r.data?.warning) {
+        toast.warning(r.data.warning);
+      } else {
+        toast.success(mode === "participant" ? "Participant assigned to bed" : "Room assigned");
+      }
       setForm({ room_id: "", team_id: "", participant_id: "", bed_id: "", notes: "" });
       setBeds([]);
       load();
@@ -165,7 +169,11 @@ export default function Accommodation() {
             <Label>Room</Label>
             <Select value={form.room_id} onChange={(e) => { const v = e.target.value; setForm((f) => ({ ...f, room_id: v, bed_id: "" })); if (mode === "participant") loadBeds(v); }} data-testid="assign-room-select">
               <option value="">Select room…</option>
-              {rooms.map((r) => <option key={r.id} value={r.id}>{r.label} ({r.occupied}/{r.capacity})</option>)}
+              {rooms.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.label} ({r.occupied}/{r.capacity}){r.capacity > 0 && r.occupied >= r.capacity ? " ⚠ FULL" : ""}
+                </option>
+              ))}
             </Select>
           </div>
           {mode === "participant" && (
@@ -213,12 +221,13 @@ export default function Accommodation() {
           <Table>
             <THead>
               <TR className="hover:bg-transparent">
-                <TH>Team</TH><TH>Participant</TH><TH>Building</TH><TH>Floor</TH><TH>Room</TH><TH className="text-right">Actions</TH>
+                <TH>#</TH><TH>Team</TH><TH>Participant</TH><TH>Building</TH><TH>Floor</TH><TH>Room</TH><TH className="text-right">Actions</TH>
               </TR>
             </THead>
             <tbody>
-              {assignments.map((a) => (
+              {assignments.map((a, i) => (
                 <TR key={a.id} data-testid={`assignment-row-${a.id}`}>
+                  <TD className="text-slate-400">{i + 1}</TD>
                   <TD className="font-bold text-slate-900">{a.team_name || "—"}</TD>
                   <TD>{a.participant_name ? <span>{a.participant_name}{a.bed_label && <span className="text-slate-400"> · {a.bed_label}</span>}</span> : <Badge tone="neutral">Whole team</Badge>}</TD>
                   <TD>{a.building_name || "—"}</TD>

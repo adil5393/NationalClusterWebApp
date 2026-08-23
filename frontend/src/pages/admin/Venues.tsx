@@ -61,10 +61,11 @@ export default function Venues() {
           <div className="p-6"><EmptyState title="No venues yet" hint="Add venues so schedule events can show a location." /></div>
         ) : (
           <Table>
-            <THead><TR className="hover:bg-transparent"><TH>Name</TH><TH>Type</TH><TH>Location</TH><TH className="text-right">Capacity</TH><TH className="text-right">Actions</TH></TR></THead>
+            <THead><TR className="hover:bg-transparent"><TH>#</TH><TH>Name</TH><TH>Type</TH><TH>Location</TH><TH className="text-right">Capacity</TH><TH className="text-right">Actions</TH></TR></THead>
             <tbody>
-              {venues.map((v) => (
+              {venues.map((v, i) => (
                 <TR key={v.id} data-testid={`venue-row-${v.id}`}>
+                  <TD className="text-slate-400">{i + 1}</TD>
                   <TD className="font-bold text-slate-900">{v.name}</TD>
                   <TD>{v.venue_type || "—"}</TD>
                   <TD className="text-slate-600">{v.location || "—"}</TD>

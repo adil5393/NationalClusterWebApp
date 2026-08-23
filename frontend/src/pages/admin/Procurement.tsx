@@ -104,14 +104,15 @@ export default function Procurement() {
           <Table>
             <THead>
               <TR className="hover:bg-transparent">
-                <TH>Item</TH><TH>Category</TH><TH>Status</TH>
+                <TH>#</TH><TH>Item</TH><TH>Category</TH><TH>Status</TH>
                 <TH className="text-right">Qty</TH><TH className="text-right">Target/Unit</TH>
                 <TH className="text-right">Max Budget</TH><TH>Owner</TH><TH className="text-right">Actions</TH>
               </TR>
             </THead>
             <tbody>
-              {items.map((p) => (
+              {items.map((p, i) => (
                 <TR key={p.id} data-testid={`procurement-row-${p.id}`}>
+                  <TD className="text-slate-400">{i + 1}</TD>
                   <TD className="font-bold text-slate-900">{p.title}{p.supplier && <div className="text-xs font-normal text-slate-500">{p.supplier}</div>}</TD>
                   <TD className="text-slate-600">{p.category}</TD>
                   <TD><Badge tone={procurementStatusTone(p.status)}>{p.status}</Badge></TD>
