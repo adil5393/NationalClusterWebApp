@@ -3,7 +3,7 @@ import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, UserSquare2, BedDouble, Building2, UtensilsCrossed, Bus,
   MapPin, CalendarDays, Megaphone, ShoppingCart, CheckSquare, BookOpen, FileText,
-  Contact as ContactIcon, Settings, Search, ExternalLink, LayoutGrid, HardHat, LogOut, UserCog,
+  Contact as ContactIcon, Settings, Search, ExternalLink, LayoutGrid, HardHat, LogOut, UserCog, Radio,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -25,6 +25,7 @@ const NAV = [
   { to: "/admin/transport", label: "Transport", icon: Bus, moduleKey: "transport" },
   { to: "/admin/venues", label: "Venues", icon: MapPin, moduleKey: "venues" },
   { to: "/admin/schedule", label: "Schedule", icon: CalendarDays, moduleKey: "schedule" },
+  { to: "/admin/matches", label: "Matches & Fixtures", icon: Radio, moduleKey: "matches" },
   { to: "/admin/announcements", label: "Announcements", icon: Megaphone, moduleKey: "announcements" },
   { to: "/admin/procurement", label: "Procurement", icon: ShoppingCart, moduleKey: "procurement" },
   { to: "/admin/tasks", label: "Tasks", icon: CheckSquare },

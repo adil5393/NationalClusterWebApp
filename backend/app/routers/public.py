@@ -31,6 +31,99 @@ def public_announcements(db: Session = Depends(get_db)):
     return [a for a in items if not a.expires_at or a.expires_at > now]
 
 
+def _public_team_name(db: Session, team_id):
+    if not team_id:
+        return None
+    t = db.get(models.Team, team_id)
+    return t.name if t else None
+
+
+def _public_match_dict(m: models.Match, db: Session) -> dict:
+    venue = db.get(models.Venue, m.venue_id) if m.venue_id else None
+    return {
+        "id": m.id,
+        "tournament_id": m.tournament_id,
+        "tournament_name": m.tournament.name if m.tournament else None,
+        "sport": m.tournament.sport if m.tournament else None,
+        "round_id": m.round_id,
+        "round_name": m.round.name if m.round else None,
+        "team_a_id": m.team_a_id,
+        "team_a_name": _public_team_name(db, m.team_a_id),
+        "team_b_id": m.team_b_id,
+        "team_b_name": _public_team_name(db, m.team_b_id),
+        "source_match_a_id": m.source_match_a_id,
+        "source_match_b_id": m.source_match_b_id,
+        "venue_name": venue.name if venue else None,
+        "scheduled_at": m.scheduled_at.isoformat() if m.scheduled_at else None,
+        "status": m.status,
+        "team_a_score": m.team_a_score,
+        "team_b_score": m.team_b_score,
+        "winner_team_id": m.winner_team_id,
+        "winner_team_name": _public_team_name(db, m.winner_team_id),
+        "started_at": m.started_at.isoformat() if m.started_at else None,
+        "ended_at": m.ended_at.isoformat() if m.ended_at else None,
+    }
+
+
+@router.get("/tournaments")
+def public_tournaments(db: Session = Depends(get_db)):
+    rows = db.query(models.Tournament).filter(models.Tournament.status != "draft").order_by(models.Tournament.name).all()
+    return [{"id": t.id, "name": t.name, "sport": t.sport, "status": t.status} for t in rows]
+
+
+@router.get("/tournaments/{tournament_id}/bracket")
+def public_bracket(tournament_id: int, db: Session = Depends(get_db)):
+    t = db.get(models.Tournament, tournament_id)
+    if not t or t.status == "draft":
+        raise HTTPException(404, "Tournament not found")
+    return {
+        "id": t.id,
+        "name": t.name,
+        "sport": t.sport,
+        "status": t.status,
+        "rounds": [
+            {
+                "id": r.id,
+                "name": r.name,
+                "sequence": r.sequence,
+                "matches": [_public_match_dict(m, db) for m in r.matches],
+            }
+            for r in t.rounds
+        ],
+    }
+
+
+@router.get("/matches/live")
+def public_live_matches(db: Session = Depends(get_db)):
+    rows = (
+        db.query(models.Match)
+        .filter(models.Match.status.in_(["ONGOING", "PAUSED"]))
+        .order_by(models.Match.started_at.asc().nullslast())
+        .all()
+    )
+    return [_public_match_dict(m, db) for m in rows]
+
+
+@router.get("/matches/{match_id}")
+def public_match_detail(match_id: int, db: Session = Depends(get_db)):
+    m = db.get(models.Match, match_id)
+    if not m:
+        raise HTTPException(404, "Match not found")
+    d = _public_match_dict(m, db)
+    d["events"] = [
+        {
+            "event_type": e.event_type,
+            "team_id": e.team_id,
+            "delta": e.delta,
+            "team_a_score": e.team_a_score,
+            "team_b_score": e.team_b_score,
+            "created_at": e.created_at.isoformat(),
+        }
+        for e in m.events[-30:]  # recent history only — this isn't a full audit export
+    ]
+    return d
+
+
 @router.get("/teams/{team_id}")
 def public_team_detail(team_id: int, db: Session = Depends(get_db)):
     """Shareable team portal: room, coach, transport and schedule in one place."""

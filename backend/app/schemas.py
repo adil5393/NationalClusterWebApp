@@ -58,10 +58,19 @@ class TeamUpdate(BaseModel):
     notes: Optional[str] = None
 
 
+class AccommodationLocation(BaseModel):
+    room: Optional[str] = None
+    building: Optional[str] = None
+    whole_team: bool = False
+    count: int = 0
+
+
 class TeamRead(ORMModel, TeamBase):
     id: int
     school_code: Optional[str] = None
     participant_count: Optional[int] = None
+    accommodation_status: Optional[str] = None  # "none" | "partial" | "full"
+    accommodation_locations: List[AccommodationLocation] = []
     created_at: datetime
     updated_at: datetime
 
@@ -336,6 +345,12 @@ class ParticipantUpdate(BaseModel):
 class ParticipantRead(ORMModel, ParticipantBase):
     id: int
     registration_no: Optional[str] = None
+    is_present: bool = False
+    checked_in_at: Optional[datetime] = None
+
+
+class AttendanceUpdate(BaseModel):
+    present: bool
 
 
 # --- Transport ---
@@ -430,6 +445,7 @@ ORGANIZER_MODULES = {
     "announcements": "Announcements",
     "procurement": "Procurement",
     "knowledge": "Knowledge Base",
+    "matches": "Matches & Fixtures",
 }
 PERMISSION_LEVELS = ["view", "edit"]  # a module key missing from `permissions` means no access
 
@@ -482,3 +498,97 @@ class OrganizerUserRead(ORMModel):
     is_admin: bool
     permissions: dict[str, str] = {}
     created_at: datetime
+
+
+# --- Tournaments / Rounds / Matches (fixture + live match tracking) ---
+# Read endpoints return hand-built dicts (like schedule.py/staff.py) rather than
+# ORM-mode schemas, since match listings need joined display fields (team names,
+# venue, round/tournament names) that don't live on the Match row itself.
+TOURNAMENT_STATUSES = ["draft", "active", "completed"]
+MATCH_STATUSES = ["SCHEDULED", "ONGOING", "PAUSED", "COMPLETED", "CANCELLED", "POSTPONED"]
+MATCH_EVENT_TYPES = ["SCORE", "START", "PAUSE", "RESUME", "COMPLETE", "CANCEL", "POSTPONE", "WINNER_SET", "RESCHEDULE"]
+
+
+class TournamentCreate(BaseModel):
+    name: str
+    sport: Optional[str] = None
+    age_group: Optional[str] = None
+    status: str = "draft"
+    notes: Optional[str] = None
+
+    @field_validator("status")
+    @classmethod
+    def valid_status(cls, v):
+        if v not in TOURNAMENT_STATUSES:
+            raise ValueError(f"status must be one of {TOURNAMENT_STATUSES}")
+        return v
+
+
+class TournamentUpdate(BaseModel):
+    name: Optional[str] = None
+    sport: Optional[str] = None
+    age_group: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
+    @field_validator("status")
+    @classmethod
+    def valid_status(cls, v):
+        if v is not None and v not in TOURNAMENT_STATUSES:
+            raise ValueError(f"status must be one of {TOURNAMENT_STATUSES}")
+        return v
+
+
+class RoundCreate(BaseModel):
+    name: str
+    sequence: int = 0
+
+
+class RoundUpdate(BaseModel):
+    name: Optional[str] = None
+    sequence: Optional[int] = None
+
+
+class MatchCreate(BaseModel):
+    team_a_id: Optional[int] = None
+    team_b_id: Optional[int] = None
+    source_match_a_id: Optional[int] = None
+    source_match_b_id: Optional[int] = None
+    venue_id: Optional[int] = None
+    scheduled_at: Optional[datetime] = None
+    notes: Optional[str] = None
+
+
+class MatchUpdate(BaseModel):
+    team_a_id: Optional[int] = None
+    team_b_id: Optional[int] = None
+    source_match_a_id: Optional[int] = None
+    source_match_b_id: Optional[int] = None
+    venue_id: Optional[int] = None
+    scheduled_at: Optional[datetime] = None
+    notes: Optional[str] = None
+
+
+class MatchScoreUpdate(BaseModel):
+    team: str  # "a" | "b"
+    delta: int
+    component: Optional[str] = "point"
+
+    @field_validator("team")
+    @classmethod
+    def valid_team(cls, v):
+        if v not in ("a", "b"):
+            raise ValueError("team must be 'a' or 'b'")
+        return v
+
+    @field_validator("delta")
+    @classmethod
+    def nonzero_delta(cls, v):
+        if v == 0:
+            raise ValueError("delta must not be 0")
+        return v
+
+
+class MatchCompleteRequest(BaseModel):
+    # Omit to auto-derive from the higher current score; required if the score is tied.
+    winner_team_id: Optional[int] = None

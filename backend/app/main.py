@@ -17,6 +17,8 @@ from .routers import (
     health,
     imports,
     knowledge,
+    live_ws,
+    matches,
     organizer_users,
     participants,
     procurement,
@@ -84,8 +86,9 @@ def root_health():
 
 
 # Open to the internet, no session required: health checks, the public read-only
-# site, and login itself (you can't log in to a route that requires being logged in).
-for module in (health, public, auth):
+# site, login itself (you can't log in to a route that requires being logged in),
+# and the live-match WebSocket feed (read-only fan-out — see ws.py/live_ws.py).
+for module in (health, public, auth, live_ws):
     app.include_router(module.router)
 
 # Everything else is the Organizer Portal's own data, gated per-module (see
@@ -109,6 +112,7 @@ for router_module, module_key in (
     (procurement, "procurement"),
     (announcements, "announcements"),
     (staff, "staff"),
+    (matches, "matches"),
 ):
     app.include_router(router_module.router, dependencies=[Depends(require_module(module_key))])
 

@@ -25,6 +25,32 @@ interface Team {
   member_count?: number;
   notes?: string;
   participant_count?: number;
+  accommodation_status?: "none" | "partial" | "full";
+  accommodation_locations?: { room?: string | null; building?: string | null; whole_team: boolean; count: number }[];
+}
+
+const ACCOMMODATION_LABEL: Record<string, string> = { none: "Not Set Up", partial: "Partial", full: "Set Up" };
+const ACCOMMODATION_TONE: Record<string, "neutral" | "amber" | "green"> = { none: "neutral", partial: "amber", full: "green" };
+
+function AccommodationCell({ t }: { t: Team }) {
+  const status = t.accommodation_status ?? "none";
+  const locations = t.accommodation_locations ?? [];
+  return (
+    <div>
+      <Badge tone={ACCOMMODATION_TONE[status]}>{ACCOMMODATION_LABEL[status]}</Badge>
+      {locations.length > 0 && (
+        <div className="mt-1 space-y-0.5 text-xs text-slate-500">
+          {locations.map((loc, i) => (
+            <div key={i} className="truncate" title={`${loc.room ?? "Unknown room"} · ${loc.building ?? "Unknown building"}`}>
+              {loc.room ?? "Unknown room"}
+              {loc.building && <span className="text-slate-400"> · {loc.building}</span>}
+              {!loc.whole_team && <span className="text-slate-400"> ({loc.count})</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 const empty: Partial<Team> = { name: "", school: "", region: "", country: "India", member_count: 0 };
@@ -117,6 +143,7 @@ export default function AdminTeams() {
                 <TH>Region</TH>
                 <TH>Country</TH>
                 <TH className="text-right">Members</TH>
+                <TH>Accommodation</TH>
                 <TH>Contact</TH>
                 <TH className="text-right">Actions</TH>
               </TR>
@@ -129,6 +156,7 @@ export default function AdminTeams() {
                   <TD>{t.region || "—"}</TD>
                   <TD><Badge tone={t.country === "India" ? "coral" : "blue"}>{t.country}</Badge></TD>
                   <TD className="text-right font-semibold">{t.member_count ?? 0}</TD>
+                  <TD><AccommodationCell t={t} /></TD>
                   <TD className="text-slate-600">{t.contact_name || "—"}</TD>
                   <TD>
                     <div className="flex justify-end gap-1">

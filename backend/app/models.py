@@ -74,6 +74,11 @@ class Participant(TimestampMixin, Base):
     age_group = Column(String(40))
     role = Column(String(80))
     notes = Column(Text)
+    # Attendance/check-in at the event — separate from registration itself.
+    # Matches are only scheduled to reflect players actually here, so this is
+    # what the Matches builder's "present" counts read from.
+    is_present = Column(Boolean, nullable=False, default=False)
+    checked_in_at = Column(DateTime(timezone=True))
 
     team = relationship("Team", back_populates="participants")
 
@@ -361,3 +366,101 @@ class OrganizerUser(TimestampMixin, Base):
     # {module_key: "view" | "edit"} — a key missing/absent means no access to that
     # module at all. See schemas.ORGANIZER_MODULES for the fixed list of keys.
     permissions = Column(JSON, nullable=False, default=dict)
+
+
+class Tournament(TimestampMixin, Base):
+    """One sport's knockout competition (e.g. "Kabaddi — Boys Under 17"). A
+    Team (school) can appear in several Tournaments; Participants aren't
+    modeled per-tournament yet — Match is between Teams, not individuals."""
+    __tablename__ = "tournaments"
+    id = Column(Integer, primary_key=True)
+    name = Column(String(200), nullable=False)
+    sport = Column(String(80))
+    # Free text, matching Participant.age_group (e.g. "Under 14") — not a fixed
+    # enum, since the age groups in use come from whatever the attendance list
+    # imported. Null means the tournament isn't scoped to one age group.
+    age_group = Column(String(40))
+    status = Column(String(20), nullable=False, default="draft")  # schemas.TOURNAMENT_STATUSES
+    notes = Column(Text)
+
+    rounds = relationship(
+        "Round", back_populates="tournament", cascade="all, delete-orphan", order_by="Round.sequence"
+    )
+
+
+class Round(TimestampMixin, Base):
+    """A stage within a Tournament (e.g. "Round 1", "Quarter Final"). Tournaments
+    don't all have the same rounds, so this is freeform, ordered by `sequence`."""
+    __tablename__ = "rounds"
+    id = Column(Integer, primary_key=True)
+    tournament_id = Column(Integer, ForeignKey("tournaments.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(120), nullable=False)
+    sequence = Column(Integer, nullable=False, default=0)  # display/bracket order, earliest first
+
+    tournament = relationship("Tournament", back_populates="rounds")
+    matches = relationship(
+        "Match", back_populates="round", cascade="all, delete-orphan",
+        order_by="Match.id", foreign_keys="Match.round_id",
+    )
+
+
+class Match(TimestampMixin, Base):
+    """A single fixture between two Teams. Either team slot can start out empty
+    (source_match_a/b_id set instead) when the bracket is drawn ahead of earlier
+    rounds finishing — see resolve_next_match() in routers/matches.py, which
+    fills that slot in once the source match completes."""
+    __tablename__ = "matches"
+    id = Column(Integer, primary_key=True)
+    tournament_id = Column(Integer, ForeignKey("tournaments.id", ondelete="CASCADE"), nullable=False)
+    round_id = Column(Integer, ForeignKey("rounds.id", ondelete="CASCADE"), nullable=False)
+
+    team_a_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"))
+    team_b_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"))
+    # If a slot isn't filled by a known team yet, it's fed by another match's winner.
+    source_match_a_id = Column(Integer, ForeignKey("matches.id", ondelete="SET NULL"))
+    source_match_b_id = Column(Integer, ForeignKey("matches.id", ondelete="SET NULL"))
+
+    venue_id = Column(Integer, ForeignKey("venues.id", ondelete="SET NULL"))
+    scheduled_at = Column(DateTime(timezone=True))
+
+    status = Column(String(20), nullable=False, default="SCHEDULED")  # schemas.MATCH_STATUSES
+    team_a_score = Column(Integer, nullable=False, default=0)
+    team_b_score = Column(Integer, nullable=False, default=0)
+    winner_team_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"))
+
+    started_at = Column(DateTime(timezone=True))
+    ended_at = Column(DateTime(timezone=True))
+    notes = Column(Text)
+
+    tournament = relationship("Tournament")
+    round = relationship("Round", back_populates="matches", foreign_keys=[round_id])
+    team_a = relationship("Team", foreign_keys=[team_a_id])
+    team_b = relationship("Team", foreign_keys=[team_b_id])
+    winner_team = relationship("Team", foreign_keys=[winner_team_id])
+    venue = relationship("Venue")
+    source_match_a = relationship("Match", remote_side=[id], foreign_keys=[source_match_a_id])
+    source_match_b = relationship("Match", remote_side=[id], foreign_keys=[source_match_b_id])
+    events = relationship(
+        "MatchEvent", back_populates="match", cascade="all, delete-orphan", order_by="MatchEvent.id"
+    )
+
+
+class MatchEvent(TimestampMixin, Base):
+    """Append-only score/status history for a Match — the source of truth behind
+    the live score. `component` is a free-text hook (default "point") so a future
+    sport with sets/innings/quarters can tag events without a schema change; the
+    running totals still live on Match.team_a/b_score for fast reads."""
+    __tablename__ = "match_events"
+    id = Column(Integer, primary_key=True)
+    match_id = Column(Integer, ForeignKey("matches.id", ondelete="CASCADE"), nullable=False)
+    event_type = Column(String(20), nullable=False)  # schemas.MATCH_EVENT_TYPES
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"))  # null for match-level events
+    component = Column(String(40))  # e.g. "point", "goal", "set" — null for non-score events
+    delta = Column(Integer)  # signed change applied, e.g. +1, +2, -1 (correction)
+    team_a_score = Column(Integer, nullable=False)  # running total snapshot, for timeline/replay
+    team_b_score = Column(Integer, nullable=False)
+    created_by_id = Column(Integer, ForeignKey("organizer_users.id", ondelete="SET NULL"))
+
+    match = relationship("Match", back_populates="events")
+    team = relationship("Team")
+    created_by = relationship("OrganizerUser")

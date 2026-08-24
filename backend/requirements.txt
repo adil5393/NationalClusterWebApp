@@ -30,3 +30,4 @@ alembic>=1.13.0
 psycopg2-binary>=2.9.9
 openpyxl==3.1.5
 itsdangerous>=2.1.2
+websockets>=12.0

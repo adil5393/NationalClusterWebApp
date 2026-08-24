@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -13,6 +15,18 @@ def list_participants(team_id: int | None = Query(None), db: Session = Depends(g
     if team_id:
         q = q.filter(models.Participant.team_id == team_id)
     return q.order_by(models.Participant.full_name).all()
+
+
+@router.post("/{participant_id}/attendance", response_model=schemas.ParticipantRead)
+def set_attendance(participant_id: int, payload: schemas.AttendanceUpdate, db: Session = Depends(get_db)):
+    p = db.get(models.Participant, participant_id)
+    if not p:
+        raise HTTPException(404, "Participant not found")
+    p.is_present = payload.present
+    p.checked_in_at = datetime.now(timezone.utc) if payload.present else None
+    db.commit()
+    db.refresh(p)
+    return p
 
 
 @router.post("", response_model=schemas.ParticipantRead, status_code=201)
