@@ -11,7 +11,9 @@ class Settings:
 
     database_url: str = os.environ["DATABASE_URL"]
     cors_origins: str = os.environ.get("CORS_ORIGINS", "*")
-    admin_password: str = os.environ["ADMIN_PASSWORD"]
+    # Legacy shared-password bootstrap value — only read by app.seed_admin to create
+    # the first individual account; no longer required for the app to run.
+    admin_password: str = os.environ.get("ADMIN_PASSWORD", "")
     session_secret: str = os.environ["SESSION_SECRET"]
     session_https_only: bool = os.environ.get("SESSION_HTTPS_ONLY", "false").lower() == "true"
 

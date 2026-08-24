@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import settings
-from .security import require_auth
+from .security import require_admin, require_auth, require_module
 from .routers import (
     accommodation,
     announcements,
@@ -17,6 +17,7 @@ from .routers import (
     health,
     imports,
     knowledge,
+    organizer_users,
     participants,
     procurement,
     public,
@@ -56,7 +57,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Shared-password session cookie for the Organizer Portal (see security.py /
+# Per-account session cookie for the Organizer Portal (see security.py /
 # routers/auth.py). https_only stays env-driven: the current prod deployment is
 # plain HTTP on a bare IP, and a secure cookie silently never gets set over HTTP.
 app.add_middleware(
@@ -87,25 +88,33 @@ def root_health():
 for module in (health, public, auth):
     app.include_router(module.router)
 
-# Everything else is the Organizer Portal's own data — gated behind the shared
-# password session (see security.py), applied centrally here rather than editing
-# every router file.
-for module in (
-    dashboard,
-    teams,
-    participants,
-    structure,
-    accommodation,
-    transport,
-    venues,
-    schedule,
-    knowledge,
-    attachments,
-    procurement,
-    announcements,
-    search,
-    imports,
-    exports,
-    staff,
-):
+# Everything else is the Organizer Portal's own data, gated per-module (see
+# security.py / schemas.ORGANIZER_MODULES) — applied centrally here rather than
+# editing every router file. GET needs "view" on the module, everything else
+# needs "edit"; admins bypass this entirely.
+for module in (dashboard, search):
     app.include_router(module.router, dependencies=[Depends(require_auth)])
+
+for router_module, module_key in (
+    (teams, "teams"),
+    (participants, "teams"),
+    (imports, "teams"),
+    (structure, "buildings"),
+    (accommodation, "accommodation"),
+    (transport, "transport"),
+    (venues, "venues"),
+    (schedule, "schedule"),
+    (knowledge, "knowledge"),
+    (attachments, "knowledge"),
+    (procurement, "procurement"),
+    (announcements, "announcements"),
+    (staff, "staff"),
+):
+    app.include_router(router_module.router, dependencies=[Depends(require_module(module_key))])
+
+# exports.py mixes entities across modules in one router (participants.csv vs
+# rooms.csv) — each endpoint declares its own module dependency instead.
+app.include_router(exports.router, dependencies=[Depends(require_auth)])
+
+# Managing who else can log in, and with what access, is admin-only.
+app.include_router(organizer_users.router, dependencies=[Depends(require_admin)])

@@ -9,6 +9,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/meta";
+import { useModuleAccess } from "@/lib/permissions";
 
 interface Team { id: number; name: string }
 interface Venue { id: number; name: string }
@@ -20,6 +21,7 @@ interface Event {
 const empty = { title: "", team_id: "", venue_id: "", start_time: "", end_time: "", description: "" };
 
 export default function Schedule() {
+  const { canEdit } = useModuleAccess("schedule");
   const [events, setEvents] = useState<Event[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
@@ -71,7 +73,7 @@ export default function Schedule() {
           <h1 className="font-heading text-2xl font-black tracking-tight text-slate-950">Schedule</h1>
           <p className="mt-1 text-sm text-slate-500">Fixtures & ceremonies. Team-linked events appear on that team's portal.</p>
         </div>
-        <Button onClick={() => { setForm(empty); setOpen(true); }} data-testid="add-event-btn"><Plus className="h-4 w-4" /> Add Event</Button>
+        {canEdit && <Button onClick={() => { setForm(empty); setOpen(true); }} data-testid="add-event-btn"><Plus className="h-4 w-4" /> Add Event</Button>}
       </div>
 
       <div className="mt-6 rounded-lg border border-slate-200 bg-white">
@@ -95,7 +97,7 @@ export default function Schedule() {
                   <TD className="text-slate-600">{e.venue_name || "—"}</TD>
                   <TD>{e.start_time ? formatDate(e.start_time) : "—"}</TD>
                   <TD>{e.end_time ? formatDate(e.end_time) : "—"}</TD>
-                  <TD><div className="flex justify-end"><Button variant="ghost" size="icon" onClick={() => remove(e.id)} data-testid={`delete-event-${e.id}`}><Trash2 className="h-4 w-4 text-red-500" /></Button></div></TD>
+                  <TD><div className="flex justify-end">{canEdit && <Button variant="ghost" size="icon" onClick={() => remove(e.id)} data-testid={`delete-event-${e.id}`}><Trash2 className="h-4 w-4 text-red-500" /></Button>}</div></TD>
                 </TR>
               ))}
             </tbody>

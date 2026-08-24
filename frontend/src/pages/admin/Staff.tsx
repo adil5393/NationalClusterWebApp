@@ -9,6 +9,7 @@ import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/meta";
 import { cn } from "@/lib/utils";
+import { useModuleAccess } from "@/lib/permissions";
 
 interface StaffMember { id: number; full_name: string; phone?: string; email?: string; category?: string; notes?: string }
 interface RoomOpt { id: number; name: string; floor: string; building: string; label: string }
@@ -20,6 +21,7 @@ interface Duty {
 }
 
 export default function Staff() {
+  const { canEdit } = useModuleAccess("staff");
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [rooms, setRooms] = useState<RoomOpt[]>([]);
   const [duties, setDuties] = useState<Duty[]>([]);
@@ -167,24 +169,28 @@ export default function Staff() {
         {/* Staff members */}
         <div className="rounded-lg border border-slate-200 bg-white p-5">
           <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-slate-950"><HardHat className="h-4 w-4" /> Staff Members</h2>
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <Input placeholder="Full name" value={member.full_name} onChange={(e) => setMember((m) => ({ ...m, full_name: e.target.value }))} data-testid="staff-name-input" />
-            <Select value={member.category} onChange={(e) => setMember((m) => ({ ...m, category: e.target.value }))} data-testid="staff-category-select">
-              <option value="">Category…</option>
-              {staffCategories.map((c) => <option key={c} value={c}>{c}</option>)}
-            </Select>
-            <Input placeholder="Phone" value={member.phone} onChange={(e) => setMember((m) => ({ ...m, phone: e.target.value }))} />
-            <Input placeholder="Email" value={member.email} onChange={(e) => setMember((m) => ({ ...m, email: e.target.value }))} />
-            <Textarea placeholder="Notes" className="col-span-2" rows={2} value={member.notes} onChange={(e) => setMember((m) => ({ ...m, notes: e.target.value }))} data-testid="staff-notes-input" />
-          </div>
-          <div className="mt-2 flex gap-2">
-            <Button onClick={saveMember} className="flex-1" data-testid="save-staff-btn">
-              {editingId ? <><Pencil className="h-4 w-4" /> Update Staff Member</> : <><Plus className="h-4 w-4" /> Add Staff Member</>}
-            </Button>
-            {editingId && (
-              <Button variant="outline" onClick={cancelEdit} data-testid="cancel-edit-staff-btn"><X className="h-4 w-4" /></Button>
-            )}
-          </div>
+          {canEdit && (
+            <>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <Input placeholder="Full name" value={member.full_name} onChange={(e) => setMember((m) => ({ ...m, full_name: e.target.value }))} data-testid="staff-name-input" />
+                <Select value={member.category} onChange={(e) => setMember((m) => ({ ...m, category: e.target.value }))} data-testid="staff-category-select">
+                  <option value="">Category…</option>
+                  {staffCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+                </Select>
+                <Input placeholder="Phone" value={member.phone} onChange={(e) => setMember((m) => ({ ...m, phone: e.target.value }))} />
+                <Input placeholder="Email" value={member.email} onChange={(e) => setMember((m) => ({ ...m, email: e.target.value }))} />
+                <Textarea placeholder="Notes" className="col-span-2" rows={2} value={member.notes} onChange={(e) => setMember((m) => ({ ...m, notes: e.target.value }))} data-testid="staff-notes-input" />
+              </div>
+              <div className="mt-2 flex gap-2">
+                <Button onClick={saveMember} className="flex-1" data-testid="save-staff-btn">
+                  {editingId ? <><Pencil className="h-4 w-4" /> Update Staff Member</> : <><Plus className="h-4 w-4" /> Add Staff Member</>}
+                </Button>
+                {editingId && (
+                  <Button variant="outline" onClick={cancelEdit} data-testid="cancel-edit-staff-btn"><X className="h-4 w-4" /></Button>
+                )}
+              </div>
+            </>
+          )}
           {staff.length > 0 && (
             <div className="relative mt-4">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -216,10 +222,12 @@ export default function Staff() {
                   {s.category && <span className="text-slate-500"> · {s.category}</span>}
                   {s.phone && <span className="text-slate-500"> · {s.phone}</span>}
                 </span>
-                <span className="flex items-center gap-1">
-                  <button onClick={() => startEdit(s)} className="text-slate-300 hover:text-coral-600" data-testid={`edit-staff-${s.id}`}><Pencil className="h-4 w-4" /></button>
-                  <button onClick={() => delMember(s.id)} className="text-slate-300 hover:text-red-500" data-testid={`delete-staff-${s.id}`}><Trash2 className="h-4 w-4" /></button>
-                </span>
+                {canEdit && (
+                  <span className="flex items-center gap-1">
+                    <button onClick={() => startEdit(s)} className="text-slate-300 hover:text-coral-600" data-testid={`edit-staff-${s.id}`}><Pencil className="h-4 w-4" /></button>
+                    <button onClick={() => delMember(s.id)} className="text-slate-300 hover:text-red-500" data-testid={`delete-staff-${s.id}`}><Trash2 className="h-4 w-4" /></button>
+                  </span>
+                )}
               </div>
             ))}
           </div>
@@ -249,31 +257,33 @@ export default function Staff() {
         </div>
 
         {/* Assign duty */}
-        <div className="rounded-lg border border-slate-200 bg-white p-5">
-          <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-slate-950"><ClipboardList className="h-4 w-4" /> Assign a Duty</h2>
-          <div className="mt-4 space-y-2">
-            <Select value={assign.staff_id} onChange={(e) => setAssign((a) => ({ ...a, staff_id: e.target.value }))} data-testid="duty-staff-select">
-              <option value="">Staff member…</option>
-              {staff.map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
-            </Select>
-            <Select value={assign.room_id} onChange={(e) => setAssign((a) => ({ ...a, room_id: e.target.value }))} data-testid="duty-room-select">
-              <option value="">Room…</option>
-              {rooms.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
-            </Select>
-            <Input placeholder="Duty type (e.g. Cleaning)" list="duty-type-suggestions" value={assign.duty_type} onChange={(e) => setAssign((a) => ({ ...a, duty_type: e.target.value }))} data-testid="duty-type-input" />
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label>Shift start</Label>
-                <Input type="datetime-local" value={assign.start_time} onChange={(e) => setAssign((a) => ({ ...a, start_time: e.target.value }))} />
+        {canEdit && (
+          <div className="rounded-lg border border-slate-200 bg-white p-5">
+            <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-slate-950"><ClipboardList className="h-4 w-4" /> Assign a Duty</h2>
+            <div className="mt-4 space-y-2">
+              <Select value={assign.staff_id} onChange={(e) => setAssign((a) => ({ ...a, staff_id: e.target.value }))} data-testid="duty-staff-select">
+                <option value="">Staff member…</option>
+                {staff.map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+              </Select>
+              <Select value={assign.room_id} onChange={(e) => setAssign((a) => ({ ...a, room_id: e.target.value }))} data-testid="duty-room-select">
+                <option value="">Room…</option>
+                {rooms.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+              </Select>
+              <Input placeholder="Duty type (e.g. Cleaning)" list="duty-type-suggestions" value={assign.duty_type} onChange={(e) => setAssign((a) => ({ ...a, duty_type: e.target.value }))} data-testid="duty-type-input" />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label>Shift start</Label>
+                  <Input type="datetime-local" value={assign.start_time} onChange={(e) => setAssign((a) => ({ ...a, start_time: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>Shift end</Label>
+                  <Input type="datetime-local" value={assign.end_time} onChange={(e) => setAssign((a) => ({ ...a, end_time: e.target.value }))} />
+                </div>
               </div>
-              <div>
-                <Label>Shift end</Label>
-                <Input type="datetime-local" value={assign.end_time} onChange={(e) => setAssign((a) => ({ ...a, end_time: e.target.value }))} />
-              </div>
+              <Button onClick={addDuty} className="w-full" data-testid="add-duty-btn"><Plus className="h-4 w-4" /> Assign Duty</Button>
             </div>
-            <Button onClick={addDuty} className="w-full" data-testid="add-duty-btn"><Plus className="h-4 w-4" /> Assign Duty</Button>
           </div>
-        </div>
+        )}
       </div>
 
       <datalist id="duty-type-suggestions">
@@ -304,7 +314,7 @@ export default function Staff() {
                         <TD><Badge tone="coral">{d.duty_type}</Badge></TD>
                         <TD>{d.staff_name || "—"}</TD>
                         <TD>{d.start_time ? formatDate(d.start_time) : "—"}{d.end_time ? ` → ${formatDate(d.end_time)}` : ""}</TD>
-                        <TD><div className="flex justify-end"><Button variant="ghost" size="icon" onClick={() => delDuty(d.id)} data-testid={`delete-duty-${d.id}`}><Trash2 className="h-4 w-4 text-red-500" /></Button></div></TD>
+                        <TD><div className="flex justify-end">{canEdit && <Button variant="ghost" size="icon" onClick={() => delDuty(d.id)} data-testid={`delete-duty-${d.id}`}><Trash2 className="h-4 w-4 text-red-500" /></Button>}</div></TD>
                       </TR>
                     ))}
                   </tbody>

@@ -7,6 +7,7 @@ import { Input, Label, Textarea } from "@/components/ui/input";
 import { Table, THead, TH, TR, TD } from "@/components/ui/table";
 import { Dialog } from "@/components/ui/dialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
+import { useModuleAccess } from "@/lib/permissions";
 
 interface Venue {
   id: number; name: string; venue_type?: string; capacity?: number; location?: string; description?: string;
@@ -14,6 +15,7 @@ interface Venue {
 const empty: Partial<Venue> = { name: "", venue_type: "", location: "" };
 
 export default function Venues() {
+  const { canEdit } = useModuleAccess("venues");
   const [venues, setVenues] = useState<Venue[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -53,7 +55,7 @@ export default function Venues() {
           <h1 className="font-heading text-2xl font-black tracking-tight text-slate-950">Venues</h1>
           <p className="mt-1 text-sm text-slate-500">{venues.length} venues · used by schedule events</p>
         </div>
-        <Button onClick={() => { setForm(empty); setOpen(true); }} data-testid="add-venue-btn"><Plus className="h-4 w-4" /> Add Venue</Button>
+        {canEdit && <Button onClick={() => { setForm(empty); setOpen(true); }} data-testid="add-venue-btn"><Plus className="h-4 w-4" /> Add Venue</Button>}
       </div>
 
       <div className="mt-6 rounded-lg border border-slate-200 bg-white">
@@ -71,8 +73,8 @@ export default function Venues() {
                   <TD className="text-slate-600">{v.location || "—"}</TD>
                   <TD className="text-right">{v.capacity ?? "—"}</TD>
                   <TD><div className="flex justify-end gap-1">
-                    <Button variant="ghost" size="icon" onClick={() => { setForm(v); setOpen(true); }} data-testid={`edit-venue-${v.id}`}><Pencil className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" onClick={() => remove(v.id)} data-testid={`delete-venue-${v.id}`}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                    {canEdit && <Button variant="ghost" size="icon" onClick={() => { setForm(v); setOpen(true); }} data-testid={`edit-venue-${v.id}`}><Pencil className="h-4 w-4" /></Button>}
+                    {canEdit && <Button variant="ghost" size="icon" onClick={() => remove(v.id)} data-testid={`delete-venue-${v.id}`}><Trash2 className="h-4 w-4 text-red-500" /></Button>}
                   </div></TD>
                 </TR>
               ))}

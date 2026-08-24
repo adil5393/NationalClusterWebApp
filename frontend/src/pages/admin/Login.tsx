@@ -7,19 +7,20 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 
 export default function Login() {
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!password) return;
+    if (!username || !password) return;
     setLoading(true);
     try {
-      await api.post("/auth/login", { password });
+      await api.post("/auth/login", { username, password });
       navigate("/admin");
     } catch (e: any) {
-      toast.error(e?.response?.data?.detail ?? "Incorrect password");
+      toast.error(e?.response?.data?.detail ?? "Incorrect username or password");
     } finally {
       setLoading(false);
     }
@@ -41,13 +42,21 @@ export default function Login() {
             <Lock className="h-4 w-4" />
             <h1 className="font-heading text-lg font-bold">Organizer Portal</h1>
           </div>
-          <p className="mt-1 text-sm text-slate-500">Enter the organizer password to continue.</p>
+          <p className="mt-1 text-sm text-slate-500">Log in with your organizer account.</p>
 
           <div className="mt-5">
+            <Label>Username</Label>
+            <Input
+              autoFocus
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              data-testid="login-username-input"
+            />
+          </div>
+          <div className="mt-4">
             <Label>Password</Label>
             <Input
               type="password"
-              autoFocus
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               data-testid="login-password-input"

@@ -413,3 +413,72 @@ class DutyAssignmentUpdate(BaseModel):
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     notes: Optional[str] = None
+
+
+# --- Organizer accounts (individual Organizer Portal logins) ---
+# Fixed catalog of gate-able admin modules -> (label, backing router(s)). Kept in
+# code (like STAFF_CATEGORIES etc. above) so the frontend can build the
+# permission-matrix editor from the same source of truth as the backend gate.
+ORGANIZER_MODULES = {
+    "teams": "Teams & Participants",
+    "accommodation": "Accommodation",
+    "buildings": "Buildings & Rooms",
+    "staff": "Staff & Duties",
+    "transport": "Transport",
+    "venues": "Venues",
+    "schedule": "Schedule",
+    "announcements": "Announcements",
+    "procurement": "Procurement",
+    "knowledge": "Knowledge Base",
+}
+PERMISSION_LEVELS = ["view", "edit"]  # a module key missing from `permissions` means no access
+
+
+class OrganizerUserCreate(BaseModel):
+    username: str
+    full_name: Optional[str] = None
+    password: str
+    is_active: bool = True
+    is_admin: bool = False
+    permissions: dict[str, str] = {}
+
+    @field_validator("permissions")
+    @classmethod
+    def valid_permissions(cls, v: dict[str, str]) -> dict[str, str]:
+        for module, level in v.items():
+            if module not in ORGANIZER_MODULES:
+                raise ValueError(f"Unknown module '{module}'")
+            if level not in PERMISSION_LEVELS:
+                raise ValueError(f"Invalid permission level '{level}' for '{module}'")
+        return v
+
+
+class OrganizerUserUpdate(BaseModel):
+    username: Optional[str] = None
+    full_name: Optional[str] = None
+    password: Optional[str] = None  # set to change/reset the password; omit to leave it
+    is_active: Optional[bool] = None
+    is_admin: Optional[bool] = None
+    permissions: Optional[dict[str, str]] = None
+
+    @field_validator("permissions")
+    @classmethod
+    def valid_permissions(cls, v):
+        if v is None:
+            return v
+        for module, level in v.items():
+            if module not in ORGANIZER_MODULES:
+                raise ValueError(f"Unknown module '{module}'")
+            if level not in PERMISSION_LEVELS:
+                raise ValueError(f"Invalid permission level '{level}' for '{module}'")
+        return v
+
+
+class OrganizerUserRead(ORMModel):
+    id: int
+    username: str
+    full_name: Optional[str] = None
+    is_active: bool
+    is_admin: bool
+    permissions: dict[str, str] = {}
+    created_at: datetime

@@ -7,12 +7,14 @@ import { Input, Label } from "@/components/ui/input";
 import { Dialog } from "@/components/ui/dialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
+import { useModuleAccess } from "@/lib/permissions";
 
 interface Room { id: number; name: string; capacity?: number; room_type?: string }
 interface Floor { id: number; name: string; level?: number; rooms: Room[] }
 interface Building { id: number; name: string; code?: string; floors: Floor[] }
 
 export default function BuildingsRooms() {
+  const { canEdit } = useModuleAccess("buildings");
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
@@ -61,9 +63,11 @@ export default function BuildingsRooms() {
           <h1 className="font-heading text-2xl font-black tracking-tight text-slate-950">Buildings &amp; Rooms</h1>
           <p className="mt-1 text-sm text-slate-500">Building → Floor → Room hierarchy</p>
         </div>
-        <Button onClick={() => openDialog("building")} data-testid="add-building-btn">
-          <Plus className="h-4 w-4" /> Add Building
-        </Button>
+        {canEdit && (
+          <Button onClick={() => openDialog("building")} data-testid="add-building-btn">
+            <Plus className="h-4 w-4" /> Add Building
+          </Button>
+        )}
       </div>
 
       {loading ? (
@@ -87,10 +91,12 @@ export default function BuildingsRooms() {
                     <p className="font-heading font-bold text-slate-950">{b.name} {b.code && <span className="text-slate-400">· {b.code}</span>}</p>
                     <p className="text-xs text-slate-500">{b.floors.length} floors · {totalRooms} rooms · capacity {totalCap}</p>
                   </div>
-                  <Button variant="outline" size="sm" onClick={() => openDialog("floor", b.id)} data-testid={`add-floor-${b.id}`}>
-                    <Plus className="h-3.5 w-3.5" /> Floor
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => del("building", b.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                  {canEdit && (
+                    <Button variant="outline" size="sm" onClick={() => openDialog("floor", b.id)} data-testid={`add-floor-${b.id}`}>
+                      <Plus className="h-3.5 w-3.5" /> Floor
+                    </Button>
+                  )}
+                  {canEdit && <Button variant="ghost" size="icon" onClick={() => del("building", b.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>}
                 </div>
 
                 {isOpen && (
@@ -101,12 +107,14 @@ export default function BuildingsRooms() {
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-bold text-slate-800">{f.name}</span>
                           <span className="text-xs text-slate-400">Level {f.level}</span>
-                          <div className="ml-auto flex gap-1">
-                            <Button variant="outline" size="sm" onClick={() => openDialog("room", f.id)} data-testid={`add-room-${f.id}`}>
-                              <Plus className="h-3.5 w-3.5" /> Room
-                            </Button>
-                            <Button variant="ghost" size="icon" onClick={() => del("floor", f.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
-                          </div>
+                          {canEdit && (
+                            <div className="ml-auto flex gap-1">
+                              <Button variant="outline" size="sm" onClick={() => openDialog("room", f.id)} data-testid={`add-room-${f.id}`}>
+                                <Plus className="h-3.5 w-3.5" /> Room
+                              </Button>
+                              <Button variant="ghost" size="icon" onClick={() => del("floor", f.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                            </div>
+                          )}
                         </div>
                         {f.rooms.length > 0 && (
                           <div className="mt-3 flex flex-wrap gap-2">
@@ -114,7 +122,7 @@ export default function BuildingsRooms() {
                               <span key={r.id} className="group inline-flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
                                 {r.name}
                                 <Badge tone="neutral">{r.capacity}</Badge>
-                                <button onClick={() => del("room", r.id)} className="text-slate-300 hover:text-red-500"><Trash2 className="h-3 w-3" /></button>
+                                {canEdit && <button onClick={() => del("room", r.id)} className="text-slate-300 hover:text-red-500"><Trash2 className="h-3 w-3" /></button>}
                               </span>
                             ))}
                           </div>

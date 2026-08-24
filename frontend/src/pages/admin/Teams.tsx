@@ -11,6 +11,7 @@ import { ImportDialog } from "@/components/admin/ImportDialog";
 import { AttendanceImportDialog } from "@/components/admin/AttendanceImportDialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
+import { useModuleAccess } from "@/lib/permissions";
 
 interface Team {
   id: number;
@@ -29,6 +30,7 @@ interface Team {
 const empty: Partial<Team> = { name: "", school: "", region: "", country: "India", member_count: 0 };
 
 export default function AdminTeams() {
+  const { canEdit } = useModuleAccess("teams");
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -85,18 +87,20 @@ export default function AdminTeams() {
           <h1 className="font-heading text-2xl font-black tracking-tight text-slate-950">Teams</h1>
           <p className="mt-1 text-sm text-slate-500">{teams.length} teams registered</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setAttendanceImportOpen(true)} data-testid="import-attendance-list-btn"><Upload className="h-4 w-4" /> Import Attendance List</Button>
-          <Button variant="outline" onClick={() => setImportOpen(true)} data-testid="import-teams-btn"><Upload className="h-4 w-4" /> Import</Button>
-          {emptyTeamCount > 0 && (
-            <Button variant="outline" onClick={removeEmptyTeams} data-testid="delete-empty-teams-btn">
-              <Trash2 className="h-4 w-4 text-red-500" /> Delete {emptyTeamCount} Team{emptyTeamCount === 1 ? "" : "s"} with 0 Players
+        {canEdit && (
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setAttendanceImportOpen(true)} data-testid="import-attendance-list-btn"><Upload className="h-4 w-4" /> Import Attendance List</Button>
+            <Button variant="outline" onClick={() => setImportOpen(true)} data-testid="import-teams-btn"><Upload className="h-4 w-4" /> Import</Button>
+            {emptyTeamCount > 0 && (
+              <Button variant="outline" onClick={removeEmptyTeams} data-testid="delete-empty-teams-btn">
+                <Trash2 className="h-4 w-4 text-red-500" /> Delete {emptyTeamCount} Team{emptyTeamCount === 1 ? "" : "s"} with 0 Players
+              </Button>
+            )}
+            <Button onClick={() => { setForm(empty); setOpen(true); }} data-testid="add-team-btn">
+              <Plus className="h-4 w-4" /> Add Team
             </Button>
-          )}
-          <Button onClick={() => { setForm(empty); setOpen(true); }} data-testid="add-team-btn">
-            <Plus className="h-4 w-4" /> Add Team
-          </Button>
-        </div>
+          </div>
+        )}
       </div>
 
       <div className="mt-6 rounded-lg border border-slate-200 bg-white">
@@ -131,12 +135,16 @@ export default function AdminTeams() {
                       <Button variant="ghost" size="icon" onClick={() => setQrTeam({ id: t.id, name: t.name })} data-testid={`qr-team-${t.id}`}>
                         <QrCode className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => { setForm(t); setOpen(true); }} data-testid={`edit-team-${t.id}`}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => remove(t.id)} data-testid={`delete-team-${t.id}`}>
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
+                      {canEdit && (
+                        <Button variant="ghost" size="icon" onClick={() => { setForm(t); setOpen(true); }} data-testid={`edit-team-${t.id}`}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {canEdit && (
+                        <Button variant="ghost" size="icon" onClick={() => remove(t.id)} data-testid={`delete-team-${t.id}`}>
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      )}
                     </div>
                   </TD>
                 </TR>

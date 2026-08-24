@@ -9,6 +9,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { procurementStatusTone, formatMoney } from "@/lib/meta";
+import { useModuleAccess } from "@/lib/permissions";
 
 interface PItem {
   id: number;

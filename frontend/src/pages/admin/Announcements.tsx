@@ -9,6 +9,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { priorityTone, formatDate } from "@/lib/meta";
+import { useModuleAccess } from "@/lib/permissions";
 
 interface Ann {
   id: number;
@@ -23,6 +24,7 @@ interface Ann {
 const emptyForm = { title: "", message: "", priority: "normal", audience: "everyone", is_published: "true" };
 
 export default function AdminAnnouncements() {
+  const { canEdit } = useModuleAccess("announcements");
   const [items, setItems] = useState<Ann[]>([]);
   const [meta, setMeta] = useState<{ priorities: string[]; audiences: string[] }>({ priorities: [], audiences: [] });
   const [loading, setLoading] = useState(true);
@@ -77,7 +79,7 @@ export default function AdminAnnouncements() {
           <h1 className="font-heading text-2xl font-black tracking-tight text-slate-950">Announcements</h1>
           <p className="mt-1 text-sm text-slate-500">{items.length} announcements</p>
         </div>
-        <Button onClick={openNew} data-testid="add-announcement-btn"><Plus className="h-4 w-4" /> New Announcement</Button>
+        {canEdit && <Button onClick={openNew} data-testid="add-announcement-btn"><Plus className="h-4 w-4" /> New Announcement</Button>}
       </div>
 
       <div className="mt-6 rounded-lg border border-slate-200 bg-white">
@@ -103,8 +105,8 @@ export default function AdminAnnouncements() {
                   <TD className="text-slate-600">{formatDate(a.published_at)}</TD>
                   <TD>
                     <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => openEdit(a)} data-testid={`edit-announcement-${a.id}`}><Pencil className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" onClick={() => remove(a.id)} data-testid={`delete-announcement-${a.id}`}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                      {canEdit && <Button variant="ghost" size="icon" onClick={() => openEdit(a)} data-testid={`edit-announcement-${a.id}`}><Pencil className="h-4 w-4" /></Button>}
+                      {canEdit && <Button variant="ghost" size="icon" onClick={() => remove(a.id)} data-testid={`delete-announcement-${a.id}`}><Trash2 className="h-4 w-4 text-red-500" /></Button>}
                     </div>
                   </TD>
                 </TR>

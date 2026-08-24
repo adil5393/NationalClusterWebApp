@@ -3,31 +3,36 @@ import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, UserSquare2, BedDouble, Building2, UtensilsCrossed, Bus,
   MapPin, CalendarDays, Megaphone, ShoppingCart, CheckSquare, BookOpen, FileText,
-  Contact as ContactIcon, Settings, Search, ExternalLink, LayoutGrid, HardHat, LogOut,
+  Contact as ContactIcon, Settings, Search, ExternalLink, LayoutGrid, HardHat, LogOut, UserCog,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { Spinner } from "@/components/ui/feedback";
+import { Me, PermissionsContext } from "@/lib/permissions";
 
+// moduleKey absent = always visible to any logged-in account (dashboard, and
+// pages not yet backed by a real gated module). "accounts" is a magic key
+// meaning "admins only", handled separately below.
 const NAV = [
   { to: "/admin", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/admin/teams", label: "Teams", icon: Users },
-  { to: "/admin/participants", label: "Participants", icon: UserSquare2 },
-  { to: "/admin/accommodation", label: "Accommodation", icon: BedDouble },
-  { to: "/admin/room-map", label: "Room Map", icon: LayoutGrid },
-  { to: "/admin/buildings", label: "Buildings & Rooms", icon: Building2 },
-  { to: "/admin/staff", label: "Staff & Duties", icon: HardHat },
+  { to: "/admin/teams", label: "Teams", icon: Users, moduleKey: "teams" },
+  { to: "/admin/participants", label: "Participants", icon: UserSquare2, moduleKey: "teams" },
+  { to: "/admin/accommodation", label: "Accommodation", icon: BedDouble, moduleKey: "accommodation" },
+  { to: "/admin/room-map", label: "Room Map", icon: LayoutGrid, moduleKey: "accommodation" },
+  { to: "/admin/buildings", label: "Buildings & Rooms", icon: Building2, moduleKey: "buildings" },
+  { to: "/admin/staff", label: "Staff & Duties", icon: HardHat, moduleKey: "staff" },
   { to: "/admin/food", label: "Food", icon: UtensilsCrossed },
-  { to: "/admin/transport", label: "Transport", icon: Bus },
-  { to: "/admin/venues", label: "Venues", icon: MapPin },
-  { to: "/admin/schedule", label: "Schedule", icon: CalendarDays },
-  { to: "/admin/announcements", label: "Announcements", icon: Megaphone },
-  { to: "/admin/procurement", label: "Procurement", icon: ShoppingCart },
+  { to: "/admin/transport", label: "Transport", icon: Bus, moduleKey: "transport" },
+  { to: "/admin/venues", label: "Venues", icon: MapPin, moduleKey: "venues" },
+  { to: "/admin/schedule", label: "Schedule", icon: CalendarDays, moduleKey: "schedule" },
+  { to: "/admin/announcements", label: "Announcements", icon: Megaphone, moduleKey: "announcements" },
+  { to: "/admin/procurement", label: "Procurement", icon: ShoppingCart, moduleKey: "procurement" },
   { to: "/admin/tasks", label: "Tasks", icon: CheckSquare },
-  { to: "/admin/knowledge", label: "Knowledge Base", icon: BookOpen },
+  { to: "/admin/knowledge", label: "Knowledge Base", icon: BookOpen, moduleKey: "knowledge" },
   { to: "/admin/documents", label: "Documents", icon: FileText },
   { to: "/admin/contacts", label: "Contacts", icon: ContactIcon },
   { to: "/admin/settings", label: "Settings", icon: Settings },
+  { to: "/admin/accounts", label: "Accounts", icon: UserCog, moduleKey: "accounts" },
 ];
 
 interface Result { type: string; id: number; label: string; meta?: string }
@@ -41,18 +46,28 @@ export function AdminLayout() {
   const [results, setResults] = useState<Result[]>([]);
   const [openSearch, setOpenSearch] = useState(false);
   const [authed, setAuthed] = useState<boolean | null>(null);
+  const [me, setMe] = useState<Me | null>(null);
   const navigate = useNavigate();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    api.get<{ authenticated: boolean }>("/auth/me")
+    api.get<Me>("/auth/me")
       .then((r) => {
-        if (r.data.authenticated) setAuthed(true);
-        else navigate("/admin/login");
+        if (r.data.authenticated) {
+          setAuthed(true);
+          setMe(r.data);
+        } else navigate("/admin/login");
       })
       .catch(() => navigate("/admin/login"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const visibleNav = NAV.filter((n) => {
+    if (!n.moduleKey) return true;
+    if (n.moduleKey === "accounts") return !!me?.is_admin;
+    if (me?.is_admin) return true;
+    return !!me?.permissions?.[n.moduleKey];
+  });
 
   const logout = async () => {
     await api.post("/auth/logout");
@@ -93,7 +108,7 @@ export function AdminLayout() {
           </div>
         </Link>
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4">
-          {NAV.map((n) => (
+          {visibleNav.map((n) => (
             <NavLink
               key={n.to}
               to={n.to}
@@ -112,10 +127,16 @@ export function AdminLayout() {
           ))}
         </nav>
         <div className="border-t border-white/10">
+          {me && (
+            <div className="px-5 pt-3 leading-tight" data-testid="admin-current-user">
+              <div className="truncate text-xs font-bold text-white">{me.full_name || me.username}</div>
+              <div className="truncate text-[11px] text-slate-500">@{me.username}</div>
+            </div>
+          )}
           <Link to="/" className="flex items-center gap-2 px-5 py-3 text-xs font-semibold text-slate-400 hover:text-coral">
             <ExternalLink className="h-3.5 w-3.5" /> View Public Site
           </Link>
-          <button onClick={logout} data-testid="admin-logout-btn" className="flex w-full items-center gap-2 px-5 py-3 text-xs font-semibold text-slate-400 hover:text-coral">
+          <button onClick={logout} data-testid="admin-logout-btn" className="flex w-full items-center gap-2 px-5 pb-4 text-xs font-semibold text-slate-400 hover:text-coral">
             <LogOut className="h-3.5 w-3.5" /> Log Out
           </button>
         </div>
@@ -158,7 +179,9 @@ export function AdminLayout() {
         </header>
 
         <main className="p-5 md:p-8">
-          <Outlet />
+          <PermissionsContext.Provider value={me}>
+            <Outlet />
+          </PermissionsContext.Provider>
         </main>
       </div>
     </div>

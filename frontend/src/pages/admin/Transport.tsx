@@ -7,6 +7,7 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { Table, THead, TH, TR, TD } from "@/components/ui/table";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { formatDate } from "@/lib/meta";
+import { useModuleAccess } from "@/lib/permissions";
 
 interface Driver { id: number; name: string; phone?: string }
 interface Vehicle { id: number; label: string; capacity?: number; driver_id?: number; driver_name?: string }
@@ -17,6 +18,7 @@ interface Assignment {
 }
 
 export default function Transport() {
+  const { canEdit } = useModuleAccess("transport");
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -91,17 +93,19 @@ export default function Transport() {
         {/* Drivers */}
         <div className="rounded-lg border border-slate-200 bg-white p-5">
           <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-slate-950"><UserCog className="h-4 w-4" /> Drivers</h2>
-          <div className="mt-4 flex gap-2">
-            <Input placeholder="Driver name" value={driver.name} onChange={(e) => setDriver((d) => ({ ...d, name: e.target.value }))} data-testid="driver-name-input" />
-            <Input placeholder="Phone" value={driver.phone} onChange={(e) => setDriver((d) => ({ ...d, phone: e.target.value }))} className="w-40" />
-            <Button onClick={addDriver} data-testid="add-driver-btn"><Plus className="h-4 w-4" /></Button>
-          </div>
+          {canEdit && (
+            <div className="mt-4 flex gap-2">
+              <Input placeholder="Driver name" value={driver.name} onChange={(e) => setDriver((d) => ({ ...d, name: e.target.value }))} data-testid="driver-name-input" />
+              <Input placeholder="Phone" value={driver.phone} onChange={(e) => setDriver((d) => ({ ...d, phone: e.target.value }))} className="w-40" />
+              <Button onClick={addDriver} data-testid="add-driver-btn"><Plus className="h-4 w-4" /></Button>
+            </div>
+          )}
           <div className="mt-4 space-y-2">
             {drivers.length === 0 && <p className="text-sm text-slate-400">No drivers yet.</p>}
             {drivers.map((d) => (
               <div key={d.id} className="flex items-center justify-between rounded-md border border-slate-200 px-3 py-2 text-sm" data-testid={`driver-row-${d.id}`}>
                 <span><span className="font-bold text-slate-900">{d.name}</span>{d.phone && <span className="text-slate-500"> · {d.phone}</span>}</span>
-                <button onClick={() => del("drivers", d.id)} className="text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+                {canEdit && <button onClick={() => del("drivers", d.id)} className="text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>}
               </div>
             ))}
           </div>
@@ -110,21 +114,23 @@ export default function Transport() {
         {/* Vehicles */}
         <div className="rounded-lg border border-slate-200 bg-white p-5">
           <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-slate-950"><Bus className="h-4 w-4" /> Vehicles</h2>
-          <div className="mt-4 grid grid-cols-[1fr_5rem_1fr_auto] gap-2">
-            <Input placeholder="Label (Bus B3)" value={vehicle.label} onChange={(e) => setVehicle((v) => ({ ...v, label: e.target.value }))} data-testid="vehicle-label-input" />
-            <Input placeholder="Cap." type="number" value={vehicle.capacity} onChange={(e) => setVehicle((v) => ({ ...v, capacity: e.target.value }))} />
-            <Select value={vehicle.driver_id} onChange={(e) => setVehicle((v) => ({ ...v, driver_id: e.target.value }))}>
-              <option value="">No driver</option>
-              {drivers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </Select>
-            <Button onClick={addVehicle} data-testid="add-vehicle-btn"><Plus className="h-4 w-4" /></Button>
-          </div>
+          {canEdit && (
+            <div className="mt-4 grid grid-cols-[1fr_5rem_1fr_auto] gap-2">
+              <Input placeholder="Label (Bus B3)" value={vehicle.label} onChange={(e) => setVehicle((v) => ({ ...v, label: e.target.value }))} data-testid="vehicle-label-input" />
+              <Input placeholder="Cap." type="number" value={vehicle.capacity} onChange={(e) => setVehicle((v) => ({ ...v, capacity: e.target.value }))} />
+              <Select value={vehicle.driver_id} onChange={(e) => setVehicle((v) => ({ ...v, driver_id: e.target.value }))}>
+                <option value="">No driver</option>
+                {drivers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </Select>
+              <Button onClick={addVehicle} data-testid="add-vehicle-btn"><Plus className="h-4 w-4" /></Button>
+            </div>
+          )}
           <div className="mt-4 space-y-2">
             {vehicles.length === 0 && <p className="text-sm text-slate-400">No vehicles yet.</p>}
             {vehicles.map((v) => (
               <div key={v.id} className="flex items-center justify-between rounded-md border border-slate-200 px-3 py-2 text-sm" data-testid={`vehicle-row-${v.id}`}>
                 <span><span className="font-bold text-slate-900">{v.label}</span><span className="text-slate-500"> · {v.capacity ?? "—"} seats{v.driver_name ? ` · ${v.driver_name}` : ""}</span></span>
-                <button onClick={() => del("vehicles", v.id)} className="text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+                {canEdit && <button onClick={() => del("vehicles", v.id)} className="text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>}
               </div>
             ))}
           </div>
@@ -134,20 +140,22 @@ export default function Transport() {
       {/* Assignments */}
       <div className="mt-6 rounded-lg border border-slate-200 bg-white p-5">
         <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-slate-950"><MapPin className="h-4 w-4" /> Team Transport Assignments</h2>
-        <div className="mt-4 grid gap-2 md:grid-cols-6">
-          <Select value={assign.team_id} onChange={(e) => setAssign((a) => ({ ...a, team_id: e.target.value }))} data-testid="ta-team-select">
-            <option value="">Team…</option>
-            {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </Select>
-          <Select value={assign.vehicle_id} onChange={(e) => setAssign((a) => ({ ...a, vehicle_id: e.target.value }))} data-testid="ta-vehicle-select">
-            <option value="">Vehicle…</option>
-            {vehicles.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
-          </Select>
-          <Input placeholder="Pickup" value={assign.pickup_location} onChange={(e) => setAssign((a) => ({ ...a, pickup_location: e.target.value }))} />
-          <Input placeholder="Drop" value={assign.drop_location} onChange={(e) => setAssign((a) => ({ ...a, drop_location: e.target.value }))} />
-          <Input type="datetime-local" value={assign.pickup_time} onChange={(e) => setAssign((a) => ({ ...a, pickup_time: e.target.value }))} />
-          <Button onClick={addAssignment} data-testid="add-ta-btn"><Plus className="h-4 w-4" /> Assign</Button>
-        </div>
+        {canEdit && (
+          <div className="mt-4 grid gap-2 md:grid-cols-6">
+            <Select value={assign.team_id} onChange={(e) => setAssign((a) => ({ ...a, team_id: e.target.value }))} data-testid="ta-team-select">
+              <option value="">Team…</option>
+              {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </Select>
+            <Select value={assign.vehicle_id} onChange={(e) => setAssign((a) => ({ ...a, vehicle_id: e.target.value }))} data-testid="ta-vehicle-select">
+              <option value="">Vehicle…</option>
+              {vehicles.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
+            </Select>
+            <Input placeholder="Pickup" value={assign.pickup_location} onChange={(e) => setAssign((a) => ({ ...a, pickup_location: e.target.value }))} />
+            <Input placeholder="Drop" value={assign.drop_location} onChange={(e) => setAssign((a) => ({ ...a, drop_location: e.target.value }))} />
+            <Input type="datetime-local" value={assign.pickup_time} onChange={(e) => setAssign((a) => ({ ...a, pickup_time: e.target.value }))} />
+            <Button onClick={addAssignment} data-testid="add-ta-btn"><Plus className="h-4 w-4" /> Assign</Button>
+          </div>
+        )}
 
         <div className="mt-5">
           {assignments.length === 0 ? (
@@ -168,7 +176,7 @@ export default function Transport() {
                     <TD>{a.pickup_location || "—"}</TD>
                     <TD>{a.drop_location || "—"}</TD>
                     <TD>{a.pickup_time ? formatDate(a.pickup_time) : "—"}</TD>
-                    <TD><div className="flex justify-end"><Button variant="ghost" size="icon" onClick={() => del("assignments", a.id)} data-testid={`delete-ta-${a.id}`}><Trash2 className="h-4 w-4 text-red-500" /></Button></div></TD>
+                    <TD><div className="flex justify-end">{canEdit && <Button variant="ghost" size="icon" onClick={() => del("assignments", a.id)} data-testid={`delete-ta-${a.id}`}><Trash2 className="h-4 w-4 text-red-500" /></Button>}</div></TD>
                   </TR>
                 ))}
               </tbody>

@@ -8,6 +8,7 @@ import { Table, THead, TH, TR, TD } from "@/components/ui/table";
 import { Dialog } from "@/components/ui/dialog";
 import { ImportDialog } from "@/components/admin/ImportDialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
+import { useModuleAccess } from "@/lib/permissions";
 
 interface Team { id: number; name: string }
 interface Participant {
@@ -17,6 +18,7 @@ interface Participant {
 const empty: Partial<Participant> = { full_name: "", role: "", gender: "", team_id: undefined };
 
 export default function Participants() {
+  const { canEdit } = useModuleAccess("teams");
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,10 +85,10 @@ export default function Participants() {
           <h1 className="font-heading text-2xl font-black tracking-tight text-slate-950">Participants</h1>
           <p className="mt-1 text-sm text-slate-500">{participants.length} participants across {teams.length} teams</p>
         </div>
-        <Button onClick={() => { setForm(empty); setOpen(true); }} data-testid="add-participant-btn"><Plus className="h-4 w-4" /> Add Participant</Button>
+        {canEdit && <Button onClick={() => { setForm(empty); setOpen(true); }} data-testid="add-participant-btn"><Plus className="h-4 w-4" /> Add Participant</Button>}
       </div>
       <div className="mt-3 flex gap-2">
-        <Button variant="outline" onClick={() => setImportOpen(true)} data-testid="import-participants-btn"><Upload className="h-4 w-4" /> Import from spreadsheet</Button>
+        {canEdit && <Button variant="outline" onClick={() => setImportOpen(true)} data-testid="import-participants-btn"><Upload className="h-4 w-4" /> Import from spreadsheet</Button>}
         <a href={`${(import.meta.env.REACT_APP_BACKEND_URL ?? "")}/api/export/participants.csv`} className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50" data-testid="export-participants-btn"><Download className="h-4 w-4" /> Export CSV</a>
       </div>
 
@@ -126,8 +128,8 @@ export default function Participants() {
                   <TD className="text-slate-600">{p.age_group || "—"}</TD>
                   <TD>
                     <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => { setForm(p); setOpen(true); }} data-testid={`edit-participant-${p.id}`}><Pencil className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" onClick={() => remove(p.id)} data-testid={`delete-participant-${p.id}`}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                      {canEdit && <Button variant="ghost" size="icon" onClick={() => { setForm(p); setOpen(true); }} data-testid={`edit-participant-${p.id}`}><Pencil className="h-4 w-4" /></Button>}
+                      {canEdit && <Button variant="ghost" size="icon" onClick={() => remove(p.id)} data-testid={`delete-participant-${p.id}`}><Trash2 className="h-4 w-4 text-red-500" /></Button>}
                     </div>
                   </TD>
                 </TR>

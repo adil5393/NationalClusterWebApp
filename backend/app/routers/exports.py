@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from .. import models
 from ..database import get_db
+from ..security import require_module
 
 router = APIRouter(prefix="/api/export", tags=["export"])
 
@@ -25,7 +26,7 @@ def _csv_response(header, rows, filename):
     )
 
 
-@router.get("/participants.csv")
+@router.get("/participants.csv", dependencies=[Depends(require_module("teams"))])
 def export_participants(db: Session = Depends(get_db)):
     teams = {t.id: t.name for t in db.query(models.Team).all()}
     rows = [
@@ -35,7 +36,7 @@ def export_participants(db: Session = Depends(get_db)):
     return _csv_response(["Full Name", "Team", "Role", "Gender", "Age"], rows, "participants.csv")
 
 
-@router.get("/rooms.csv")
+@router.get("/rooms.csv", dependencies=[Depends(require_module("accommodation"))])
 def export_room_allocation(db: Session = Depends(get_db)):
     rows = []
     for a in db.query(models.AccommodationAssignment).all():

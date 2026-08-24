@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    JSON,
     Numeric,
     String,
     Text,
@@ -343,3 +344,20 @@ class DutyAssignment(TimestampMixin, Base):
 
     staff = relationship("StaffMember", back_populates="duties")
     room = relationship("Room", back_populates="duty_assignments")
+
+
+class OrganizerUser(TimestampMixin, Base):
+    """An individual Organizer Portal login — replaced the old single shared
+    ADMIN_PASSWORD. Deactivating (rather than deleting) revokes access while
+    keeping the account's name on any audit trail."""
+    __tablename__ = "organizer_users"
+    id = Column(Integer, primary_key=True)
+    username = Column(String(80), nullable=False, unique=True)
+    full_name = Column(String(120))
+    password_hash = Column(String(200), nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    # Admins bypass `permissions` entirely (full access to every module, incl. Accounts).
+    is_admin = Column(Boolean, nullable=False, default=False)
+    # {module_key: "view" | "edit"} — a key missing/absent means no access to that
+    # module at all. See schemas.ORGANIZER_MODULES for the fixed list of keys.
+    permissions = Column(JSON, nullable=False, default=dict)

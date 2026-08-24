@@ -23,6 +23,7 @@ import Knowledge from "@/pages/admin/Knowledge";
 import Procurement from "@/pages/admin/Procurement";
 import AdminAnnouncements from "@/pages/admin/Announcements";
 import Staff from "@/pages/admin/Staff";
+import Accounts from "@/pages/admin/Accounts";
 import Login from "@/pages/admin/Login";
 
 export default function App() {
@@ -65,6 +66,7 @@ export default function App() {
         <Route path="/admin/documents" element={<ComingSoon title="Documents" />} />
         <Route path="/admin/contacts" element={<ComingSoon title="Contacts" />} />
         <Route path="/admin/settings" element={<ComingSoon title="Settings" />} />
+        <Route path="/admin/accounts" element={<Accounts />} />
       </Route>
     </Routes>
   );
