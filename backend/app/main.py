@@ -11,6 +11,7 @@ from .routers import (
     accommodation,
     announcements,
     attachments,
+    attendance,
     auth,
     dashboard,
     exports,
@@ -113,6 +114,7 @@ for router_module, module_key in (
     (announcements, "announcements"),
     (staff, "staff"),
     (matches, "matches"),
+    (attendance, "attendance"),
 ):
     app.include_router(router_module.router, dependencies=[Depends(require_module(module_key))])
 

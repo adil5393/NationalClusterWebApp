@@ -446,6 +446,7 @@ ORGANIZER_MODULES = {
     "procurement": "Procurement",
     "knowledge": "Knowledge Base",
     "matches": "Matches & Fixtures",
+    "attendance": "Attendance",
 }
 PERMISSION_LEVELS = ["view", "edit"]  # a module key missing from `permissions` means no access
 
@@ -457,6 +458,7 @@ class OrganizerUserCreate(BaseModel):
     is_active: bool = True
     is_admin: bool = False
     permissions: dict[str, str] = {}
+    staff_member_ids: list[int] = []
 
     @field_validator("permissions")
     @classmethod
@@ -476,6 +478,7 @@ class OrganizerUserUpdate(BaseModel):
     is_active: Optional[bool] = None
     is_admin: Optional[bool] = None
     permissions: Optional[dict[str, str]] = None
+    staff_member_ids: Optional[list[int]] = None
 
     @field_validator("permissions")
     @classmethod
@@ -490,6 +493,11 @@ class OrganizerUserUpdate(BaseModel):
         return v
 
 
+class StaffMemberBrief(ORMModel):
+    id: int
+    full_name: str
+
+
 class OrganizerUserRead(ORMModel):
     id: int
     username: str
@@ -497,6 +505,7 @@ class OrganizerUserRead(ORMModel):
     is_active: bool
     is_admin: bool
     permissions: dict[str, str] = {}
+    staff_members: list[StaffMemberBrief] = []
     created_at: datetime
 
 

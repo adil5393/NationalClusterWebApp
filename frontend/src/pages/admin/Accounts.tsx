@@ -10,6 +10,7 @@ import { Spinner, EmptyState } from "@/components/ui/feedback";
 
 type PermissionLevel = "" | "view" | "edit";
 
+interface StaffBrief { id: number; full_name: string }
 interface OrganizerUser {
   id: number;
   username: string;
@@ -17,6 +18,7 @@ interface OrganizerUser {
   is_active: boolean;
   is_admin: boolean;
   permissions: Record<string, "view" | "edit">;
+  staff_members: StaffBrief[];
   created_at: string;
 }
 interface FormState {
@@ -26,12 +28,14 @@ interface FormState {
   password: string;
   is_admin: boolean;
   permissions: Record<string, PermissionLevel>;
+  staff_member_ids: number[];
 }
-const emptyForm: FormState = { username: "", full_name: "", password: "", is_admin: false, permissions: {} };
+const emptyForm: FormState = { username: "", full_name: "", password: "", is_admin: false, permissions: {}, staff_member_ids: [] };
 
 export default function Accounts() {
   const [users, setUsers] = useState<OrganizerUser[]>([]);
   const [modules, setModules] = useState<Record<string, string>>({});
+  const [staff, setStaff] = useState<StaffBrief[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -41,8 +45,9 @@ export default function Accounts() {
     Promise.all([
       api.get<OrganizerUser[]>("/organizer-users"),
       api.get<{ modules: Record<string, string> }>("/organizer-users/modules"),
+      api.get<StaffBrief[]>("/staff"),
     ])
-      .then(([u, m]) => { setUsers(u.data); setModules(m.data.modules); })
+      .then(([u, m, s]) => { setUsers(u.data); setModules(m.data.modules); setStaff(s.data); })
       .finally(() => setLoading(false));
   };
   useEffect(load, []);
@@ -56,8 +61,15 @@ export default function Accounts() {
       password: "",
       is_admin: u.is_admin,
       permissions: Object.fromEntries(Object.keys(modules).map((k) => [k, u.permissions?.[k] ?? ""])),
+      staff_member_ids: u.staff_members.map((s) => s.id),
     });
     setOpen(true);
+  };
+  const toggleFormStaff = (id: number) => {
+    setForm((f) => ({
+      ...f,
+      staff_member_ids: f.staff_member_ids.includes(id) ? f.staff_member_ids.filter((x) => x !== id) : [...f.staff_member_ids, id],
+    }));
   };
 
   const save = async () => {
@@ -67,11 +79,11 @@ export default function Accounts() {
     const permissions = Object.fromEntries(Object.entries(form.permissions).filter(([, v]) => v));
     try {
       if (form.id) {
-        const payload: any = { username: form.username, full_name: form.full_name || null, is_admin: form.is_admin, permissions };
+        const payload: any = { username: form.username, full_name: form.full_name || null, is_admin: form.is_admin, permissions, staff_member_ids: form.staff_member_ids };
         if (form.password) payload.password = form.password;
         await api.put(`/organizer-users/${form.id}`, payload);
       } else {
-        await api.post("/organizer-users", { username: form.username, full_name: form.full_name || null, password: form.password, is_admin: form.is_admin, permissions });
+        await api.post("/organizer-users", { username: form.username, full_name: form.full_name || null, password: form.password, is_admin: form.is_admin, permissions, staff_member_ids: form.staff_member_ids });
       }
       toast.success(form.id ? "Account updated" : "Account created");
       setOpen(false);
@@ -124,13 +136,16 @@ export default function Accounts() {
           <div className="p-6"><EmptyState title="No accounts yet" hint="Add the first organizer account to log in with." /></div>
         ) : (
           <Table>
-            <THead><TR className="hover:bg-transparent"><TH>#</TH><TH>Username</TH><TH>Name</TH><TH>Access</TH><TH>Status</TH><TH className="text-right">Actions</TH></TR></THead>
+            <THead><TR className="hover:bg-transparent"><TH>#</TH><TH>Username</TH><TH>Name</TH><TH>Staff Member(s)</TH><TH>Access</TH><TH>Status</TH><TH className="text-right">Actions</TH></TR></THead>
             <tbody>
               {users.map((u, i) => (
                 <TR key={u.id} data-testid={`account-row-${u.id}`}>
                   <TD className="text-slate-400">{i + 1}</TD>
                   <TD className="font-bold text-slate-900">{u.username}</TD>
                   <TD className="text-slate-600">{u.full_name || "—"}</TD>
+                  <TD className="max-w-[14rem] text-xs text-slate-600">
+                    {u.staff_members.length > 0 ? u.staff_members.map((s) => s.full_name).join(", ") : <span className="text-slate-400">Not linked</span>}
+                  </TD>
                   <TD className="max-w-xs text-xs text-slate-500">
                     {u.is_admin && <span className="mr-1.5 inline-flex items-center gap-1 rounded-md bg-orange-50 px-2 py-0.5 font-bold text-coral-600 ring-1 ring-orange-200"><Crown className="h-3 w-3" /> Admin</span>}
                     {!u.is_admin && <span>{summarize(u)}</span>}
@@ -167,6 +182,25 @@ export default function Accounts() {
           <div>
             <Label>{form.id ? "New Password" : "Password *"}</Label>
             <Input type="password" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} placeholder={form.id ? "Leave blank to keep current password" : "At least 8 characters"} data-testid="account-password-input" />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between">
+              <Label>Staff Member(s) ({form.staff_member_ids.length} linked)</Label>
+              {form.staff_member_ids.length > 0 && (
+                <button type="button" className="text-xs font-semibold text-slate-500" onClick={() => setForm((f) => ({ ...f, staff_member_ids: [] }))}>Clear</button>
+              )}
+            </div>
+            <p className="mt-0.5 text-xs text-slate-500">Every account here belongs to a real staff member — link who this login is for. One account can stand in for more than one person (e.g. a shared shift device).</p>
+            <div className="mt-1.5 max-h-44 overflow-y-auto rounded-md border border-slate-200 p-2" data-testid="account-staff-list">
+              {staff.map((s) => (
+                <label key={s.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-slate-50">
+                  <input type="checkbox" checked={form.staff_member_ids.includes(s.id)} onChange={() => toggleFormStaff(s.id)} />
+                  {s.full_name}
+                </label>
+              ))}
+              {staff.length === 0 && <p className="p-2 text-sm text-slate-400">No staff members found — add them under Staff & Duties first.</p>}
+            </div>
           </div>
 
           <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm">

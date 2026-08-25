@@ -21,6 +21,17 @@ def _active_admin_count(db: Session) -> int:
     )
 
 
+def _resolve_staff_members(db: Session, staff_member_ids: list[int]) -> list[models.StaffMember]:
+    ids = list(dict.fromkeys(staff_member_ids))  # de-dupe, keep order
+    if not ids:
+        return []
+    found = db.query(models.StaffMember).filter(models.StaffMember.id.in_(ids)).all()
+    if len(found) != len(ids):
+        missing = set(ids) - {s.id for s in found}
+        raise HTTPException(404, f"Staff member(s) not found: {sorted(missing)}")
+    return found
+
+
 @router.get("", response_model=list[schemas.OrganizerUserRead])
 def list_users(db: Session = Depends(get_db)):
     return db.query(models.OrganizerUser).order_by(models.OrganizerUser.username).all()
@@ -49,6 +60,7 @@ def create_user(payload: schemas.OrganizerUserCreate, db: Session = Depends(get_
         is_active=payload.is_active,
         is_admin=payload.is_admin,
         permissions=payload.permissions,
+        staff_members=_resolve_staff_members(db, payload.staff_member_ids),
     )
     db.add(user)
     db.commit()
@@ -91,6 +103,9 @@ def update_user(
 
     if "permissions" in data:
         user.permissions = data["permissions"]
+
+    if "staff_member_ids" in data:
+        user.staff_members = _resolve_staff_members(db, data["staff_member_ids"] or [])
 
     losing_admin = "is_admin" in data and data["is_admin"] is False and user.is_admin
     deactivating = "is_active" in data and data["is_active"] is False and user.is_active

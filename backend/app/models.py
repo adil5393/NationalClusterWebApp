@@ -14,6 +14,7 @@ from sqlalchemy import (
     JSON,
     Numeric,
     String,
+    Table,
     Text,
     func,
 )
@@ -351,6 +352,14 @@ class DutyAssignment(TimestampMixin, Base):
     room = relationship("Room", back_populates="duty_assignments")
 
 
+organizer_user_staff = Table(
+    "organizer_user_staff",
+    Base.metadata,
+    Column("organizer_user_id", Integer, ForeignKey("organizer_users.id", ondelete="CASCADE"), primary_key=True),
+    Column("staff_member_id", Integer, ForeignKey("staff_members.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
 class OrganizerUser(TimestampMixin, Base):
     """An individual Organizer Portal login — replaced the old single shared
     ADMIN_PASSWORD. Deactivating (rather than deleting) revokes access while
@@ -366,6 +375,11 @@ class OrganizerUser(TimestampMixin, Base):
     # {module_key: "view" | "edit"} — a key missing/absent means no access to that
     # module at all. See schemas.ORGANIZER_MODULES for the fixed list of keys.
     permissions = Column(JSON, nullable=False, default=dict)
+
+    # Which real staff member(s) this login belongs to — every account here is
+    # meant for actual event staff, and one account (e.g. a shared shift
+    # tablet) can stand in for more than one person.
+    staff_members = relationship("StaffMember", secondary=organizer_user_staff, backref="organizer_users")
 
 
 class Tournament(TimestampMixin, Base):

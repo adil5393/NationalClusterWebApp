@@ -23,6 +23,7 @@ const PAGE_SIZE = 25;
 
 export default function Participants() {
   const { canEdit } = useModuleAccess("teams");
+  const { canEdit: canMarkAttendance } = useModuleAccess("attendance");
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
@@ -171,7 +172,7 @@ export default function Participants() {
                     <TD className="text-right">{p.age ?? "—"}</TD>
                     <TD className="text-slate-600">{p.age_group || "—"}</TD>
                     <TD>
-                      {canEdit ? (
+                      {canMarkAttendance ? (
                         <button
                           onClick={() => toggleAttendance(p)}
                           data-testid={`attendance-toggle-${p.id}`}
