@@ -312,14 +312,14 @@ def generate_pool_matches_endpoint(pool_id: int, payload: schemas.FinalizePoolRe
 
 
 # ---------- Standings ----------
-@router.get("/api/pools/{pool_id}/standings")
-def pool_standings(pool_id: int, db: Session = Depends(get_db)):
+def compute_standings(pool: models.Pool) -> list[dict]:
     """Extensible-by-design: only Played/Won/Lost/Points-For/Points-Against and
     a generic 2-1-0 (win/draw/loss) points column are computed here, since the
     app doesn't define sport-specific ranking rules (bonus points, net run
     rate, etc.) anywhere yet. Swap the scoring block below if/when it does —
-    everything else (aggregation from completed matches) stays the same."""
-    pool = _get_pool(db, pool_id)
+    everything else (aggregation from completed matches) stays the same.
+    Shared by the organizer endpoint below and the public one in routers/public.py
+    — one calculation, read by both audiences."""
     rows = {t.id: {"team_id": t.id, "team_name": t.name, "played": 0, "won": 0, "lost": 0, "drawn": 0, "points_for": 0, "points_against": 0, "points": 0} for t in pool.teams}
 
     for m in pool.matches:
@@ -347,3 +347,8 @@ def pool_standings(pool_id: int, db: Session = Depends(get_db)):
     for i, row in enumerate(standings):
         row["position"] = i + 1
     return standings
+
+
+@router.get("/api/pools/{pool_id}/standings")
+def pool_standings(pool_id: int, db: Session = Depends(get_db)):
+    return compute_standings(_get_pool(db, pool_id))

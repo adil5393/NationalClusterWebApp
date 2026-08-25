@@ -72,26 +72,65 @@ def public_tournaments(db: Session = Depends(get_db)):
     return [{"id": t.id, "name": t.name, "sport": t.sport, "status": t.status} for t in rows]
 
 
+def _public_pool_dict(p: models.Pool) -> dict:
+    return {
+        "id": p.id,
+        "name": p.name,
+        "status": p.status,
+        "team_count": len(p.teams),
+        "match_count": len(p.matches),
+        "teams": [{"id": t.id, "name": t.name} for t in p.teams],
+    }
+
+
 @router.get("/tournaments/{tournament_id}/bracket")
 def public_bracket(tournament_id: int, db: Session = Depends(get_db)):
     t = db.get(models.Tournament, tournament_id)
     if not t or t.status == "draft":
         raise HTTPException(404, "Tournament not found")
+    has_pools = any(r.pools for r in t.rounds)
     return {
         "id": t.id,
         "name": t.name,
         "sport": t.sport,
         "status": t.status,
+        "has_pools": has_pools,
         "rounds": [
             {
                 "id": r.id,
                 "name": r.name,
                 "sequence": r.sequence,
-                "matches": [_public_match_dict(m, db) for m in r.matches],
+                # Knockout tree matches only here — pool/league matches live under
+                # this round's "pools" instead, each with its own round-robin set.
+                "matches": [_public_match_dict(m, db) for m in r.matches if m.match_type == "KNOCKOUT"],
+                "pools": [_public_pool_dict(p) for p in r.pools],
             }
             for r in t.rounds
         ],
     }
+
+
+@router.get("/pools/{pool_id}")
+def public_pool_detail(pool_id: int, db: Session = Depends(get_db)):
+    p = db.get(models.Pool, pool_id)
+    if not p:
+        raise HTTPException(404, "Pool not found")
+    return {
+        **_public_pool_dict(p),
+        "tournament_id": p.tournament_id,
+        "round_id": p.round_id,
+        "matches": [_public_match_dict(m, db) for m in p.matches],
+    }
+
+
+@router.get("/pools/{pool_id}/standings")
+def public_pool_standings(pool_id: int, db: Session = Depends(get_db)):
+    from .pools import compute_standings  # local import: avoids a hard import-order dependency between routers
+
+    p = db.get(models.Pool, pool_id)
+    if not p:
+        raise HTTPException(404, "Pool not found")
+    return compute_standings(p)
 
 
 @router.get("/matches/live")
