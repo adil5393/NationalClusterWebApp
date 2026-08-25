@@ -410,7 +410,7 @@ export default function Matches() {
             <LeagueSetup
               tournamentId={detail.id}
               rounds={detail.rounds ?? []}
-              teams={teams}
+              teams={eligibleTeams}
               canEdit={canEdit}
               onOpenConsole={setConsoleMatchId}
               onChanged={refreshAll}

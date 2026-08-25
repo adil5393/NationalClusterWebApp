@@ -10,6 +10,7 @@ import TeamPortal from "@/pages/public/TeamPortal";
 import PublicAnnouncements from "@/pages/public/Announcements";
 import Campus from "@/pages/public/Campus";
 import Live from "@/pages/public/Live";
+import Pool from "@/pages/public/Pool";
 
 import Dashboard from "@/pages/admin/Dashboard";
 import AdminTeams from "@/pages/admin/Teams";
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="/transport" element={<PlaceholderPage title="Transport" section="Transport" />} />
         <Route path="/campus" element={<Campus />} />
         <Route path="/live" element={<Live />} />
+        <Route path="/live/pools/:poolId" element={<Pool />} />
         <Route path="/contacts" element={<PlaceholderPage title="Important Contacts" section="Contacts" />} />
         <Route path="/faq" element={<PlaceholderPage title="Frequently Asked Questions" section="FAQ" />} />
       </Route>

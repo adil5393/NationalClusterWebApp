@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Radio, Flag, Trophy } from "lucide-react";
 import { api } from "@/lib/api";
 import { connectLive, matchChannel, tournamentChannel } from "@/lib/live";
@@ -9,11 +10,11 @@ import { Dialog } from "@/components/ui/dialog";
 // regardless of which actual team ends up in that slot as the bracket fills
 // in. Live/completed connector lines borrow whichever color is currently
 // ahead (or the winner's, once decided).
-const RED = "#ef4444";
-const BLUE = "#3b82f6";
+export const RED = "#ef4444";
+export const BLUE = "#3b82f6";
 const NEUTRAL = "#cbd5e1";
 
-interface MatchT {
+export interface MatchT {
   id: number; tournament_id: number; tournament_name?: string; sport?: string | null;
   round_id: number; round_name?: string | null;
   team_a_id?: number | null; team_a_name?: string | null;
@@ -24,8 +25,9 @@ interface MatchT {
   winner_team_id?: number | null; winner_team_name?: string | null;
   notes?: string | null;
 }
-interface RoundT { id: number; name: string; sequence: number; matches: MatchT[] }
-interface Bracket { id: number; name: string; sport?: string | null; status: string; rounds: RoundT[] }
+interface PoolSummaryT { id: number; name: string; status: "draft" | "finalized"; team_count: number; match_count: number; teams: { id: number; name: string }[] }
+interface RoundT { id: number; name: string; sequence: number; matches: MatchT[]; pools: PoolSummaryT[] }
+interface Bracket { id: number; name: string; sport?: string | null; status: string; has_pools: boolean; rounds: RoundT[] }
 interface TournamentSummary { id: number; name: string; sport?: string | null; status: string }
 
 function ScoreLine({ label, value, leading, color }: { label: string; value: number; leading: boolean; color: string }) {
@@ -175,15 +177,21 @@ function layoutBracket(rounds: RoundT[]) {
   return { sorted, positions, width, height, connectors };
 }
 
-function BracketMatchCard({ m, isFinal, onSelect }: { m: MatchT; isFinal?: boolean; onSelect?: (id: number) => void }) {
+export function BracketMatchCard({ m, isFinal, onSelect, autoHeight }: { m: MatchT; isFinal?: boolean; onSelect?: (id: number) => void; autoHeight?: boolean }) {
   const live = m.status === "ONGOING" || m.status === "PAUSED";
   const done = m.status === "COMPLETED";
   const isBye = m.notes === "Bye";
   const clickable = !!onSelect && !!m.team_a_id && !!m.team_b_id;
+  // The knockout tree needs an exact CARD_W x CARD_H box for its connector-line
+  // math. Elsewhere (e.g. a pool's match grid) there's no tree to align with,
+  // so the card should just size to its content instead — a fixed height there
+  // was clipping the winner banner and overlapping the next card.
+  const boxStyle = autoHeight ? undefined : { width: CARD_W, height: CARD_H };
+  const boxClass = autoHeight ? "w-full" : "shrink-0";
 
   if (isBye) {
     return (
-      <div style={{ width: CARD_W, height: CARD_H }} className="flex shrink-0 flex-col justify-center rounded-md border border-slate-200 bg-slate-50 p-2.5 text-sm">
+      <div style={boxStyle} className={`${boxClass} flex flex-col justify-center rounded-md border border-slate-200 bg-slate-50 p-2.5 text-sm`}>
         <span className="truncate font-bold text-slate-800">{m.team_a_name ?? m.team_b_name}</span>
         <span className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Bye — advances automatically</span>
       </div>
@@ -193,8 +201,8 @@ function BracketMatchCard({ m, isFinal, onSelect }: { m: MatchT; isFinal?: boole
   return (
     <div
       onClick={() => clickable && onSelect!(m.id)}
-      style={{ width: CARD_W, height: CARD_H }}
-      className={`shrink-0 rounded-md border p-2.5 text-sm shadow-sm transition-shadow ${live ? "border-emerald-300 bg-emerald-50" : isFinal ? "border-coral bg-orange-50/50" : "border-slate-200 bg-white"} ${clickable ? "cursor-pointer hover:shadow-md" : ""}`}
+      style={boxStyle}
+      className={`${boxClass} rounded-md border p-2.5 text-sm shadow-sm transition-shadow ${live ? "border-emerald-300 bg-emerald-50" : isFinal ? "border-coral bg-orange-50/50" : "border-slate-200 bg-white"} ${clickable ? "cursor-pointer hover:shadow-md" : ""}`}
       data-testid={`bracket-match-${m.id}`}
     >
       <div className="flex items-center justify-between text-[11px] text-slate-400">
@@ -248,7 +256,7 @@ function RosterColumn({ name, color, roster }: { name: string; color: string; ro
   );
 }
 
-function MatchRosterDialog({ matchId, onClose }: { matchId: number; onClose: () => void }) {
+export function MatchRosterDialog({ matchId, onClose }: { matchId: number; onClose: () => void }) {
   const [detail, setDetail] = useState<MatchDetail | null>(null);
   useEffect(() => {
     setDetail(null);
@@ -289,8 +297,14 @@ function BracketView({ tournamentId, onSelectMatch }: { tournamentId: number; on
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tournamentId]);
 
-  const layout = useMemo(() => (bracket ? layoutBracket(bracket.rounds) : null), [bracket]);
-  if (!bracket || !layout) return null;
+  // A tournament using the league/pool stage is shown as pools (round-robin
+  // groups), not the knockout tree — the two formats don't share a layout.
+  // (Progression from pool standings into a next stage isn't wired up yet.)
+  const layout = useMemo(() => (bracket && !bracket.has_pools ? layoutBracket(bracket.rounds) : null), [bracket]);
+
+  if (!bracket) return null;
+  if (bracket.has_pools) return <PoolsView bracket={bracket} />;
+  if (!layout) return null;
 
   return (
     <div className="mt-4 overflow-x-auto pb-4" data-testid="public-bracket">
@@ -321,6 +335,42 @@ function BracketView({ tournamentId, onSelectMatch }: { tournamentId: number; on
           }),
         )}
       </div>
+    </div>
+  );
+}
+
+function PoolsView({ bracket }: { bracket: Bracket }) {
+  const rounds = [...bracket.rounds].sort((a, b) => a.sequence - b.sequence).filter((r) => r.pools.length > 0);
+  if (rounds.length === 0) return null;
+  return (
+    <div className="mt-4 space-y-6" data-testid="public-pools">
+      {rounds.map((r) => (
+        <div key={r.id}>
+          <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">{r.name}</h3>
+          <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {r.pools.map((p) => (
+              <Link
+                key={p.id}
+                to={`/live/pools/${p.id}`}
+                data-testid={`public-pool-${p.id}`}
+                className="block rounded-md border border-slate-200 bg-white p-3 text-left shadow-sm transition-shadow hover:border-coral hover:shadow-md"
+              >
+                <div className="flex items-center justify-between">
+                  <h4 className="font-heading text-sm font-bold text-slate-900">{p.name}</h4>
+                  <span className={`text-xs font-semibold ${p.status === "finalized" ? "text-emerald-600" : "text-slate-400"}`}>
+                    {p.status === "finalized" ? "Fixtures Ready" : "Draft"}
+                  </span>
+                </div>
+                <ol className="mt-2 space-y-0.5 text-xs text-slate-600">
+                  {p.teams.map((t, i) => <li key={t.id} className="truncate">{i + 1}. {t.name}</li>)}
+                  {p.teams.length === 0 && <li className="text-slate-400">No teams yet</li>}
+                </ol>
+                <p className="mt-2 text-xs text-slate-400">{p.team_count} teams · {p.match_count} matches</p>
+              </Link>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
