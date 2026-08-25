@@ -113,6 +113,8 @@ export default function Matches() {
   const [bgShuffle, setBgShuffle] = useState(true);
   const [bgSaving, setBgSaving] = useState(false);
 
+  const [tab, setTab] = useState<"fixtures" | "league">("fixtures");
+
   const loadBase = () => {
     setLoading(true);
     Promise.all([
@@ -135,7 +137,7 @@ export default function Matches() {
   const loadDetail = (id: number) => {
     api.get<TournamentT>(`/tournaments/${id}`).then((r) => setDetail(r.data));
   };
-  useEffect(() => { if (selectedId) loadDetail(selectedId); else setDetail(null); }, [selectedId]);
+  useEffect(() => { if (selectedId) loadDetail(selectedId); else setDetail(null); setTab("fixtures"); }, [selectedId]);
 
   const refreshLive = () => api.get<MatchT[]>("/matches", { params: { status: "ONGOING,PAUSED" } }).then((r) => setLive(r.data));
   const refreshAll = () => { loadBase(); if (selectedId) loadDetail(selectedId); };
@@ -393,6 +395,29 @@ export default function Matches() {
             )}
           </div>
 
+          {detail && (
+            <div className="flex gap-4 border-b border-slate-200 px-4 text-sm font-semibold">
+              <button onClick={() => setTab("fixtures")} className={`border-b-2 py-2.5 ${tab === "fixtures" ? "border-coral text-coral-600" : "border-transparent text-slate-500 hover:text-slate-800"}`} data-testid="subtab-fixtures">
+                Knockout / Fixtures
+              </button>
+              <button onClick={() => setTab("league")} className={`border-b-2 py-2.5 ${tab === "league" ? "border-coral text-coral-600" : "border-transparent text-slate-500 hover:text-slate-800"}`} data-testid="subtab-league">
+                League Setup
+              </button>
+            </div>
+          )}
+
+          {tab === "league" && detail && (
+            <LeagueSetup
+              tournamentId={detail.id}
+              rounds={detail.rounds ?? []}
+              teams={teams}
+              canEdit={canEdit}
+              onOpenConsole={setConsoleMatchId}
+              onChanged={refreshAll}
+            />
+          )}
+
+          {tab === "fixtures" && (
           <div className="p-4">
             {!detail || (detail.rounds ?? []).length === 0 ? (
               <EmptyState title="No rounds yet" hint="Add a round (e.g. Round 1, Quarter Final) to start scheduling matches." />
@@ -449,6 +474,7 @@ export default function Matches() {
               </div>
             )}
           </div>
+          )}
         </div>
       )}
 
@@ -699,6 +725,431 @@ function LiveConsole({ matchId, canEdit, onClose, onChanged }: { matchId: number
               <Button onClick={complete} data-testid="end-match-btn"><Flag className="h-4 w-4" /> End Match</Button>
             </div>
           )}
+        </div>
+      )}
+    </Dialog>
+  );
+}
+
+// ============================================================================
+// League Setup — pools, alongside the knockout system above. Pool matches are
+// plain Match rows (match_type: "LEAGUE", pool_id set) that go through the
+// exact same start/score/complete lifecycle as knockout matches, so match
+// actions here call the same /matches/{id}/... endpoints and the same
+// LiveConsole component reopens for them — nothing live-match-specific is
+// duplicated for league play.
+// ============================================================================
+
+interface PoolT {
+  id: number; round_id: number; name: string; status: "draft" | "finalized";
+  team_count: number; match_count: number; expected_match_count: number; is_valid: boolean;
+  teams: { id: number; name: string }[];
+}
+interface LeagueSummaryT {
+  round_id: number; round_name: string;
+  eligible_team_count: number; assigned_team_count: number;
+  unassigned_teams: { id: number; name: string }[];
+  pool_count: number; pools: PoolT[];
+  all_teams_assigned: boolean; all_pools_valid: boolean; fixtures_generated: boolean;
+}
+interface AutoPreviewT {
+  pool_count: number;
+  pools: { name: string; team_count: number; team_ids: number[]; teams: { id: number; name: string }[] }[];
+}
+
+function LeagueSetup({ tournamentId, rounds, teams, canEdit, onOpenConsole, onChanged }: {
+  tournamentId: number; rounds: RoundT[]; teams: Team[]; canEdit: boolean;
+  onOpenConsole: (id: number) => void; onChanged: () => void;
+}) {
+  const [roundId, setRoundId] = useState<number | null>(rounds[0]?.id ?? null);
+  const [summary, setSummary] = useState<LeagueSummaryT | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [autoPreview, setAutoPreview] = useState<AutoPreviewT | null>(null);
+  const [autoSaving, setAutoSaving] = useState(false);
+  const [detailPoolId, setDetailPoolId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!roundId && rounds.length > 0) setRoundId(rounds[0].id);
+  }, [rounds]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const load = () => {
+    if (!roundId) { setSummary(null); return; }
+    setLoading(true);
+    api.get<LeagueSummaryT>(`/tournaments/${tournamentId}/rounds/${roundId}/league-summary`)
+      .then((r) => setSummary(r.data))
+      .finally(() => setLoading(false));
+  };
+  useEffect(load, [roundId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const refresh = () => { load(); onChanged(); };
+
+  const openAutoPreview = async () => {
+    if (!roundId) return;
+    try {
+      const r = await api.post<AutoPreviewT>(`/tournaments/${tournamentId}/rounds/${roundId}/pools/auto-create`, { commit: false });
+      setAutoPreview(r.data);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not compute pool breakdown");
+    }
+  };
+  const commitAutoCreate = async () => {
+    if (!roundId) return;
+    setAutoSaving(true);
+    try {
+      await api.post(`/tournaments/${tournamentId}/rounds/${roundId}/pools/auto-create`, { commit: true });
+      toast.success("Pools created and fixtures generated");
+      setAutoPreview(null);
+      refresh();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not create pools");
+    } finally {
+      setAutoSaving(false);
+    }
+  };
+
+  const assignTeam = async (teamId: number, poolId: number) => {
+    try {
+      await api.post(`/pools/${poolId}/teams`, { team_id: teamId });
+      refresh();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not assign team");
+    }
+  };
+
+  const finalizePool = async (pool: PoolT, regenerate: boolean) => {
+    try {
+      await api.post(`/pools/${pool.id}/finalize`, { regenerate });
+      toast.success(pool.status === "finalized" ? "Fixtures regenerated" : "Fixtures generated");
+      refresh();
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail;
+      if (e?.response?.status === 409 && detail?.includes("already has fixtures")) {
+        if (confirm("Changing teams will regenerate this pool's fixtures. Existing match data may be affected.\n\nRegenerate?")) {
+          finalizePool(pool, true);
+        }
+      } else {
+        toast.error(detail ?? "Could not finalize pool");
+      }
+    }
+  };
+
+  const deletePool = async (pool: PoolT) => {
+    if (!confirm(`Delete ${pool.name}? This cannot be undone.`)) return;
+    try {
+      await api.delete(`/pools/${pool.id}`);
+      toast.success("Pool deleted");
+      refresh();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not delete pool");
+    }
+  };
+
+  return (
+    <div className="p-4" data-testid="league-setup">
+      <div className="flex flex-wrap items-center gap-3">
+        <Label>Round</Label>
+        <Select value={roundId ?? ""} onChange={(e) => setRoundId(Number(e.target.value))} className="w-auto" data-testid="league-round-select">
+          {rounds.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+        </Select>
+      </div>
+
+      {rounds.length === 0 ? (
+        <div className="mt-4"><EmptyState title="No rounds yet" hint="Add a round under Knockout / Fixtures first — pools belong to a round." /></div>
+      ) : loading || !summary ? (
+        <div className="mt-4"><Spinner /></div>
+      ) : (
+        <>
+          <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm" data-testid="league-summary">
+            <span className="text-slate-600">Teams: <b className="text-slate-900">{summary.eligible_team_count}</b></span>
+            <span className="text-slate-600">Assigned: <b className="text-slate-900">{summary.assigned_team_count}</b></span>
+            <span className={summary.unassigned_teams.length > 0 ? "font-semibold text-amber-600" : "text-slate-600"}>
+              Unassigned: <b>{summary.unassigned_teams.length}</b>
+            </span>
+            <span className="text-slate-600">Pools: <b className="text-slate-900">{summary.pool_count}</b></span>
+            <span className="ml-auto flex flex-wrap gap-3">
+              <span className={summary.all_teams_assigned ? "text-emerald-600" : "text-amber-600"}>{summary.all_teams_assigned ? "✓ All teams assigned" : `⚠ ${summary.unassigned_teams.length} unassigned`}</span>
+              <span className={summary.all_pools_valid ? "text-emerald-600" : "text-amber-600"}>{summary.all_pools_valid ? "✓ All pools valid" : "⚠ Some pools need ≥5 teams"}</span>
+              <span className={summary.fixtures_generated ? "text-emerald-600" : "text-slate-400"}>{summary.fixtures_generated ? "✓ Fixtures generated" : "Fixtures not finalized"}</span>
+            </span>
+          </div>
+
+          {canEdit && (
+            <div className="mt-3 flex gap-2">
+              <Button onClick={openAutoPreview} data-testid="auto-create-pools-btn"><Shuffle className="h-4 w-4" /> Auto Create Pools</Button>
+              <Button variant="outline" onClick={() => setCreateOpen(true)} data-testid="create-pool-btn"><Plus className="h-4 w-4" /> Create Pool</Button>
+            </div>
+          )}
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {summary.pools.map((p) => (
+              <div key={p.id} className="rounded-md border border-slate-200 bg-white p-3" data-testid={`pool-card-${p.id}`}>
+                <div className="flex items-center justify-between">
+                  <h4 className="font-heading text-sm font-bold text-slate-900">{p.name}</h4>
+                  <Badge tone={p.status === "finalized" ? "green" : "neutral"}>{p.status}</Badge>
+                </div>
+                <ol className="mt-2 space-y-0.5 text-xs text-slate-600">
+                  {p.teams.map((t, i) => <li key={t.id} className="truncate">{i + 1}. {t.name}</li>)}
+                  {p.teams.length === 0 && <li className="text-slate-400">No teams yet</li>}
+                </ol>
+                <p className="mt-2 text-xs text-slate-500">
+                  {p.team_count} team{p.team_count === 1 ? "" : "s"} · {p.status === "finalized" ? `${p.match_count} matches` : `${p.expected_match_count} matches once finalized`}
+                </p>
+                {!p.is_valid && <p className="mt-1 text-xs font-semibold text-amber-600">⚠ Needs at least 5 teams</p>}
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  <Button size="sm" variant="outline" onClick={() => setDetailPoolId(p.id)}>View</Button>
+                  {canEdit && p.is_valid && p.team_count > 0 && (
+                    <Button size="sm" variant="outline" onClick={() => finalizePool(p, p.status === "finalized")}>
+                      {p.status === "finalized" ? "Regenerate" : "Finalize"}
+                    </Button>
+                  )}
+                  {canEdit && <Button size="sm" variant="ghost" onClick={() => deletePool(p)}><Trash2 className="h-3.5 w-3.5 text-red-500" /></Button>}
+                </div>
+              </div>
+            ))}
+            {summary.pools.length === 0 && (
+              <div className="col-span-full"><EmptyState title="No pools yet" hint='Use "Auto Create Pools" or "Create Pool" above.' /></div>
+            )}
+          </div>
+
+          <div className="mt-4 rounded-md border border-slate-200 bg-white p-3">
+            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500">Unassigned Teams ({summary.unassigned_teams.length})</h4>
+            {summary.unassigned_teams.length === 0 ? (
+              <p className="mt-1.5 text-sm text-slate-400">None — every eligible team is in a pool.</p>
+            ) : (
+              <div className="mt-1.5 divide-y divide-slate-100">
+                {summary.unassigned_teams.map((t) => (
+                  <div key={t.id} className="flex items-center justify-between gap-3 py-1.5 text-sm">
+                    <span className="truncate text-slate-700">{t.name}</span>
+                    {canEdit && summary.pools.length > 0 && (
+                      <select
+                        className="rounded-md border border-slate-300 px-2 py-1 text-xs"
+                        defaultValue=""
+                        onChange={(e) => { if (e.target.value) assignTeam(t.id, Number(e.target.value)); e.target.value = ""; }}
+                        data-testid={`assign-team-${t.id}`}
+                      >
+                        <option value="">Assign to pool…</option>
+                        {summary.pools.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {createOpen && roundId && (
+        <CreatePoolDialog
+          tournamentId={tournamentId}
+          roundId={roundId}
+          teams={teams}
+          onClose={() => setCreateOpen(false)}
+          onCreated={() => { setCreateOpen(false); refresh(); }}
+        />
+      )}
+
+      {autoPreview && (
+        <Dialog open onClose={() => setAutoPreview(null)} title="Create Pools?" testId="auto-create-preview-dialog">
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600">This will create {autoPreview.pool_count} pool{autoPreview.pool_count === 1 ? "" : "s"} from every unassigned eligible team and immediately generate round-robin fixtures for each.</p>
+            <div className="divide-y divide-slate-100 rounded-md border border-slate-200">
+              {autoPreview.pools.map((p) => (
+                <div key={p.name} className="flex items-center justify-between px-3 py-2 text-sm">
+                  <span className="font-semibold text-slate-800">{p.name}</span>
+                  <span className="text-slate-500">{p.team_count} teams</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setAutoPreview(null)}>Cancel</Button>
+              <Button onClick={commitAutoCreate} disabled={autoSaving} data-testid="confirm-auto-create-btn">{autoSaving ? "Creating…" : "Create Pools"}</Button>
+            </div>
+          </div>
+        </Dialog>
+      )}
+
+      {detailPoolId && (
+        <PoolDetailDialog
+          poolId={detailPoolId}
+          canEdit={canEdit}
+          onClose={() => setDetailPoolId(null)}
+          onOpenConsole={onOpenConsole}
+          onChanged={refresh}
+        />
+      )}
+    </div>
+  );
+}
+
+function CreatePoolDialog({ tournamentId, roundId, teams, onClose, onCreated }: {
+  tournamentId: number; roundId: number; teams: Team[]; onClose: () => void; onCreated: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [teamIds, setTeamIds] = useState<number[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  const toggle = (id: number) => setTeamIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+
+  const save = async () => {
+    if (!name.trim()) return toast.error("Pool name is required");
+    setSaving(true);
+    try {
+      await api.post(`/tournaments/${tournamentId}/rounds/${roundId}/pools`, { name, team_ids: teamIds });
+      toast.success("Pool created");
+      onCreated();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not create pool");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open onClose={onClose} title="Create Pool" testId="create-pool-dialog">
+      <div className="space-y-4">
+        <div><Label>Pool Name *</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Pool A" data-testid="pool-name-input" /></div>
+        <div>
+          <Label>Select Teams ({teamIds.length})</Label>
+          <p className="mt-0.5 text-xs text-slate-500">A pool can exist empty while you're setting it up — teams need at least 5 total before it can be finalized.</p>
+          <div className="mt-1.5 max-h-56 overflow-y-auto rounded-md border border-slate-200 p-2">
+            {teams.map((t) => (
+              <label key={t.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-slate-50">
+                <input type="checkbox" checked={teamIds.includes(t.id)} onChange={() => toggle(t.id)} />
+                {t.name}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={save} disabled={saving} data-testid="save-pool-btn">{saving ? "Creating…" : "Create Pool"}</Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+interface StandingRow {
+  team_id: number; team_name: string; played: number; won: number; lost: number; drawn: number;
+  points_for: number; points_against: number; points: number; position: number;
+}
+
+function PoolDetailDialog({ poolId, canEdit, onClose, onOpenConsole, onChanged }: {
+  poolId: number; canEdit: boolean; onClose: () => void; onOpenConsole: (id: number) => void; onChanged: () => void;
+}) {
+  const [pool, setPool] = useState<PoolT | null>(null);
+  const [matches, setMatches] = useState<MatchT[]>([]);
+  const [standings, setStandings] = useState<StandingRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = () => {
+    setLoading(true);
+    Promise.all([
+      api.get<PoolT>(`/pools/${poolId}`),
+      api.get<MatchT[]>(`/pools/${poolId}/matches`),
+      api.get<StandingRow[]>(`/pools/${poolId}/standings`),
+    ]).then(([p, m, s]) => { setPool(p.data); setMatches(m.data); setStandings(s.data); }).finally(() => setLoading(false));
+  };
+  useEffect(load, [poolId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const startMatch = async (id: number) => {
+    try {
+      await api.post(`/matches/${id}/start`);
+      load();
+      onChanged();
+      onOpenConsole(id);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not start match");
+    }
+  };
+
+  const removeTeam = async (teamId: number) => {
+    if (!confirm("Remove this team from the pool?")) return;
+    try {
+      await api.delete(`/pools/${poolId}/teams/${teamId}`);
+      load();
+      onChanged();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not remove team");
+    }
+  };
+
+  return (
+    <Dialog open onClose={onClose} title={pool ? pool.name : "Pool"} className="max-w-3xl" testId="pool-detail-dialog">
+      {loading || !pool ? <Spinner /> : (
+        <div className="space-y-5">
+          <div>
+            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500">Teams</h4>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {pool.teams.map((t) => (
+                <span key={t.id} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs">
+                  {t.name}
+                  {canEdit && pool.status !== "finalized" && (
+                    <button onClick={() => removeTeam(t.id)} className="text-slate-400 hover:text-red-500">×</button>
+                  )}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500">Fixtures ({matches.length})</h4>
+            {matches.length === 0 ? (
+              <p className="mt-1.5 text-sm text-slate-400">Not generated yet — finalize the pool first.</p>
+            ) : (
+              <Table className="mt-1.5">
+                <THead><TR className="hover:bg-transparent"><TH>#</TH><TH>Fixture</TH><TH>Status</TH><TH>Score</TH><TH className="text-right">Actions</TH></TR></THead>
+                <tbody>
+                  {matches.map((m, i) => (
+                    <TR key={m.id}>
+                      <TD className="text-slate-400">{i + 1}</TD>
+                      <TD className="font-semibold text-slate-800">{m.team_a_name} vs {m.team_b_name}</TD>
+                      <TD><Badge tone={STATUS_TONE[m.status]}>{m.status}</Badge></TD>
+                      <TD>{m.status === "SCHEDULED" ? "—" : `${m.team_a_score} – ${m.team_b_score}`}</TD>
+                      <TD>
+                        <div className="flex justify-end gap-1">
+                          {canEdit && m.status === "SCHEDULED" && (
+                            <Button size="sm" variant="outline" onClick={() => startMatch(m.id)}><Play className="h-3.5 w-3.5" /> Start</Button>
+                          )}
+                          {(m.status === "ONGOING" || m.status === "PAUSED") && (
+                            <Button size="sm" variant="outline" onClick={() => onOpenConsole(m.id)}><Radio className="h-3.5 w-3.5 text-emerald-600" /> Open Live</Button>
+                          )}
+                        </div>
+                      </TD>
+                    </TR>
+                  ))}
+                </tbody>
+              </Table>
+            )}
+          </div>
+
+          <div>
+            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500">Standings</h4>
+            {standings.every((s) => s.played === 0) ? (
+              <p className="mt-1.5 text-sm text-slate-400">No completed matches yet.</p>
+            ) : (
+              <Table className="mt-1.5">
+                <THead><TR className="hover:bg-transparent"><TH>#</TH><TH>Team</TH><TH className="text-right">P</TH><TH className="text-right">W</TH><TH className="text-right">L</TH><TH className="text-right">D</TH><TH className="text-right">PF</TH><TH className="text-right">PA</TH><TH className="text-right">Pts</TH></TR></THead>
+                <tbody>
+                  {standings.map((s) => (
+                    <TR key={s.team_id}>
+                      <TD className="text-slate-400">{s.position}</TD>
+                      <TD className="font-semibold text-slate-800">{s.team_name}</TD>
+                      <TD className="text-right">{s.played}</TD>
+                      <TD className="text-right">{s.won}</TD>
+                      <TD className="text-right">{s.lost}</TD>
+                      <TD className="text-right">{s.drawn}</TD>
+                      <TD className="text-right">{s.points_for}</TD>
+                      <TD className="text-right">{s.points_against}</TD>
+                      <TD className="text-right font-bold">{s.points}</TD>
+                    </TR>
+                  ))}
+                </tbody>
+              </Table>
+            )}
+          </div>
         </div>
       )}
     </Dialog>

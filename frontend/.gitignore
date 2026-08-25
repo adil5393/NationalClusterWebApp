@@ -21,3 +21,12 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Android / Gradle
+android/app/src/
+android/app/build.gradle
+android/settings.gradle
+android/gradle/
+gradlew
+gradlew.bat
+capacitor.settings.gradle
