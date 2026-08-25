@@ -606,3 +606,34 @@ class MatchCompleteRequest(BaseModel):
 class GenerateBracketRequest(BaseModel):
     team_ids: List[int]
     replace: bool = False  # required to be true if the tournament already has rounds
+
+
+# --- League / pool stage (alongside knockout, within the same Tournament -> Round -> Match tree) ---
+MATCH_TYPES = ["KNOCKOUT", "LEAGUE"]
+POOL_STATUSES = ["draft", "finalized"]
+
+
+class PoolCreate(BaseModel):
+    name: str
+    team_ids: List[int] = []
+
+
+class PoolUpdate(BaseModel):
+    name: Optional[str] = None
+
+
+class PoolTeamAdd(BaseModel):
+    team_id: int
+
+
+class AutoCreatePoolsRequest(BaseModel):
+    # False (default): just compute and return the breakdown, don't persist —
+    # this is what powers the "Create 4 pools? Pool A - 6 teams..." confirm
+    # step. True: actually create the pools/teams/matches.
+    commit: bool = False
+
+
+class FinalizePoolRequest(BaseModel):
+    # Required (true) to proceed if the pool already has fixtures generated —
+    # mirrors GenerateBracketRequest.replace's confirm-to-regenerate pattern.
+    regenerate: bool = False

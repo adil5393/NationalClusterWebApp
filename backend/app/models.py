@@ -416,17 +416,55 @@ class Round(TimestampMixin, Base):
         "Match", back_populates="round", cascade="all, delete-orphan",
         order_by="Match.id", foreign_keys="Match.round_id",
     )
+    pools = relationship("Pool", back_populates="round", cascade="all, delete-orphan", order_by="Pool.name")
+
+
+pool_teams = Table(
+    "pool_teams",
+    Base.metadata,
+    Column("pool_id", Integer, ForeignKey("pools.id", ondelete="CASCADE"), primary_key=True),
+    Column("team_id", Integer, ForeignKey("teams.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+class Pool(TimestampMixin, Base):
+    """A league/round-robin group within a Round — the alternative to a
+    knockout Round's matches being wired via source_match_a/b_id. A Round can
+    freely mix: some rounds are pool-stage rounds (this), others are
+    knockout rounds (Match.source_match_a/b_id) — nothing here assumes a
+    tournament is all-one-format.
+
+    status: "draft" (teams still being assigned/adjusted, no matches yet) or
+    "finalized" (round-robin fixtures generated — see routers/pools.py)."""
+    __tablename__ = "pools"
+    id = Column(Integer, primary_key=True)
+    tournament_id = Column(Integer, ForeignKey("tournaments.id", ondelete="CASCADE"), nullable=False)
+    round_id = Column(Integer, ForeignKey("rounds.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(80), nullable=False)
+    status = Column(String(20), nullable=False, default="draft")
+
+    tournament = relationship("Tournament")
+    round = relationship("Round", back_populates="pools")
+    teams = relationship("Team", secondary=pool_teams, backref="pools")
+    matches = relationship("Match", back_populates="pool")
 
 
 class Match(TimestampMixin, Base):
     """A single fixture between two Teams. Either team slot can start out empty
     (source_match_a/b_id set instead) when the bracket is drawn ahead of earlier
     rounds finishing — see resolve_next_match() in routers/matches.py, which
-    fills that slot in once the source match completes."""
+    fills that slot in once the source match completes.
+
+    match_type distinguishes a knockout-bracket match from a league/pool
+    round-robin match (pool_id set); both share every other field and the
+    exact same lifecycle/live-scoring pipeline — a pool match starting,
+    scoring, and completing works identically to a knockout match."""
     __tablename__ = "matches"
     id = Column(Integer, primary_key=True)
     tournament_id = Column(Integer, ForeignKey("tournaments.id", ondelete="CASCADE"), nullable=False)
     round_id = Column(Integer, ForeignKey("rounds.id", ondelete="CASCADE"), nullable=False)
+    match_type = Column(String(20), nullable=False, default="KNOCKOUT")  # schemas.MATCH_TYPES
+    pool_id = Column(Integer, ForeignKey("pools.id", ondelete="CASCADE"))  # set only for LEAGUE matches
 
     team_a_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"))
     team_b_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"))
@@ -448,6 +486,7 @@ class Match(TimestampMixin, Base):
 
     tournament = relationship("Tournament")
     round = relationship("Round", back_populates="matches", foreign_keys=[round_id])
+    pool = relationship("Pool", back_populates="matches")
     team_a = relationship("Team", foreign_keys=[team_a_id])
     team_b = relationship("Team", foreign_keys=[team_b_id])
     winner_team = relationship("Team", foreign_keys=[winner_team_id])
