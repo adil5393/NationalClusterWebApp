@@ -32,6 +32,9 @@ def _match_dict(m: models.Match, db: Session) -> dict:
     return {
         "id": m.id,
         "tournament_id": m.tournament_id,
+        "tournament_name": m.tournament.name if m.tournament else None,
+        "sport": m.tournament.sport if m.tournament else None,
+        "age_group": m.tournament.age_group if m.tournament else None,
         "round_id": m.round_id,
         "round_name": m.round.name if m.round else None,
         "team_a_id": m.team_a_id,
@@ -177,6 +180,124 @@ def get_bracket(tournament_id: int, db: Session = Depends(get_db)):
     t = db.get(models.Tournament, tournament_id)
     if not t:
         raise HTTPException(404, "Tournament not found")
+    return _tournament_dict(t, db, with_rounds=True)
+
+
+def _create_bye_match(db: Session, tournament_id: int, round_id: int, team_id: int) -> models.Match:
+    """A visible, auto-completed stand-in for a bye — so a round with byes
+    still shows every slot instead of silently vanishing, and the next
+    round's already-known team is traceable back to this instead of looking
+    like it appeared with no round-1 result at all."""
+    now = datetime.now(timezone.utc)
+    m = models.Match(
+        tournament_id=tournament_id,
+        round_id=round_id,
+        team_a_id=team_id,
+        status="COMPLETED",
+        winner_team_id=team_id,
+        started_at=now,
+        ended_at=now,
+        notes="Bye",
+    )
+    db.add(m)
+    db.flush()
+    return m
+
+
+def _bracket_round_name(match_count: int) -> str:
+    if match_count == 1:
+        return "Final"
+    if match_count == 2:
+        return "Semi Final"
+    if match_count == 4:
+        return "Quarter Final"
+    return f"Round of {match_count * 2}"
+
+
+@router.post("/api/tournaments/{tournament_id}/generate-bracket", status_code=201)
+def generate_bracket(tournament_id: int, payload: schemas.GenerateBracketRequest, db: Session = Depends(get_db)):
+    """Builds a full single-elimination bracket from a flat team list: Round 1
+    pairs them up, every later round is auto-created with placeholder slots
+    (source_match_a/b_id) wired to the two matches that feed it, all the way
+    down to a 1-match Final — so completing a match later fills the next
+    round's slot automatically (see _propagate_winner). If the team count
+    isn't a power of two, the extra top-of-list teams get a bye straight into
+    round 2, spread out so no two byes land on the same pairing."""
+    t = db.get(models.Tournament, tournament_id)
+    if not t:
+        raise HTTPException(404, "Tournament not found")
+
+    team_ids = list(dict.fromkeys(payload.team_ids))  # de-dupe, keep order
+    if len(team_ids) < 2:
+        raise HTTPException(400, "Pick at least 2 teams to generate a bracket")
+    for team_id in team_ids:
+        if not db.get(models.Team, team_id):
+            raise HTTPException(404, f"Team {team_id} not found")
+        _check_team_age_group(db, team_id, t.age_group)
+
+    existing_rounds = db.query(models.Round).filter(models.Round.tournament_id == tournament_id).count()
+    if existing_rounds > 0 and not payload.replace:
+        raise HTTPException(409, "This tournament already has fixtures — confirm to delete them and regenerate")
+    if existing_rounds > 0:
+        db.query(models.Round).filter(models.Round.tournament_id == tournament_id).delete()
+        db.flush()
+
+    n = len(team_ids)
+    bracket_size = 1
+    while bracket_size < n:
+        bracket_size *= 2
+    num_byes = bracket_size - n
+
+    bye_positions: set[int] = set()
+    if num_byes:
+        step = bracket_size / num_byes
+        bye_positions = {int(i * step) for i in range(num_byes)}
+
+    # Each slot is ("team", team_id) or ("bye", None), spread across bracket_size
+    # leaf positions of the tree.
+    team_iter = iter(team_ids)
+    current: list[tuple[str, int | None]] = [
+        ("bye", None) if i in bye_positions else ("team", next(team_iter))
+        for i in range(bracket_size)
+    ]
+
+    round_index = 0
+    while len(current) > 1:
+        round_index += 1
+        pairs = [current[i:i + 2] for i in range(0, len(current), 2)]
+        round_ = models.Round(tournament_id=tournament_id, name=_bracket_round_name(len(pairs)), sequence=round_index)
+        db.add(round_)
+        db.flush()
+
+        next_round: list[tuple[str, int | None]] = []
+        for (kind_a, val_a), (kind_b, val_b) in pairs:
+            # A bye still gets a real, visible match row — auto-completed with
+            # the lone team as winner — so the round isn't silently missing
+            # slots and the next round's already-known team is traceable back
+            # to something ("Bye") instead of looking like it appeared from
+            # nowhere.
+            if kind_a == "bye":
+                _create_bye_match(db, tournament_id, round_.id, val_b)
+                next_round.append(("team", val_b))
+                continue
+            if kind_b == "bye":
+                _create_bye_match(db, tournament_id, round_.id, val_a)
+                next_round.append(("team", val_a))
+                continue
+            m = models.Match(
+                tournament_id=tournament_id,
+                round_id=round_.id,
+                team_a_id=val_a if kind_a == "team" else None,
+                team_b_id=val_b if kind_b == "team" else None,
+                source_match_a_id=val_a if kind_a == "match" else None,
+                source_match_b_id=val_b if kind_b == "match" else None,
+            )
+            db.add(m)
+            db.flush()
+            next_round.append(("match", m.id))
+        current = next_round
+
+    db.commit()
     return _tournament_dict(t, db, with_rounds=True)
 
 

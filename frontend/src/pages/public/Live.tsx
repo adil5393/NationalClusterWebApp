@@ -3,6 +3,15 @@ import { Radio, Flag, Trophy } from "lucide-react";
 import { api } from "@/lib/api";
 import { connectLive, matchChannel, tournamentChannel } from "@/lib/live";
 import { formatDate } from "@/lib/meta";
+import { Dialog } from "@/components/ui/dialog";
+
+// Every match has two sides — team A is always red, team B is always blue,
+// regardless of which actual team ends up in that slot as the bracket fills
+// in. Live/completed connector lines borrow whichever color is currently
+// ahead (or the winner's, once decided).
+const RED = "#ef4444";
+const BLUE = "#3b82f6";
+const NEUTRAL = "#cbd5e1";
 
 interface MatchT {
   id: number; tournament_id: number; tournament_name?: string; sport?: string | null;
@@ -13,17 +22,19 @@ interface MatchT {
   venue_name?: string | null; scheduled_at?: string | null;
   status: string; team_a_score: number; team_b_score: number;
   winner_team_id?: number | null; winner_team_name?: string | null;
+  notes?: string | null;
 }
 interface RoundT { id: number; name: string; sequence: number; matches: MatchT[] }
 interface Bracket { id: number; name: string; sport?: string | null; status: string; rounds: RoundT[] }
 interface TournamentSummary { id: number; name: string; sport?: string | null; status: string }
 
-function ScoreLine({ label, value, leading }: { label: string; value: number; leading: boolean }) {
+function ScoreLine({ label, value, leading, color }: { label: string; value: number; leading: boolean; color: string }) {
   return (
     <div className={`flex items-center justify-between rounded px-2 py-1 ${leading ? "bg-emerald-50" : ""}`}>
-      <span className={`truncate text-sm ${leading ? "font-bold text-emerald-800" : "text-slate-700"}`}>
-        {leading && <Flag className="mr-1 inline h-3 w-3 text-emerald-600" />}
-        {label}
+      <span className={`flex min-w-0 items-center gap-1.5 truncate text-sm ${leading ? "font-bold text-emerald-800" : "text-slate-700"}`}>
+        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
+        {leading && <Flag className="h-3 w-3 shrink-0 text-emerald-600" />}
+        <span className="truncate">{label}</span>
       </span>
       <span key={value} className="font-heading text-lg font-black tabular-nums text-slate-950">{value}</span>
     </div>
@@ -51,8 +62,8 @@ function LiveMatchCard({ initial }: { initial: MatchT }) {
       </div>
       <p className="mt-1 text-xs text-slate-400">{m.round_name}</p>
       <div className="mt-2 space-y-1">
-        <ScoreLine label={m.team_a_name ?? "TBD"} value={m.team_a_score} leading={leader === "a"} />
-        <ScoreLine label={m.team_b_name ?? "TBD"} value={m.team_b_score} leading={leader === "b"} />
+        <ScoreLine label={m.team_a_name ?? "TBD"} value={m.team_a_score} leading={leader === "a"} color={RED} />
+        <ScoreLine label={m.team_b_name ?? "TBD"} value={m.team_b_score} leading={leader === "b"} color={BLUE} />
       </div>
     </div>
   );
@@ -71,6 +82,25 @@ const ROW_GAP = 20;
 const HEADER_H = 32;
 
 interface Pos { x: number; y: number }
+
+// Which color a match's own outgoing connector should currently show: the
+// leader while it's live, the winner once decided, or neutral if it's tied /
+// hasn't started. A bye always resolves to red since the bye'd team is
+// always placed in the team_a slot (see backend generate-bracket).
+function leaderColor(src: MatchT | undefined): string {
+  if (!src) return NEUTRAL;
+  if (src.notes === "Bye") return RED;
+  if (src.status === "COMPLETED") {
+    if (src.winner_team_id != null && src.winner_team_id === src.team_a_id) return RED;
+    if (src.winner_team_id != null && src.winner_team_id === src.team_b_id) return BLUE;
+    return NEUTRAL;
+  }
+  if (src.status === "ONGOING" || src.status === "PAUSED") {
+    if (src.team_a_score > src.team_b_score) return RED;
+    if (src.team_b_score > src.team_a_score) return BLUE;
+  }
+  return NEUTRAL;
+}
 
 function layoutBracket(rounds: RoundT[]) {
   const sorted = [...rounds].sort((a, b) => a.sequence - b.sequence);
@@ -102,24 +132,42 @@ function layoutBracket(rounds: RoundT[]) {
   const width = sorted.length > 0 ? sorted.length * CARD_W + (sorted.length - 1) * COL_GAP : 0;
   const height = allPos.length > 0 ? Math.max(...allPos.map((p) => p.y)) + CARD_H : 0;
 
-  const connectors: string[] = [];
+  const matchById: Record<number, MatchT> = {};
+  sorted.forEach((r) => r.matches.forEach((m) => { matchById[m.id] = m; }));
+
+  // Each match's own outgoing stub is colored separately by that source
+  // match's leader/winner — the "half of the connecting line" that shows
+  // red or blue. The joiner + final run into the target stays neutral: it
+  // merges two different matches' outcomes, so no single team's color applies
+  // to it until the target match itself is decided.
+  //
+  // Each source gets its own complete, never-shared path — entering the
+  // target card at a distinct point (the team_a row for source A, the
+  // team_b row for source B) rather than merging into one trunk. That way
+  // when a source is decided, its ENTIRE line (not just the stub near it)
+  // is one solid color, with no ambiguous shared segment to disagree on.
+  const TEAM_A_ROW_Y = 34;
+  const TEAM_B_ROW_Y = 60;
+  const connectors: { d: string; color: string }[] = [];
   for (let r = 1; r < sorted.length; r++) {
     sorted[r].matches.forEach((m) => {
       const target = positions[m.id];
       if (!target) return;
       const targetLeftX = target.x;
-      const targetCenterY = target.y + CARD_H / 2;
       const prevRightX = targetLeftX - COL_GAP;
       const midX = targetLeftX - COL_GAP / 2;
+
       const aPos = m.source_match_a_id != null ? positions[m.source_match_a_id] : undefined;
-      const bPos = m.source_match_b_id != null ? positions[m.source_match_b_id] : undefined;
-      if (aPos && bPos) {
+      if (aPos) {
         const aY = aPos.y + CARD_H / 2;
+        const targetAY = target.y + TEAM_A_ROW_Y;
+        connectors.push({ d: `M${prevRightX},${aY} H${midX} V${targetAY} H${targetLeftX}`, color: leaderColor(matchById[m.source_match_a_id!]) });
+      }
+      const bPos = m.source_match_b_id != null ? positions[m.source_match_b_id] : undefined;
+      if (bPos) {
         const bY = bPos.y + CARD_H / 2;
-        connectors.push(`M${prevRightX},${aY} H${midX} M${prevRightX},${bY} H${midX} M${midX},${aY} V${bY} M${midX},${targetCenterY} H${targetLeftX}`);
-      } else if (aPos || bPos) {
-        const srcY = (aPos ?? bPos)!.y + CARD_H / 2;
-        connectors.push(`M${prevRightX},${srcY} H${targetLeftX}`);
+        const targetBY = target.y + TEAM_B_ROW_Y;
+        connectors.push({ d: `M${prevRightX},${bY} H${midX} V${targetBY} H${targetLeftX}`, color: leaderColor(matchById[m.source_match_b_id!]) });
       }
     });
   }
@@ -127,13 +175,27 @@ function layoutBracket(rounds: RoundT[]) {
   return { sorted, positions, width, height, connectors };
 }
 
-function BracketMatchCard({ m, isFinal }: { m: MatchT; isFinal?: boolean }) {
+function BracketMatchCard({ m, isFinal, onSelect }: { m: MatchT; isFinal?: boolean; onSelect?: (id: number) => void }) {
   const live = m.status === "ONGOING" || m.status === "PAUSED";
   const done = m.status === "COMPLETED";
+  const isBye = m.notes === "Bye";
+  const clickable = !!onSelect && !!m.team_a_id && !!m.team_b_id;
+
+  if (isBye) {
+    return (
+      <div style={{ width: CARD_W, height: CARD_H }} className="flex shrink-0 flex-col justify-center rounded-md border border-slate-200 bg-slate-50 p-2.5 text-sm">
+        <span className="truncate font-bold text-slate-800">{m.team_a_name ?? m.team_b_name}</span>
+        <span className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Bye — advances automatically</span>
+      </div>
+    );
+  }
+
   return (
     <div
+      onClick={() => clickable && onSelect!(m.id)}
       style={{ width: CARD_W, height: CARD_H }}
-      className={`shrink-0 rounded-md border p-2.5 text-sm shadow-sm ${live ? "border-emerald-300 bg-emerald-50" : isFinal ? "border-coral bg-orange-50/50" : "border-slate-200 bg-white"}`}
+      className={`shrink-0 rounded-md border p-2.5 text-sm shadow-sm transition-shadow ${live ? "border-emerald-300 bg-emerald-50" : isFinal ? "border-coral bg-orange-50/50" : "border-slate-200 bg-white"} ${clickable ? "cursor-pointer hover:shadow-md" : ""}`}
+      data-testid={`bracket-match-${m.id}`}
     >
       <div className="flex items-center justify-between text-[11px] text-slate-400">
         <span className="truncate">{m.venue_name ?? "Venue TBD"}</span>
@@ -141,11 +203,17 @@ function BracketMatchCard({ m, isFinal }: { m: MatchT; isFinal?: boolean }) {
         {m.status === "SCHEDULED" && m.scheduled_at && <span className="shrink-0">{formatDate(m.scheduled_at)}</span>}
       </div>
       <div className={`mt-1 flex items-center justify-between ${done && m.winner_team_id === m.team_a_id ? "font-bold text-slate-950" : "text-slate-700"}`}>
-        <span className="truncate">{m.team_a_name ?? "TBD"}</span>
+        <span className="flex min-w-0 items-center gap-1.5 truncate">
+          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: RED }} />
+          <span className="truncate">{m.team_a_name ?? "TBD"}</span>
+        </span>
         {(live || done) && <span className="shrink-0 tabular-nums">{m.team_a_score}</span>}
       </div>
       <div className={`flex items-center justify-between ${done && m.winner_team_id === m.team_b_id ? "font-bold text-slate-950" : "text-slate-700"}`}>
-        <span className="truncate">{m.team_b_name ?? "TBD"}</span>
+        <span className="flex min-w-0 items-center gap-1.5 truncate">
+          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: BLUE }} />
+          <span className="truncate">{m.team_b_name ?? "TBD"}</span>
+        </span>
         {(live || done) && <span className="shrink-0 tabular-nums">{m.team_b_score}</span>}
       </div>
       {done && m.winner_team_name && (
@@ -157,7 +225,57 @@ function BracketMatchCard({ m, isFinal }: { m: MatchT; isFinal?: boolean }) {
   );
 }
 
-function BracketView({ tournamentId }: { tournamentId: number }) {
+interface RosterEntry { full_name: string; role?: string | null }
+interface MatchDetail extends MatchT { team_a_roster?: RosterEntry[]; team_b_roster?: RosterEntry[] }
+
+function RosterColumn({ name, color, roster }: { name: string; color: string; roster?: RosterEntry[] }) {
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 border-b border-slate-200 pb-2">
+        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />
+        <h4 className="truncate font-heading font-bold text-slate-900">{name}</h4>
+      </div>
+      <ul className="mt-2 space-y-1 text-sm">
+        {(roster ?? []).map((p, i) => (
+          <li key={i} className="flex items-center justify-between gap-2 text-slate-700">
+            <span className="truncate">{p.full_name}</span>
+            {p.role && <span className="shrink-0 text-xs text-slate-400">{p.role}</span>}
+          </li>
+        ))}
+        {(roster ?? []).length === 0 && <li className="text-xs text-slate-400">No roster published.</li>}
+      </ul>
+    </div>
+  );
+}
+
+function MatchRosterDialog({ matchId, onClose }: { matchId: number; onClose: () => void }) {
+  const [detail, setDetail] = useState<MatchDetail | null>(null);
+  useEffect(() => {
+    setDetail(null);
+    api.get<MatchDetail>(`/public/matches/${matchId}`).then((r) => setDetail(r.data));
+  }, [matchId]);
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={detail ? `${detail.team_a_name ?? "TBD"} vs ${detail.team_b_name ?? "TBD"}` : "Match"}
+      className="max-w-2xl"
+      testId="match-roster-dialog"
+    >
+      {!detail ? (
+        <p className="text-sm text-slate-400">Loading…</p>
+      ) : (
+        <div className="grid grid-cols-2 gap-6">
+          <RosterColumn name={detail.team_a_name ?? "TBD"} color={RED} roster={detail.team_a_roster} />
+          <RosterColumn name={detail.team_b_name ?? "TBD"} color={BLUE} roster={detail.team_b_roster} />
+        </div>
+      )}
+    </Dialog>
+  );
+}
+
+function BracketView({ tournamentId, onSelectMatch }: { tournamentId: number; onSelectMatch: (id: number) => void }) {
   const [bracket, setBracket] = useState<Bracket | null>(null);
 
   const load = () => api.get<Bracket>(`/public/tournaments/${tournamentId}/bracket`).then((r) => setBracket(r.data));
@@ -187,8 +305,8 @@ function BracketView({ tournamentId }: { tournamentId: number }) {
           </div>
         ))}
         <svg className="pointer-events-none absolute inset-0" width={layout.width} height={layout.height}>
-          {layout.connectors.map((d, i) => (
-            <path key={i} d={d} stroke="#cbd5e1" strokeWidth={2} fill="none" />
+          {layout.connectors.map((c, i) => (
+            <path key={i} d={c.d} stroke={c.color} strokeWidth={2} fill="none" />
           ))}
         </svg>
         {layout.sorted.flatMap((r, ri) =>
@@ -197,7 +315,7 @@ function BracketView({ tournamentId }: { tournamentId: number }) {
             if (!pos) return null;
             return (
               <div key={m.id} className="absolute" style={{ left: pos.x, top: pos.y }}>
-                <BracketMatchCard m={m} isFinal={ri === layout.sorted.length - 1 && r.matches.length === 1} />
+                <BracketMatchCard m={m} isFinal={ri === layout.sorted.length - 1 && r.matches.length === 1} onSelect={onSelectMatch} />
               </div>
             );
           }),
@@ -212,6 +330,7 @@ export default function Live() {
   const [tournaments, setTournaments] = useState<TournamentSummary[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [rosterMatchId, setRosterMatchId] = useState<number | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -264,8 +383,10 @@ export default function Live() {
         {!loading && tournaments.length === 0 && (
           <p className="mt-3 text-sm text-slate-400">No published tournaments yet.</p>
         )}
-        {selectedTournament && <BracketView tournamentId={selectedTournament.id} />}
+        {selectedTournament && <BracketView tournamentId={selectedTournament.id} onSelectMatch={setRosterMatchId} />}
       </section>
+
+      {rosterMatchId && <MatchRosterDialog matchId={rosterMatchId} onClose={() => setRosterMatchId(null)} />}
     </div>
   );
 }

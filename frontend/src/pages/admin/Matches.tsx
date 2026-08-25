@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2, Pencil, Play, Pause, PlayCircle, Flag, Radio, Ban } from "lucide-react";
+import { Plus, Trash2, Pencil, Play, Pause, PlayCircle, Flag, Radio, Ban, Shuffle } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { connectLive, matchChannel } from "@/lib/live";
@@ -16,7 +16,8 @@ interface Team { id: number; name: string }
 interface Venue { id: number; name: string }
 interface ParticipantT { team_id: number; age_group?: string | null; is_present?: boolean }
 interface MatchT {
-  id: number; tournament_id: number; round_id: number; round_name?: string | null;
+  id: number; tournament_id: number; tournament_name?: string | null; sport?: string | null; age_group?: string | null;
+  round_id: number; round_name?: string | null;
   team_a_id?: number | null; team_a_name?: string | null;
   team_b_id?: number | null; team_b_name?: string | null;
   source_match_a_id?: number | null; source_match_b_id?: number | null;
@@ -50,6 +51,7 @@ function PresentCount({ counts, teamId }: { counts: Record<number, { present: nu
 }
 
 function matchLabel(m: MatchT) {
+  if (m.notes === "Bye") return `${m.team_a_name ?? m.team_b_name} — Bye`;
   const a = m.team_a_name ?? (m.source_match_a_id ? `Winner of Match ${m.source_match_a_id}` : "TBD");
   const b = m.team_b_name ?? (m.source_match_b_id ? `Winner of Match ${m.source_match_b_id}` : "TBD");
   return `${a} vs ${b}`;
@@ -60,6 +62,27 @@ function matchLabel(m: MatchT) {
 function ageGroupRank(g: string) {
   const m = g.match(/(\d+)/);
   return m ? parseInt(m[1], 10) : 999;
+}
+
+// Mirrors backend _bracket_round_name — a client-side preview of the rounds
+// generate-bracket will create, before actually calling the API.
+function bracketRoundName(matchCount: number) {
+  if (matchCount === 1) return "Final";
+  if (matchCount === 2) return "Semi Final";
+  if (matchCount === 4) return "Quarter Final";
+  return `Round of ${matchCount * 2}`;
+}
+function previewBracketRounds(teamCount: number): { name: string; matches: number }[] {
+  if (teamCount < 2) return [];
+  let bracketSize = 1;
+  while (bracketSize < teamCount) bracketSize *= 2;
+  const rounds: { name: string; matches: number }[] = [];
+  let pairs = bracketSize / 2;
+  while (pairs >= 1) {
+    rounds.push({ name: bracketRoundName(pairs), matches: pairs });
+    pairs = pairs / 2;
+  }
+  return rounds;
 }
 
 export default function Matches() {
@@ -84,6 +107,11 @@ export default function Matches() {
   const [mForm, setMForm] = useState({ team_a_id: "", team_b_id: "", venue_id: "", scheduled_at: "", notes: "" });
 
   const [consoleMatchId, setConsoleMatchId] = useState<number | null>(null);
+
+  const [bgOpen, setBgOpen] = useState(false);
+  const [bgTeamIds, setBgTeamIds] = useState<number[]>([]);
+  const [bgShuffle, setBgShuffle] = useState(true);
+  const [bgSaving, setBgSaving] = useState(false);
 
   const loadBase = () => {
     setLoading(true);
@@ -140,6 +168,15 @@ export default function Matches() {
     return map;
   }, [participants]);
 
+  const liveByAgeGroup = useMemo(() => {
+    const groups: Record<string, MatchT[]> = {};
+    for (const m of live) {
+      const key = m.age_group ?? "No Age Group";
+      (groups[key] ??= []).push(m);
+    }
+    return Object.entries(groups).sort(([a], [b]) => ageGroupRank(a) - ageGroupRank(b) || a.localeCompare(b));
+  }, [live]);
+
   // --- Tournaments ---
   const saveTournament = async () => {
     if (!tForm.name.trim()) return toast.error("Tournament name is required");
@@ -183,6 +220,39 @@ export default function Matches() {
     await api.delete(`/rounds/${id}`);
     toast.success("Deleted");
     if (selectedId) loadDetail(selectedId);
+  };
+
+  // --- Generate bracket ---
+  const openGenerateBracket = () => {
+    setBgTeamIds(eligibleTeams.map((t) => t.id));
+    setBgShuffle(true);
+    setBgOpen(true);
+  };
+  const toggleBgTeam = (id: number) => {
+    setBgTeamIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+  };
+  const saveGenerateBracket = async (replace = false) => {
+    if (!selectedId) return;
+    if (bgTeamIds.length < 2) return toast.error("Pick at least 2 teams");
+    const order = bgShuffle ? [...bgTeamIds].sort(() => Math.random() - 0.5) : bgTeamIds;
+    setBgSaving(true);
+    try {
+      await api.post(`/tournaments/${selectedId}/generate-bracket`, { team_ids: order, replace });
+      toast.success("Bracket generated");
+      setBgOpen(false);
+      refreshAll();
+    } catch (e: any) {
+      if (e?.response?.status === 409) {
+        if (confirm("This tournament already has fixtures. Delete them and regenerate?")) {
+          await saveGenerateBracket(true);
+          return;
+        }
+      } else {
+        toast.error(e?.response?.data?.detail ?? "Could not generate bracket");
+      }
+    } finally {
+      setBgSaving(false);
+    }
   };
 
   // --- Matches (fixtures) ---
@@ -250,25 +320,32 @@ export default function Matches() {
         {live.length === 0 ? (
           <p className="mt-2 text-sm text-slate-500">Nothing live right now.</p>
         ) : (
-          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {live.map((m) => (
-              <button
-                key={m.id}
-                onClick={() => setConsoleMatchId(m.id)}
-                data-testid={`live-match-${m.id}`}
-                className="rounded-md border border-slate-200 bg-white p-3 text-left hover:border-emerald-300 hover:shadow-sm"
-              >
-                <div className="flex items-center justify-between">
-                  <Badge tone={STATUS_TONE[m.status]}>{m.status}</Badge>
-                  <span className="text-xs text-slate-400">{m.round_name}</span>
+          <div className="mt-3 space-y-4">
+            {liveByAgeGroup.map(([group, matches]) => (
+              <div key={group}>
+                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">{group} <span className="font-normal normal-case text-slate-400">({matches.length})</span></h3>
+                <div className="mt-1.5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {matches.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => setConsoleMatchId(m.id)}
+                      data-testid={`live-match-${m.id}`}
+                      className="rounded-md border border-slate-200 bg-white p-3 text-left hover:border-emerald-300 hover:shadow-sm"
+                    >
+                      <div className="flex items-center justify-between">
+                        <Badge tone={STATUS_TONE[m.status]}>{m.status}</Badge>
+                        <span className="truncate text-xs text-slate-400">{m.tournament_name ?? m.round_name}</span>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between text-sm font-bold text-slate-900">
+                        <span className="truncate">{m.team_a_name ?? "TBD"}</span><span>{m.team_a_score}</span>
+                      </div>
+                      <div className="mt-1 flex items-center justify-between text-sm font-bold text-slate-900">
+                        <span className="truncate">{m.team_b_name ?? "TBD"}</span><span>{m.team_b_score}</span>
+                      </div>
+                    </button>
+                  ))}
                 </div>
-                <div className="mt-2 flex items-center justify-between text-sm font-bold text-slate-900">
-                  <span className="truncate">{m.team_a_name ?? "TBD"}</span><span>{m.team_a_score}</span>
-                </div>
-                <div className="mt-1 flex items-center justify-between text-sm font-bold text-slate-900">
-                  <span className="truncate">{m.team_b_name ?? "TBD"}</span><span>{m.team_b_score}</span>
-                </div>
-              </button>
+              </div>
             ))}
           </div>
         )}
@@ -309,6 +386,7 @@ export default function Matches() {
                     <Button variant="ghost" size="icon" onClick={() => { setTForm({ id: detail.id, name: detail.name, sport: detail.sport ?? "", age_group: detail.age_group ?? "", status: detail.status, notes: detail.notes ?? "" }); setTOpen(true); }}><Pencil className="h-4 w-4" /></Button>
                     <Button variant="ghost" size="icon" onClick={() => removeTournament(detail.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
                     <Button variant="outline" size="sm" onClick={() => { setRForm({ name: "", sequence: String((detail.rounds?.length ?? 0) + 1) }); setROpen(true); }} data-testid="add-round-btn"><Plus className="h-4 w-4" /> Round</Button>
+                    <Button variant="outline" size="sm" onClick={openGenerateBracket} data-testid="generate-bracket-btn"><Shuffle className="h-4 w-4" /> Generate Bracket</Button>
                   </div>
                 )}
               </>
@@ -335,11 +413,15 @@ export default function Matches() {
                       <p className="mt-2 text-sm text-slate-400">No matches in this round yet.</p>
                     ) : (
                       <Table className="mt-2">
-                        <THead><TR className="hover:bg-transparent"><TH>Fixture</TH><TH>Venue</TH><TH>Scheduled</TH><TH>Status</TH><TH>Score</TH><TH className="text-right">Actions</TH></TR></THead>
+                        <THead><TR className="hover:bg-transparent"><TH>Fixture</TH><TH>Present</TH><TH>Venue</TH><TH>Scheduled</TH><TH>Status</TH><TH>Score</TH><TH className="text-right">Actions</TH></TR></THead>
                         <tbody>
                           {r.matches.map((m) => (
                             <TR key={m.id} data-testid={`match-row-${m.id}`}>
                               <TD className="font-semibold text-slate-800">{matchLabel(m)}{m.winner_team_name && <div className="text-xs font-normal text-emerald-600">Winner: {m.winner_team_name}</div>}</TD>
+                              <TD className="text-xs text-slate-500">
+                                {m.team_a_id && <div>{m.team_a_name}: {presentCounts[m.team_a_id] ? `${presentCounts[m.team_a_id].present}/${presentCounts[m.team_a_id].total}` : "—"}</div>}
+                                {m.team_b_id && <div>{m.team_b_name}: {presentCounts[m.team_b_id] ? `${presentCounts[m.team_b_id].present}/${presentCounts[m.team_b_id].total}` : "—"}</div>}
+                              </TD>
                               <TD className="text-slate-500">{m.venue_name ?? "—"}</TD>
                               <TD className="text-slate-500">{m.scheduled_at ? formatDate(m.scheduled_at) : "—"}</TD>
                               <TD><Badge tone={STATUS_TONE[m.status]}>{m.status}</Badge></TD>
@@ -456,6 +538,59 @@ export default function Matches() {
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={() => setMOpen(false)}>Cancel</Button>
             <Button onClick={saveMatch} data-testid="save-match-btn">Add Match</Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Generate bracket dialog */}
+      <Dialog open={bgOpen} onClose={() => setBgOpen(false)} title="Generate Bracket" testId="generate-bracket-dialog">
+        <div className="space-y-4">
+          <p className="text-xs text-slate-500">
+            Builds the full single-elimination fixture — Round 1 pairs up the selected teams, and every later
+            round (Quarter Final, Semi Final, Final…) is created automatically as a placeholder that fills in
+            with the winner once the match feeding it completes. You can still edit any fixture by hand
+            afterward. If the team count doesn't divide evenly, a few top teams get a bye straight into round 2.
+          </p>
+          {detail?.age_group && (
+            <p className="rounded-md bg-orange-50 px-3 py-2 text-xs font-semibold text-coral-600 ring-1 ring-orange-200">
+              Only teams with players in "{detail.age_group}" are listed.
+            </p>
+          )}
+
+          <div className="flex items-center justify-between">
+            <Label>Teams ({bgTeamIds.length} selected)</Label>
+            <div className="flex gap-2 text-xs">
+              <button className="font-semibold text-coral-600" onClick={() => setBgTeamIds(eligibleTeams.map((t) => t.id))}>Select all</button>
+              <button className="font-semibold text-slate-500" onClick={() => setBgTeamIds([])}>Clear</button>
+            </div>
+          </div>
+          <div className="max-h-56 overflow-y-auto rounded-md border border-slate-200 p-2" data-testid="bracket-team-list">
+            {eligibleTeams.map((t) => (
+              <label key={t.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-slate-50">
+                <input type="checkbox" checked={bgTeamIds.includes(t.id)} onChange={() => toggleBgTeam(t.id)} />
+                {t.name}
+              </label>
+            ))}
+            {eligibleTeams.length === 0 && <p className="p-2 text-sm text-slate-400">No eligible teams found.</p>}
+          </div>
+
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={bgShuffle} onChange={(e) => setBgShuffle(e.target.checked)} />
+            Shuffle team order (random draw)
+          </label>
+
+          {bgTeamIds.length >= 2 && (
+            <div className="rounded-md bg-slate-50 p-3 text-xs text-slate-600">
+              <span className="font-bold text-slate-800">Preview:</span>{" "}
+              {previewBracketRounds(bgTeamIds.length).map((r) => `${r.name} (${r.matches})`).join(" → ")}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setBgOpen(false)}>Cancel</Button>
+            <Button onClick={() => saveGenerateBracket(false)} disabled={bgSaving} data-testid="save-generate-bracket-btn">
+              {bgSaving ? "Generating…" : "Generate Bracket"}
+            </Button>
           </div>
         </div>
       </Dialog>

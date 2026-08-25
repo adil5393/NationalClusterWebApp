@@ -62,6 +62,7 @@ def _public_match_dict(m: models.Match, db: Session) -> dict:
         "winner_team_name": _public_team_name(db, m.winner_team_id),
         "started_at": m.started_at.isoformat() if m.started_at else None,
         "ended_at": m.ended_at.isoformat() if m.ended_at else None,
+        "notes": m.notes,
     }
 
 
@@ -121,6 +122,8 @@ def public_match_detail(match_id: int, db: Session = Depends(get_db)):
         }
         for e in m.events[-30:]  # recent history only — this isn't a full audit export
     ]
+    d["team_a_roster"] = [{"full_name": p.full_name, "role": p.role} for p in m.team_a.participants] if m.team_a else []
+    d["team_b_roster"] = [{"full_name": p.full_name, "role": p.role} for p in m.team_b.participants] if m.team_b else []
     return d
 
 

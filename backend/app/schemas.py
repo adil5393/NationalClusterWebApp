@@ -592,3 +592,8 @@ class MatchScoreUpdate(BaseModel):
 class MatchCompleteRequest(BaseModel):
     # Omit to auto-derive from the higher current score; required if the score is tied.
     winner_team_id: Optional[int] = None
+
+
+class GenerateBracketRequest(BaseModel):
+    team_ids: List[int]
+    replace: bool = False  # required to be true if the tournament already has rounds
