@@ -30,3 +30,4 @@ android/gradle/
 gradlew
 gradlew.bat
 capacitor.settings.gradle
+android/.gradle-user-home/
