@@ -300,10 +300,10 @@ export default function Matches() {
 
   return (
     <div data-testid="admin-matches">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-black tracking-tight text-slate-950">Matches & Fixtures</h1>
-          <p className="mt-1 text-sm text-slate-500">Tournaments, rounds, brackets, and live scoring.</p>
+          <h1 className="font-heading text-2xl font-black tracking-tight text-white lg:text-slate-950">Matches & Fixtures</h1>
+          <p className="mt-1 text-sm text-slate-400 lg:text-slate-500">Tournaments, rounds, brackets, and live scoring.</p>
         </div>
         {canEdit && (
           <Button onClick={() => { setTForm({ name: "", sport: "", age_group: "", status: "draft", notes: "" }); setTOpen(true); }} data-testid="add-tournament-btn">
@@ -313,14 +313,14 @@ export default function Matches() {
       </div>
 
       {/* LIVE NOW */}
-      <div className="mt-6 rounded-lg border border-emerald-200 bg-emerald-50/40 p-4">
+      <div className="mt-6 rounded-lg border border-emerald-900 bg-emerald-950/40 p-4 lg:border-emerald-200 lg:bg-emerald-50/40">
         <div className="flex items-center gap-2">
           <Radio className="h-4 w-4 text-emerald-600" />
-          <h2 className="font-heading text-sm font-bold text-slate-900">Ongoing Matches</h2>
-          <span className="text-xs text-slate-500">({live.length})</span>
+          <h2 className="font-heading text-sm font-bold text-white lg:text-slate-900">Ongoing Matches</h2>
+          <span className="text-xs text-slate-400 lg:text-slate-500">({live.length})</span>
         </div>
         {live.length === 0 ? (
-          <p className="mt-2 text-sm text-slate-500">Nothing live right now.</p>
+          <p className="mt-2 text-sm text-slate-400 lg:text-slate-500">Nothing live right now.</p>
         ) : (
           <div className="mt-3 space-y-4">
             {liveByAgeGroup.map(([group, matches]) => (
@@ -332,16 +332,16 @@ export default function Matches() {
                       key={m.id}
                       onClick={() => setConsoleMatchId(m.id)}
                       data-testid={`live-match-${m.id}`}
-                      className="rounded-md border border-slate-200 bg-white p-3 text-left hover:border-emerald-300 hover:shadow-sm"
+                    className="rounded-md border border-emerald-900 bg-obsidian p-3 text-left hover:border-emerald-500 hover:shadow-sm lg:border-slate-200 lg:bg-white lg:hover:border-emerald-300"
                     >
                       <div className="flex items-center justify-between">
                         <Badge tone={STATUS_TONE[m.status]}>{m.status}</Badge>
                         <span className="truncate text-xs text-slate-400">{m.tournament_name ?? m.round_name}</span>
                       </div>
-                      <div className="mt-2 flex items-center justify-between text-sm font-bold text-slate-900">
+                      <div className="mt-2 flex items-center justify-between text-sm font-bold text-white lg:text-slate-900">
                         <span className="truncate">{m.team_a_name ?? "TBD"}</span><span>{m.team_a_score}</span>
                       </div>
-                      <div className="mt-1 flex items-center justify-between text-sm font-bold text-slate-900">
+                      <div className="mt-1 flex items-center justify-between text-sm font-bold text-white lg:text-slate-900">
                         <span className="truncate">{m.team_b_name ?? "TBD"}</span><span>{m.team_b_score}</span>
                       </div>
                     </button>
@@ -354,12 +354,12 @@ export default function Matches() {
       </div>
 
       {loading ? <div className="mt-6"><Spinner /></div> : tournaments.length === 0 ? (
-        <div className="mt-6 rounded-lg border border-slate-200 bg-white p-6">
+        <div className="mt-6 rounded-lg border border-slate-800 bg-slate-900 p-6 lg:border-slate-200 lg:bg-white">
           <EmptyState title="No tournaments yet" hint="Create one to start building fixtures." />
         </div>
       ) : (
-        <div className="mt-6 rounded-lg border border-slate-200 bg-white">
-          <div className="flex gap-1 overflow-x-auto border-b border-slate-200 px-2 pt-2" data-testid="tournament-tabs">
+        <div className="mt-6 rounded-lg border border-slate-800 bg-slate-900 lg:border-slate-200 lg:bg-white">
+          <div className="flex gap-1 overflow-x-auto border-b border-slate-800 px-2 pt-2 lg:border-slate-200" data-testid="tournament-tabs">
             {tournaments.map((t) => (
               <button
                 key={t.id}
@@ -368,7 +368,7 @@ export default function Matches() {
                 className={`shrink-0 whitespace-nowrap rounded-t-md border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${
                   selectedId === t.id
                     ? "border-coral text-coral-600"
-                    : "border-transparent text-slate-500 hover:border-slate-200 hover:text-slate-800"
+                    : "border-transparent text-slate-400 hover:border-slate-700 hover:text-white lg:text-slate-500 lg:hover:border-slate-200 lg:hover:text-slate-800"
                 }`}
               >
                 {t.name}
@@ -377,14 +377,14 @@ export default function Matches() {
               </button>
             ))}
           </div>
-          <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 p-4">
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 p-3 lg:border-slate-200 lg:p-4">
             {detail && (
               <>
                 <Badge tone={detail.status === "active" ? "green" : detail.status === "completed" ? "slate" : "neutral"}>{detail.status}</Badge>
                 {detail.age_group && <Badge tone="coral">{detail.age_group}</Badge>}
                 {detail.sport && <span className="text-xs text-slate-500">{detail.sport}</span>}
                 {canEdit && (
-                  <div className="ml-auto flex gap-1">
+                  <div className="flex w-full flex-wrap gap-1 sm:ml-auto sm:w-auto">
                     <Button variant="ghost" size="icon" onClick={() => { setTForm({ id: detail.id, name: detail.name, sport: detail.sport ?? "", age_group: detail.age_group ?? "", status: detail.status, notes: detail.notes ?? "" }); setTOpen(true); }}><Pencil className="h-4 w-4" /></Button>
                     <Button variant="ghost" size="icon" onClick={() => removeTournament(detail.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
                     <Button variant="outline" size="sm" onClick={() => { setRForm({ name: "", sequence: String((detail.rounds?.length ?? 0) + 1) }); setROpen(true); }} data-testid="add-round-btn"><Plus className="h-4 w-4" /> Round</Button>
@@ -396,11 +396,11 @@ export default function Matches() {
           </div>
 
           {detail && (
-            <div className="flex gap-4 border-b border-slate-200 px-4 text-sm font-semibold">
-              <button onClick={() => setTab("fixtures")} className={`border-b-2 py-2.5 ${tab === "fixtures" ? "border-coral text-coral-600" : "border-transparent text-slate-500 hover:text-slate-800"}`} data-testid="subtab-fixtures">
+            <div className="flex gap-4 overflow-x-auto border-b border-slate-800 px-4 text-sm font-semibold lg:border-slate-200">
+              <button onClick={() => setTab("fixtures")} className={`shrink-0 border-b-2 py-2.5 ${tab === "fixtures" ? "border-coral text-coral-600" : "border-transparent text-slate-400 hover:text-white lg:text-slate-500 lg:hover:text-slate-800"}`} data-testid="subtab-fixtures">
                 Knockout / Fixtures
               </button>
-              <button onClick={() => setTab("league")} className={`border-b-2 py-2.5 ${tab === "league" ? "border-coral text-coral-600" : "border-transparent text-slate-500 hover:text-slate-800"}`} data-testid="subtab-league">
+              <button onClick={() => setTab("league")} className={`shrink-0 border-b-2 py-2.5 ${tab === "league" ? "border-coral text-coral-600" : "border-transparent text-slate-400 hover:text-white lg:text-slate-500 lg:hover:text-slate-800"}`} data-testid="subtab-league">
                 League Setup
               </button>
             </div>
@@ -425,8 +425,8 @@ export default function Matches() {
               <div className="space-y-6">
                 {detail.rounds!.map((r) => (
                   <div key={r.id}>
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-heading text-sm font-bold text-slate-900">{r.name}</h3>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="font-heading text-sm font-bold text-white lg:text-slate-900">{r.name}</h3>
                       {canEdit && (
                         <div className="flex gap-1">
                           <Button variant="outline" size="sm" onClick={() => openAddMatch(r.id)} data-testid={`add-match-${r.id}`}><Plus className="h-3.5 w-3.5" /> Match</Button>
@@ -437,7 +437,18 @@ export default function Matches() {
                     {r.matches.length === 0 ? (
                       <p className="mt-2 text-sm text-slate-400">No matches in this round yet.</p>
                     ) : (
-                      <Table className="mt-2">
+                      <>
+                      <div className="mt-2 grid gap-2 lg:hidden">
+                        {r.matches.map((m) => (
+                          <div key={m.id} className="rounded-md border border-slate-800 bg-obsidian p-3" data-testid={`match-card-${m.id}`}>
+                            <div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="break-words font-semibold text-white">{matchLabel(m)}</p>{m.winner_team_name && <p className="mt-1 text-xs text-emerald-400">Winner: {m.winner_team_name}</p>}</div><Badge tone={STATUS_TONE[m.status]}>{m.status}</Badge></div>
+                            <p className="mt-2 text-xs text-slate-400">{m.venue_name ?? "No venue"} · {m.scheduled_at ? formatDate(m.scheduled_at) : "Not scheduled"}</p>
+                            <p className="mt-1 text-sm text-slate-300">{m.status === "SCHEDULED" || m.status === "POSTPONED" ? "Score pending" : `${m.team_a_score} – ${m.team_b_score}`}</p>
+                            <div className="mt-3 grid grid-cols-2 gap-2">{canEdit && m.status === "SCHEDULED" && m.team_a_id && m.team_b_id && <Button size="sm" onClick={() => startMatch(m.id)}>Start</Button>}{(m.status === "ONGOING" || m.status === "PAUSED") && <Button size="sm" onClick={() => setConsoleMatchId(m.id)}>Live console</Button>}{canEdit && (m.status === "SCHEDULED" || m.status === "POSTPONED") && <Button variant="outline" size="sm" onClick={() => removeMatch(m.id)} className="text-red-400">Delete</Button>}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="hidden lg:block"><Table className="mt-2">
                         <THead><TR className="hover:bg-transparent"><TH>Fixture</TH><TH>Present</TH><TH>Venue</TH><TH>Scheduled</TH><TH>Status</TH><TH>Score</TH><TH className="text-right">Actions</TH></TR></THead>
                         <tbody>
                           {r.matches.map((m) => (
@@ -467,7 +478,8 @@ export default function Matches() {
                             </TR>
                           ))}
                         </tbody>
-                      </Table>
+                      </Table></div>
+                      </>
                     )}
                   </div>
                 ))}
@@ -482,7 +494,7 @@ export default function Matches() {
       <Dialog open={tOpen} onClose={() => setTOpen(false)} title={tForm.id ? "Edit Tournament" : "New Tournament"} testId="tournament-dialog">
         <div className="space-y-4">
           <div><Label>Name *</Label><Input value={tForm.name} onChange={(e) => setTForm((f) => ({ ...f, name: e.target.value }))} placeholder="Kabaddi — Boys Under 17" data-testid="tournament-name-input" /></div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div><Label>Sport</Label><Input value={tForm.sport} onChange={(e) => setTForm((f) => ({ ...f, sport: e.target.value }))} placeholder="Kabaddi" /></div>
             <div>
               <Label>Status</Label>
@@ -534,7 +546,7 @@ export default function Matches() {
               Only teams with players in "{detail.age_group}" are listed ({eligibleTeams.length} of {teams.length} teams).
             </p>
           )}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <Label>Team A</Label>
               <Select value={mForm.team_a_id} onChange={(e) => setMForm((f) => ({ ...f, team_a_id: e.target.value }))} data-testid="match-team-a-select">

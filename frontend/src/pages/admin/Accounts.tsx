@@ -123,19 +123,37 @@ export default function Accounts() {
 
   return (
     <div data-testid="admin-accounts">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-black tracking-tight text-slate-950">Accounts</h1>
-          <p className="mt-1 text-sm text-slate-500">{users.length} organizer account{users.length === 1 ? "" : "s"} · each has their own login and access</p>
+          <h1 className="font-heading text-2xl font-black tracking-tight text-white lg:text-slate-950">Accounts</h1>
+          <p className="mt-1 text-sm text-slate-400 lg:text-slate-500">{users.length} organizer account{users.length === 1 ? "" : "s"} · each has their own login and access</p>
         </div>
         <Button onClick={openCreate} data-testid="add-account-btn"><Plus className="h-4 w-4" /> Add Account</Button>
       </div>
 
-      <div className="mt-6 rounded-lg border border-slate-200 bg-white">
+      <div className="mt-6 rounded-lg border border-slate-800 bg-slate-900 lg:border-slate-200 lg:bg-white">
         {loading ? <Spinner /> : users.length === 0 ? (
           <div className="p-6"><EmptyState title="No accounts yet" hint="Add the first organizer account to log in with." /></div>
         ) : (
-          <Table>
+          <>
+          <div className="grid gap-2 p-2 lg:hidden">
+            {users.map((u) => (
+              <div key={u.id} className="rounded-md border border-slate-800 bg-obsidian p-3" data-testid={`account-card-${u.id}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0"><p className="break-words font-bold text-white">{u.username}</p><p className="mt-0.5 text-xs text-slate-400">{u.full_name || "No name linked"}</p></div>
+                  <span className={u.is_active ? "rounded-md bg-emerald-950 px-2 py-1 text-xs font-bold text-emerald-300" : "rounded-md bg-slate-800 px-2 py-1 text-xs font-bold text-slate-400"}>{u.is_active ? "Active" : "Deactivated"}</span>
+                </div>
+                <p className="mt-3 text-xs text-slate-400">{u.staff_members.length ? u.staff_members.map((s) => s.full_name).join(", ") : "Not linked to staff"}</p>
+                <p className="mt-1 text-xs text-slate-300">{summarize(u)}</p>
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  <Button variant="outline" size="sm" className="min-w-0 px-1" onClick={() => toggleActive(u)}>{u.is_active ? "Disable" : "Enable"}</Button>
+                  <Button variant="outline" size="sm" className="min-w-0 px-1" onClick={() => openEdit(u)}>Edit</Button>
+                  <Button variant="outline" size="sm" className="min-w-0 px-1 text-red-400" onClick={() => remove(u)}>Delete</Button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="hidden lg:block"><Table>
             <THead><TR className="hover:bg-transparent"><TH>#</TH><TH>Username</TH><TH>Name</TH><TH>Staff Member(s)</TH><TH>Access</TH><TH>Status</TH><TH className="text-right">Actions</TH></TR></THead>
             <tbody>
               {users.map((u, i) => (
@@ -171,7 +189,8 @@ export default function Accounts() {
                 </TR>
               ))}
             </tbody>
-          </Table>
+          </Table></div>
+          </>
         )}
       </div>
 

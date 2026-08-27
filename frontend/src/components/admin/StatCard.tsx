@@ -17,15 +17,15 @@ export function StatCard({
   testId?: string;
 }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5" data-testid={testId}>
+    <div className="rounded-lg border border-slate-800 bg-slate-900 p-4 lg:border-slate-200 lg:bg-white lg:p-5" data-testid={testId}>
       <div className="flex items-center justify-between">
-        <span className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</span>
+        <span className="text-xs font-bold uppercase tracking-wide text-slate-400 lg:text-slate-500">{label}</span>
         <span className={cn("grid h-8 w-8 place-items-center rounded-md", accent ? "bg-coral text-white" : "bg-slate-900 text-white")}>
           <Icon className="h-4 w-4" />
         </span>
       </div>
-      <p className="mt-4 font-heading text-3xl font-black tracking-tight text-slate-950">{value}</p>
-      {sub && <p className="mt-1 text-xs font-semibold text-slate-500">{sub}</p>}
+      <p className="mt-4 font-heading text-3xl font-black tracking-tight text-white lg:text-slate-950">{value}</p>
+      {sub && <p className="mt-1 text-xs font-semibold text-slate-400 lg:text-slate-500">{sub}</p>}
     </div>
   );
 }

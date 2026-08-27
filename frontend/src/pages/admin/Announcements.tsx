@@ -74,21 +74,32 @@ export default function AdminAnnouncements() {
 
   return (
     <div data-testid="admin-announcements">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-black tracking-tight text-slate-950">Announcements</h1>
-          <p className="mt-1 text-sm text-slate-500">{items.length} announcements</p>
+          <h1 className="font-heading text-2xl font-black tracking-tight text-white lg:text-slate-950">Announcements</h1>
+          <p className="mt-1 text-sm text-slate-400 lg:text-slate-500">{items.length} announcements</p>
         </div>
         {canEdit && <Button onClick={openNew} data-testid="add-announcement-btn"><Plus className="h-4 w-4" /> New Announcement</Button>}
       </div>
 
-      <div className="mt-6 rounded-lg border border-slate-200 bg-white">
+      <div className="mt-6 overflow-hidden rounded-lg border border-white/10 bg-white/5 lg:border-slate-200 lg:bg-white">
         {loading ? (
           <Spinner />
         ) : items.length === 0 ? (
           <div className="p-6"><EmptyState title="No announcements" hint="Publish updates for participants and staff." /></div>
         ) : (
-          <Table>
+          <>
+          <div className="grid gap-2 p-2 lg:hidden">
+            {items.map((a, i) => (
+              <div key={a.id} data-testid={`announcement-card-${a.id}`} className="w-full min-w-0 rounded-lg border border-slate-800 bg-slate-900 p-3">
+                <div className="flex items-start justify-between gap-2"><div className="min-w-0"><div className="text-[10px] font-semibold text-slate-500">#{i + 1}</div><div className="break-words text-sm font-bold text-white">{a.title}</div></div><Badge tone={priorityTone(a.priority)}>{a.priority.toUpperCase()}</Badge></div>
+                <p className="mt-1 line-clamp-2 text-[11px] text-slate-400">{a.message}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-white/10 pt-2"><span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold capitalize text-slate-300">{a.audience}</span>{a.is_published ? <Badge tone="green">Published</Badge> : <Badge tone="neutral">Draft</Badge>}<span className="ml-auto text-[10px] text-slate-500">{formatDate(a.published_at)}</span></div>
+                {canEdit && <div className="mt-2 grid grid-cols-2 gap-1.5"><Button variant="outline" size="sm" className="h-8 min-w-0 border-white/15 bg-white/5 px-1 text-[11px] text-slate-200 hover:bg-white/10" onClick={() => openEdit(a)}><Pencil className="h-3.5 w-3.5" /> Edit</Button><Button variant="danger" size="sm" className="h-8 min-w-0 border-red-500/30 bg-red-500/10 px-1 text-[11px] text-red-400 hover:bg-red-500/20" onClick={() => remove(a.id)}><Trash2 className="h-3.5 w-3.5" /> Delete</Button></div>}
+              </div>
+            ))}
+          </div>
+          <div className="hidden lg:block"><Table>
             <THead>
               <TR className="hover:bg-transparent">
                 <TH>#</TH><TH>Title</TH><TH>Priority</TH><TH>Audience</TH><TH>Status</TH><TH>Published</TH><TH className="text-right">Actions</TH>
@@ -112,7 +123,8 @@ export default function AdminAnnouncements() {
                 </TR>
               ))}
             </tbody>
-          </Table>
+          </Table></div>
+          </>
         )}
       </div>
 

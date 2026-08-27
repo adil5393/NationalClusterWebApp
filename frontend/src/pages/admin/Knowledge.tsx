@@ -88,18 +88,18 @@ export default function Knowledge() {
     <div data-testid="admin-knowledge">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="font-heading text-2xl font-black tracking-tight text-slate-950">Knowledge Base</h1>
-          <p className="mt-1 text-sm text-slate-500">Decisions with the reasoning behind them — the single source of truth.</p>
+          <h1 className="font-heading text-2xl font-black tracking-tight text-white lg:text-slate-950">Knowledge Base</h1>
+          <p className="mt-1 text-sm text-slate-400 lg:text-slate-500">Decisions with the reasoning behind them — the single source of truth.</p>
         </div>
         <Button onClick={openNew} data-testid="add-knowledge-btn"><Plus className="h-4 w-4" /> New Decision</Button>
       </div>
 
       <div className="mt-6 flex flex-wrap gap-3">
-        <Select value={fCat} onChange={(e) => setFCat(e.target.value)} className="w-auto" data-testid="filter-category">
+        <Select value={fCat} onChange={(e) => setFCat(e.target.value)} className="w-full sm:w-auto" data-testid="filter-category">
           <option value="">All Categories</option>
           {meta.categories.map((c) => <option key={c} value={c}>{c}</option>)}
         </Select>
-        <Select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="w-auto" data-testid="filter-status">
+        <Select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="w-full sm:w-auto" data-testid="filter-status">
           <option value="">All Statuses</option>
           {meta.statuses.map((s) => <option key={s} value={s}>{s}</option>)}
         </Select>
@@ -112,7 +112,7 @@ export default function Knowledge() {
       ) : (
         <div className="mt-6 space-y-3" data-testid="knowledge-list">
           {items.map((it) => (
-            <div key={it.id} className="rounded-lg border border-slate-200 bg-white p-5" data-testid={`knowledge-${it.id}`}>
+            <div key={it.id} className="rounded-lg border border-slate-800 bg-slate-900 p-4 lg:border-slate-200 lg:bg-white lg:p-5" data-testid={`knowledge-${it.id}`}>
               <div className="flex flex-col gap-4 md:flex-row">
                 <div className="flex shrink-0 flex-col gap-2 md:w-40">
                   <Badge tone="slate">{it.category}</Badge>
@@ -121,8 +121,8 @@ export default function Knowledge() {
                   <span className="text-xs text-slate-400">Updated {formatDate(it.updated_at)}</span>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h3 className="font-heading text-lg font-bold text-slate-950">{it.title}</h3>
-                  {it.description && <p className="mt-1 text-sm text-slate-600">{it.description}</p>}
+                  <h3 className="break-words font-heading text-lg font-bold text-white lg:text-slate-950">{it.title}</h3>
+                  {it.description && <p className="mt-1 text-sm text-slate-300 lg:text-slate-600">{it.description}</p>}
                   {it.decision && (
                     <div className="mt-3 rounded-md border-l-2 border-coral bg-orange-50/60 px-3 py-2">
                       <p className="text-[11px] font-bold uppercase tracking-wide text-coral-600">Decision</p>
@@ -155,7 +155,7 @@ export default function Knowledge() {
       <Dialog open={open} onClose={() => setOpen(false)} title={editId ? "Edit Decision" : "New Decision"} className="max-w-2xl" testId="knowledge-dialog">
         <div className="space-y-4">
           <div><Label>Title *</Label><Input value={form.title} onChange={(e) => set("title", e.target.value)} data-testid="knowledge-title-input" /></div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <Label>Category</Label>
               <Select value={form.category} onChange={(e) => set("category", e.target.value)} data-testid="knowledge-category-select">
@@ -172,7 +172,7 @@ export default function Knowledge() {
           <div><Label>Description</Label><Textarea value={form.description} onChange={(e) => set("description", e.target.value)} /></div>
           <div><Label>Decision</Label><Textarea value={form.decision} onChange={(e) => set("decision", e.target.value)} /></div>
           <div><Label>Reason / Context (the WHY)</Label><Textarea value={form.reason} onChange={(e) => set("reason", e.target.value)} /></div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div><Label>Owner</Label><Input value={form.owner} onChange={(e) => set("owner", e.target.value)} /></div>
             <div><Label>Tags (comma separated)</Label><Input value={form.tags} onChange={(e) => set("tags", e.target.value)} /></div>
           </div>

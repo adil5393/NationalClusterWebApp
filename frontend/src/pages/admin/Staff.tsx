@@ -162,16 +162,16 @@ export default function Staff() {
 
   return (
     <div data-testid="admin-staff">
-      <h1 className="font-heading text-2xl font-black tracking-tight text-slate-950">Staff & Duties</h1>
-      <p className="mt-1 text-sm text-slate-500">School/event staff and their duty allotments — fooding, cleaning, medical, security and more — by floor and room.</p>
+      <h1 className="font-heading text-2xl font-black tracking-tight text-white lg:text-slate-950">Staff & Duties</h1>
+      <p className="mt-1 text-sm text-slate-400 lg:text-slate-500">School/event staff and their duty allotments — fooding, cleaning, medical, security and more — by floor and room.</p>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         {/* Staff members */}
-        <div className="rounded-lg border border-slate-200 bg-white p-5">
-          <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-slate-950"><HardHat className="h-4 w-4" /> Staff Members</h2>
+        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4 lg:border-slate-200 lg:bg-white lg:p-5">
+          <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-white lg:text-slate-950"><HardHat className="h-4 w-4" /> Staff Members</h2>
           {canEdit && (
             <>
-              <div className="mt-4 grid grid-cols-2 gap-2">
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
                 <Input placeholder="Full name" value={member.full_name} onChange={(e) => setMember((m) => ({ ...m, full_name: e.target.value }))} data-testid="staff-name-input" />
                 <Select value={member.category} onChange={(e) => setMember((m) => ({ ...m, category: e.target.value }))} data-testid="staff-category-select">
                   <option value="">Category…</option>
@@ -212,15 +212,15 @@ export default function Staff() {
               <div
                 key={s.id}
                 className={cn(
-                  "flex items-center justify-between rounded-md border px-3 py-2 text-sm",
+                  "flex min-w-0 items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm",
                   editingId === s.id ? "border-coral bg-orange-50" : "border-slate-200",
                 )}
                 data-testid={`staff-row-${s.id}`}
               >
-                <span>
-                  <span className="font-bold text-slate-900">{s.full_name}</span>
-                  {s.category && <span className="text-slate-500"> · {s.category}</span>}
-                  {s.phone && <span className="text-slate-500"> · {s.phone}</span>}
+                <span className="min-w-0 break-words">
+                  <span className="font-bold text-white lg:text-slate-900">{s.full_name}</span>
+                  {s.category && <span className="text-slate-400 lg:text-slate-500"> · {s.category}</span>}
+                  {s.phone && <span className="text-slate-400 lg:text-slate-500"> · {s.phone}</span>}
                 </span>
                 {canEdit && (
                   <span className="flex items-center gap-1">
@@ -258,8 +258,8 @@ export default function Staff() {
 
         {/* Assign duty */}
         {canEdit && (
-          <div className="rounded-lg border border-slate-200 bg-white p-5">
-            <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-slate-950"><ClipboardList className="h-4 w-4" /> Assign a Duty</h2>
+          <div className="rounded-lg border border-slate-800 bg-slate-900 p-4 lg:border-slate-200 lg:bg-white lg:p-5">
+            <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-white lg:text-slate-950"><ClipboardList className="h-4 w-4" /> Assign a Duty</h2>
             <div className="mt-4 space-y-2">
               <Select value={assign.staff_id} onChange={(e) => setAssign((a) => ({ ...a, staff_id: e.target.value }))} data-testid="duty-staff-select">
                 <option value="">Staff member…</option>
@@ -270,7 +270,7 @@ export default function Staff() {
                 {rooms.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
               </Select>
               <Input placeholder="Duty type (e.g. Cleaning)" list="duty-type-suggestions" value={assign.duty_type} onChange={(e) => setAssign((a) => ({ ...a, duty_type: e.target.value }))} data-testid="duty-type-input" />
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid gap-2 sm:grid-cols-2">
                 <div>
                   <Label>Shift start</Label>
                   <Input type="datetime-local" value={assign.start_time} onChange={(e) => setAssign((a) => ({ ...a, start_time: e.target.value }))} />
@@ -291,16 +291,24 @@ export default function Staff() {
       </datalist>
 
       {/* Duty roster, floor-wise and room-wise */}
-      <div className="mt-6 rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="font-heading text-lg font-bold text-slate-950">Duty Roster — by Floor & Room</h2>
+      <div className="mt-6 rounded-lg border border-slate-800 bg-slate-900 p-4 lg:border-slate-200 lg:bg-white lg:p-5">
+        <h2 className="font-heading text-lg font-bold text-white lg:text-slate-950">Duty Roster — by Floor & Room</h2>
         {duties.length === 0 ? (
           <div className="mt-4"><EmptyState title="No duties assigned yet" hint="Assign a staff member to a room above." /></div>
         ) : (
           <div className="mt-4 space-y-6">
             {grouped.map((g) => (
               <div key={`${g.building}-${g.floor}`}>
-                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{g.building} · {g.floor}</p>
-                <Table className="mt-2">
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-400 lg:text-slate-500">{g.building} · {g.floor}</p>
+                <div className="grid gap-2 pt-2 lg:hidden">
+                  {g.rows.map((d) => (
+                    <div key={d.id} className="rounded-md border border-slate-800 bg-obsidian p-3" data-testid={`duty-card-${d.id}`}>
+                      <div className="flex items-start justify-between gap-3"><div><p className="font-bold text-white">{d.room_name || "—"}</p><p className="mt-1 text-xs text-slate-400">{d.staff_name || "—"} · {d.duty_type}</p></div>{canEdit && <Button variant="outline" size="sm" onClick={() => delDuty(d.id)} className="text-red-400">Remove</Button>}</div>
+                      <p className="mt-2 text-xs text-slate-400">{d.start_time ? formatDate(d.start_time) : "No shift time"}{d.end_time ? ` → ${formatDate(d.end_time)}` : ""}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="hidden lg:block"><Table className="mt-2">
                   <THead>
                     <TR className="hover:bg-transparent">
                       <TH>#</TH><TH>Room</TH><TH>Duty</TH><TH>Staff</TH><TH>Shift</TH><TH className="text-right">Actions</TH>
@@ -318,7 +326,7 @@ export default function Staff() {
                       </TR>
                     ))}
                   </tbody>
-                </Table>
+                </Table></div>
               </div>
             ))}
           </div>

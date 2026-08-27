@@ -86,15 +86,15 @@ export default function Transport() {
 
   return (
     <div data-testid="admin-transport">
-      <h1 className="font-heading text-2xl font-black tracking-tight text-slate-950">Transport</h1>
-      <p className="mt-1 text-sm text-slate-500">Buses, drivers and pickup schedules — these appear on each team's portal.</p>
+      <h1 className="font-heading text-2xl font-black tracking-tight text-white lg:text-slate-950">Transport</h1>
+      <p className="mt-1 text-sm text-slate-400 lg:text-slate-500">Buses, drivers and pickup schedules — these appear on each team's portal.</p>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         {/* Drivers */}
-        <div className="rounded-lg border border-slate-200 bg-white p-5">
-          <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-slate-950"><UserCog className="h-4 w-4" /> Drivers</h2>
+        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4 lg:border-slate-200 lg:bg-white lg:p-5">
+          <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-white lg:text-slate-950"><UserCog className="h-4 w-4" /> Drivers</h2>
           {canEdit && (
-            <div className="mt-4 flex gap-2">
+            <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_10rem_auto]">
               <Input placeholder="Driver name" value={driver.name} onChange={(e) => setDriver((d) => ({ ...d, name: e.target.value }))} data-testid="driver-name-input" />
               <Input placeholder="Phone" value={driver.phone} onChange={(e) => setDriver((d) => ({ ...d, phone: e.target.value }))} className="w-40" />
               <Button onClick={addDriver} data-testid="add-driver-btn"><Plus className="h-4 w-4" /></Button>
@@ -103,8 +103,8 @@ export default function Transport() {
           <div className="mt-4 space-y-2">
             {drivers.length === 0 && <p className="text-sm text-slate-400">No drivers yet.</p>}
             {drivers.map((d) => (
-              <div key={d.id} className="flex items-center justify-between rounded-md border border-slate-200 px-3 py-2 text-sm" data-testid={`driver-row-${d.id}`}>
-                <span><span className="font-bold text-slate-900">{d.name}</span>{d.phone && <span className="text-slate-500"> · {d.phone}</span>}</span>
+              <div key={d.id} className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-slate-800 px-3 py-2 text-sm lg:border-slate-200" data-testid={`driver-row-${d.id}`}>
+                <span className="min-w-0 break-words"><span className="font-bold text-white lg:text-slate-900">{d.name}</span>{d.phone && <span className="text-slate-400 lg:text-slate-500"> · {d.phone}</span>}</span>
                 {canEdit && <button onClick={() => del("drivers", d.id)} className="text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>}
               </div>
             ))}
@@ -112,10 +112,10 @@ export default function Transport() {
         </div>
 
         {/* Vehicles */}
-        <div className="rounded-lg border border-slate-200 bg-white p-5">
-          <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-slate-950"><Bus className="h-4 w-4" /> Vehicles</h2>
+        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4 lg:border-slate-200 lg:bg-white lg:p-5">
+          <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-white lg:text-slate-950"><Bus className="h-4 w-4" /> Vehicles</h2>
           {canEdit && (
-            <div className="mt-4 grid grid-cols-[1fr_5rem_1fr_auto] gap-2">
+            <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_5rem_minmax(0,1fr)_auto]">
               <Input placeholder="Label (Bus B3)" value={vehicle.label} onChange={(e) => setVehicle((v) => ({ ...v, label: e.target.value }))} data-testid="vehicle-label-input" />
               <Input placeholder="Cap." type="number" value={vehicle.capacity} onChange={(e) => setVehicle((v) => ({ ...v, capacity: e.target.value }))} />
               <Select value={vehicle.driver_id} onChange={(e) => setVehicle((v) => ({ ...v, driver_id: e.target.value }))}>
@@ -128,8 +128,8 @@ export default function Transport() {
           <div className="mt-4 space-y-2">
             {vehicles.length === 0 && <p className="text-sm text-slate-400">No vehicles yet.</p>}
             {vehicles.map((v) => (
-              <div key={v.id} className="flex items-center justify-between rounded-md border border-slate-200 px-3 py-2 text-sm" data-testid={`vehicle-row-${v.id}`}>
-                <span><span className="font-bold text-slate-900">{v.label}</span><span className="text-slate-500"> · {v.capacity ?? "—"} seats{v.driver_name ? ` · ${v.driver_name}` : ""}</span></span>
+              <div key={v.id} className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-slate-800 px-3 py-2 text-sm lg:border-slate-200" data-testid={`vehicle-row-${v.id}`}>
+                <span className="min-w-0 break-words"><span className="font-bold text-white lg:text-slate-900">{v.label}</span><span className="text-slate-400 lg:text-slate-500"> · {v.capacity ?? "—"} seats{v.driver_name ? ` · ${v.driver_name}` : ""}</span></span>
                 {canEdit && <button onClick={() => del("vehicles", v.id)} className="text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>}
               </div>
             ))}
@@ -138,10 +138,10 @@ export default function Transport() {
       </div>
 
       {/* Assignments */}
-      <div className="mt-6 rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-slate-950"><MapPin className="h-4 w-4" /> Team Transport Assignments</h2>
+      <div className="mt-6 rounded-lg border border-slate-800 bg-slate-900 p-4 lg:border-slate-200 lg:bg-white lg:p-5">
+        <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-white lg:text-slate-950"><MapPin className="h-4 w-4" /> Team Transport Assignments</h2>
         {canEdit && (
-          <div className="mt-4 grid gap-2 md:grid-cols-6">
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
             <Select value={assign.team_id} onChange={(e) => setAssign((a) => ({ ...a, team_id: e.target.value }))} data-testid="ta-team-select">
               <option value="">Team…</option>
               {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -161,7 +161,16 @@ export default function Transport() {
           {assignments.length === 0 ? (
             <EmptyState title="No transport assignments" hint="Assign a vehicle to a team above." />
           ) : (
-            <Table>
+            <>
+            <div className="grid gap-2 lg:hidden">
+              {assignments.map((a) => (
+                <div key={a.id} className="rounded-md border border-slate-800 bg-obsidian p-3" data-testid={`ta-card-${a.id}`}>
+                  <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="break-words font-bold text-white">{a.team_name || "—"}</p><p className="mt-1 text-sm text-slate-300">{a.vehicle_label || "—"}</p></div>{canEdit && <Button variant="outline" size="sm" onClick={() => del("assignments", a.id)} className="text-red-400">Remove</Button>}</div>
+                  <p className="mt-3 text-xs text-slate-400">{a.pickup_location || "—"} → {a.drop_location || "—"}</p><p className="mt-1 text-xs text-slate-400">{a.pickup_time ? formatDate(a.pickup_time) : "No pickup time"}</p>
+                </div>
+              ))}
+            </div>
+            <div className="hidden lg:block"><Table>
               <THead>
                 <TR className="hover:bg-transparent">
                   <TH>#</TH><TH>Team</TH><TH>Vehicle</TH><TH>Pickup</TH><TH>Drop</TH><TH>Time</TH><TH className="text-right">Actions</TH>
@@ -180,7 +189,8 @@ export default function Transport() {
                   </TR>
                 ))}
               </tbody>
-            </Table>
+            </Table></div>
+            </>
           )}
         </div>
       </div>

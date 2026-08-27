@@ -16,7 +16,7 @@ export default defineConfig({
     strictPort: true,
     allowedHosts: true,
     hmr: { clientPort: 443, protocol: "wss" },
-    watch: { ignored: ["**/node_modules/**", "**/.git/**"] },
+    watch: { ignored: ["**/node_modules/**", "**/.git/**"], usePolling: true, interval: 300 },
   },
   preview: { host: true, port: 5173 },
 });

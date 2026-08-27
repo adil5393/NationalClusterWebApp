@@ -88,21 +88,22 @@ export default function Procurement() {
 
   return (
     <div data-testid="admin-procurement">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-black tracking-tight text-slate-950">Procurement</h1>
-          <p className="mt-1 text-sm text-slate-500">{items.length} items tracked</p>
+          <h1 className="font-heading text-2xl font-black tracking-tight text-white lg:text-slate-950">Procurement</h1>
+          <p className="mt-1 text-sm text-slate-400 lg:text-slate-500">{items.length} items tracked</p>
         </div>
         <Button onClick={openNew} data-testid="add-procurement-btn"><Plus className="h-4 w-4" /> Add Item</Button>
       </div>
 
-      <div className="mt-6 rounded-lg border border-slate-200 bg-white">
+      <div className="mt-6 overflow-hidden rounded-lg border border-white/10 bg-white/5 lg:border-slate-200 lg:bg-white">
         {loading ? (
           <Spinner />
         ) : items.length === 0 ? (
           <div className="p-6"><EmptyState title="No procurement items" hint="Track quotations, quantities and budgets here." /></div>
-        ) : (
-          <Table>
+        ) : (<>
+          <div className="grid gap-2 p-2 lg:hidden">{items.map((p, i) => <div key={p.id} data-testid={`procurement-card-${p.id}`} className="w-full min-w-0 rounded-lg border border-slate-800 bg-slate-900 p-3"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><div className="text-[10px] font-semibold text-slate-500">#{i + 1}</div><div className="break-words text-sm font-bold text-white">{p.title}</div><div className="truncate text-[11px] text-slate-400">{p.supplier || p.owner || "No supplier/owner"}</div></div><Badge tone={procurementStatusTone(p.status)}>{p.status}</Badge></div><div className="mt-2 flex flex-wrap gap-1 border-t border-white/10 pt-2"><span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{p.category}</span><span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">Qty {p.quantity ?? "—"}</span><span className="rounded bg-coral/15 px-1.5 py-0.5 text-[10px] font-bold text-coral">{formatMoney(p.max_budget, p.currency)}</span></div><div className="mt-2 grid grid-cols-2 gap-1.5"><Button variant="outline" size="sm" className="h-8 min-w-0 border-white/15 bg-white/5 px-1 text-[11px] text-slate-200 hover:bg-white/10" onClick={() => openEdit(p)}><Pencil className="h-3.5 w-3.5" /> Edit</Button><Button variant="danger" size="sm" className="h-8 min-w-0 border-red-500/30 bg-red-500/10 px-1 text-[11px] text-red-400 hover:bg-red-500/20" onClick={() => remove(p.id)}><Trash2 className="h-3.5 w-3.5" /> Delete</Button></div></div>)}</div>
+          <div className="hidden lg:block"><Table>
             <THead>
               <TR className="hover:bg-transparent">
                 <TH>#</TH><TH>Item</TH><TH>Category</TH><TH>Status</TH>
@@ -130,8 +131,8 @@ export default function Procurement() {
                 </TR>
               ))}
             </tbody>
-          </Table>
-        )}
+          </Table></div>
+        </>)}
       </div>
 
       <Dialog open={open} onClose={() => setOpen(false)} title={editId ? "Edit Procurement Item" : "Add Procurement Item"} className="max-w-2xl" testId="procurement-dialog">
@@ -151,7 +152,7 @@ export default function Procurement() {
               </Select>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid gap-4 sm:grid-cols-3">
             <div><Label>Quantity</Label><Input type="number" value={form.quantity} onChange={(e) => set("quantity", e.target.value)} data-testid="procurement-qty-input" /></div>
             <div><Label>Target / Unit</Label><Input type="number" value={form.target_unit_price} onChange={(e) => set("target_unit_price", e.target.value)} /></div>
             <div><Label>Max Budget</Label><Input type="number" value={form.max_budget} onChange={(e) => set("max_budget", e.target.value)} /></div>

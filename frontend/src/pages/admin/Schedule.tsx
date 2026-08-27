@@ -68,21 +68,22 @@ export default function Schedule() {
 
   return (
     <div data-testid="admin-schedule">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-black tracking-tight text-slate-950">Schedule</h1>
-          <p className="mt-1 text-sm text-slate-500">Fixtures & ceremonies. Team-linked events appear on that team's portal.</p>
+          <h1 className="font-heading text-2xl font-black tracking-tight text-white lg:text-slate-950">Schedule</h1>
+          <p className="mt-1 text-sm text-slate-400 lg:text-slate-500">Fixtures & ceremonies. Team-linked events appear on that team's portal.</p>
         </div>
         {canEdit && <Button onClick={() => { setForm(empty); setOpen(true); }} data-testid="add-event-btn"><Plus className="h-4 w-4" /> Add Event</Button>}
       </div>
 
-      <div className="mt-6 rounded-lg border border-slate-200 bg-white">
+      <div className="mt-6 overflow-hidden rounded-lg border border-white/10 bg-white/5 lg:border-slate-200 lg:bg-white">
         {loading ? (
           <Spinner />
         ) : events.length === 0 ? (
           <div className="p-6"><EmptyState title="No events yet" hint="Add fixtures and ceremonies." /></div>
-        ) : (
-          <Table>
+        ) : (<>
+          <div className="grid gap-2 p-2 lg:hidden">{events.map((e, i) => <div key={e.id} data-testid={`event-card-${e.id}`} className="w-full min-w-0 rounded-lg border border-slate-800 bg-slate-900 p-3"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><div className="text-[10px] font-semibold text-slate-500">#{i + 1}</div><div className="break-words text-sm font-bold text-white">{e.title}</div><div className="truncate text-[11px] text-slate-400">{e.venue_name || "No venue"}</div></div>{canEdit && <Button variant="danger" size="sm" className="h-8 shrink-0 border-red-500/30 bg-red-500/10 px-2 text-red-400 hover:bg-red-500/20" onClick={() => remove(e.id)}><Trash2 className="h-3.5 w-3.5" /> Remove</Button>}</div><div className="mt-2 flex flex-wrap gap-1 border-t border-white/10 pt-2 text-[10px]">{e.team_name ? <Badge tone="coral">{e.team_name}</Badge> : <span className="rounded bg-white/5 px-1.5 py-0.5 font-bold text-slate-300">All teams</span>}<span className="rounded bg-white/5 px-1.5 py-0.5 text-slate-300">{e.start_time ? formatDate(e.start_time) : "No start time"}</span></div>{e.description && <p className="mt-2 line-clamp-2 text-[11px] text-slate-400">{e.description}</p>}</div>)}</div>
+          <div className="hidden lg:block"><Table>
             <THead>
               <TR className="hover:bg-transparent">
                 <TH>#</TH><TH>Event</TH><TH>Team</TH><TH>Venue</TH><TH>Starts</TH><TH>Ends</TH><TH className="text-right">Actions</TH>
@@ -101,8 +102,8 @@ export default function Schedule() {
                 </TR>
               ))}
             </tbody>
-          </Table>
-        )}
+          </Table></div>
+        </>)}
       </div>
 
       <Dialog open={open} onClose={() => setOpen(false)} title="Add Event" testId="event-dialog">
@@ -122,7 +123,7 @@ export default function Schedule() {
               {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
             </Select>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div><Label>Starts</Label><Input type="datetime-local" value={form.start_time} onChange={(e) => set("start_time", e.target.value)} /></div>
             <div><Label>Ends</Label><Input type="datetime-local" value={form.end_time} onChange={(e) => set("end_time", e.target.value)} /></div>
           </div>

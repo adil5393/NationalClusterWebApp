@@ -26,10 +26,10 @@ export default function RoomMap() {
     <div data-testid="admin-room-map">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="font-heading text-2xl font-black tracking-tight text-slate-950">Room Map</h1>
-          <p className="mt-1 text-sm text-slate-500">A visual bed-by-bed view of who sleeps where.</p>
+          <h1 className="font-heading text-2xl font-black tracking-tight text-white lg:text-slate-950">Room Map</h1>
+          <p className="mt-1 text-sm text-slate-400 lg:text-slate-500">A visual bed-by-bed view of who sleeps where.</p>
         </div>
-        <a href={`${BACKEND}/api/export/rooms.csv`} className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50" data-testid="export-rooms-btn">
+        <a href={`${BACKEND}/api/export/rooms.csv`} className="inline-flex items-center gap-2 rounded-md border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-white/10 lg:border-slate-300 lg:bg-white lg:text-slate-800 lg:hover:bg-slate-50" data-testid="export-rooms-btn">
           <Download className="h-4 w-4" /> Export Allocation
         </a>
       </div>
@@ -39,7 +39,7 @@ export default function RoomMap() {
       <div className="mt-6 space-y-8">
         {data.map((b) => (
           <div key={b.id} data-testid={`map-building-${b.id}`}>
-            <h2 className="font-heading text-lg font-bold text-slate-950">{b.name}</h2>
+            <h2 className="font-heading text-lg font-bold text-white lg:text-slate-950">{b.name}</h2>
             {b.floors.map((f) => (
               <div key={f.id} className="mt-3">
                 <p className="text-xs font-bold uppercase tracking-wide text-slate-400">{f.name}</p>

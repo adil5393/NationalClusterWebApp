@@ -12,6 +12,7 @@ import { AttendanceImportDialog } from "@/components/admin/AttendanceImportDialo
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { useModuleAccess } from "@/lib/permissions";
+import { cn } from "@/lib/utils";
 
 interface Team {
   id: number;
@@ -55,14 +56,20 @@ function AgeGroupCountsCell({ counts }: { counts?: Record<string, number> }) {
   );
 }
 
-function LastYearWinnerCell({ team, canEdit, onToggle }: { team: Team; canEdit: boolean; onToggle: (team: Team) => void }) {
+function LastYearWinnerCell({ team, canEdit, onToggle, dark }: { team: Team; canEdit: boolean; onToggle: (team: Team) => void; dark?: boolean }) {
   const isWinner = !!team.last_year_winner;
   const badge = isWinner ? (
-    <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700 ring-1 ring-amber-200">
+    <span className={cn(
+      "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-bold ring-1",
+      dark ? "bg-amber-500/15 text-amber-400 ring-amber-500/30" : "bg-amber-50 text-amber-700 ring-amber-200",
+    )}>
       <Trophy className="h-3.5 w-3.5 shrink-0" /> Yes
     </span>
   ) : (
-    <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs font-bold text-slate-500 ring-1 ring-slate-200">
+    <span className={cn(
+      "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-bold ring-1",
+      dark ? "bg-white/5 text-slate-400 ring-white/10" : "bg-slate-100 text-slate-500 ring-slate-200",
+    )}>
       <X className="h-3.5 w-3.5 shrink-0" /> No
     </span>
   );
@@ -164,17 +171,17 @@ export default function AdminTeams() {
 
   return (
     <div data-testid="admin-teams">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-black tracking-tight text-slate-950">Teams</h1>
-          <p className="mt-1 text-sm text-slate-500">{teams.length} teams registered</p>
+          <h1 className="font-heading text-2xl font-black tracking-tight text-white lg:text-slate-950">Teams</h1>
+          <p className="mt-1 text-sm text-slate-400 lg:text-slate-500">{teams.length} teams registered</p>
         </div>
         {canEdit && (
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setAttendanceImportOpen(true)} data-testid="import-attendance-list-btn"><Upload className="h-4 w-4" /> Import Attendance List</Button>
-            <Button variant="outline" onClick={() => setImportOpen(true)} data-testid="import-teams-btn"><Upload className="h-4 w-4" /> Import</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 lg:border-slate-300 lg:bg-white lg:text-slate-900 lg:hover:bg-slate-50" onClick={() => setAttendanceImportOpen(true)} data-testid="import-attendance-list-btn"><Upload className="h-4 w-4" /> Import Attendance List</Button>
+            <Button variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 lg:border-slate-300 lg:bg-white lg:text-slate-900 lg:hover:bg-slate-50" onClick={() => setImportOpen(true)} data-testid="import-teams-btn"><Upload className="h-4 w-4" /> Import</Button>
             {emptyTeamCount > 0 && (
-              <Button variant="outline" onClick={removeEmptyTeams} data-testid="delete-empty-teams-btn">
+              <Button variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 lg:border-slate-300 lg:bg-white lg:text-slate-900 lg:hover:bg-slate-50" onClick={removeEmptyTeams} data-testid="delete-empty-teams-btn">
                 <Trash2 className="h-4 w-4 text-red-500" /> Delete {emptyTeamCount} Team{emptyTeamCount === 1 ? "" : "s"} with 0 Players
               </Button>
             )}
@@ -185,60 +192,131 @@ export default function AdminTeams() {
         )}
       </div>
 
-      <div className="mt-6 rounded-lg border border-slate-200 bg-white">
+      <div className="mt-6">
         {loading ? (
-          <Spinner />
+          <div className="rounded-lg border border-white/10 bg-white/5 lg:border-slate-200 lg:bg-white"><Spinner /></div>
         ) : teams.length === 0 ? (
-          <div className="p-6"><EmptyState title="No teams yet" hint="Add your first team to get started." /></div>
+          <div className="rounded-lg border border-white/10 bg-white/5 p-6 lg:border-slate-200 lg:bg-white"><EmptyState title="No teams yet" hint="Add your first team to get started." /></div>
         ) : (
-          <Table>
-            <THead>
-              <TR className="hover:bg-transparent">
-                <TH>#</TH>
-                <TH>Team</TH>
-                <TH>Last Year Winner</TH>
-                <TH>Region</TH>
-                <TH>Country</TH>
-                <TH className="text-right">Members</TH>
-                <TH>Members by Age Group</TH>
-                <TH>Accommodation</TH>
-                <TH>Contact</TH>
-                <TH className="text-right">Actions</TH>
-              </TR>
-            </THead>
-            <tbody>
-              {teams.map((t, i) => (
-                <TR key={t.id} data-testid={`team-row-${t.id}`}>
-                  <TD className="text-slate-400">{i + 1}</TD>
-                  <TD className="font-bold text-slate-900">{t.name}<div className="text-xs font-normal text-slate-500">{t.school}</div></TD>
-                  <TD><LastYearWinnerCell team={t} canEdit={canEdit} onToggle={toggleLastYearWinner} /></TD>
-                  <TD>{t.region || "—"}</TD>
-                  <TD><Badge tone={t.country === "India" ? "coral" : "blue"}>{t.country}</Badge></TD>
-                  <TD className="text-right font-semibold">{t.member_count ?? 0}</TD>
-                  <TD><AgeGroupCountsCell counts={t.age_group_counts} /></TD>
-                  <TD><AccommodationCell t={t} /></TD>
-                  <TD className="text-slate-600">{t.contact_name || "—"}</TD>
-                  <TD>
-                    <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => setQrTeam({ id: t.id, name: t.name })} data-testid={`qr-team-${t.id}`}>
-                        <QrCode className="h-4 w-4" />
+          <>
+            {/* MOBILE: card list (dark) */}
+            <div className="grid gap-2 lg:hidden">
+              {teams.map((t, i) => {
+                const ageEntries = Object.entries(t.age_group_counts ?? {}).sort(
+                  ([a], [b]) => ageGroupRank(a) - ageGroupRank(b) || a.localeCompare(b),
+                );
+                const accStatus = t.accommodation_status ?? "none";
+                return (
+                  <div key={t.id} data-testid={`team-card-${t.id}`} className="w-full min-w-0 overflow-hidden rounded-lg border border-slate-800 bg-slate-900 p-3">
+                    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-semibold leading-tight text-slate-500">#{i + 1}</div>
+                        <div className="break-words text-sm font-bold leading-tight text-white">{t.name}</div>
+                        {t.school && <div className="truncate text-[11px] leading-tight text-slate-400">{t.school}</div>}
+                      </div>
+                      <LastYearWinnerCell team={t} canEdit={canEdit} onToggle={toggleLastYearWinner} dark />
+                    </div>
+
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                      <span className={cn(
+                        "rounded px-1.5 py-0.5 text-[10px] font-bold",
+                        t.country === "India" ? "bg-coral/15 text-coral" : "bg-blue-500/15 text-blue-300",
+                      )}>{t.country}</span>
+                      {t.region && <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{t.region}</span>}
+                      <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{t.member_count ?? 0} members</span>
+                      <span className={cn(
+                        "rounded px-1.5 py-0.5 text-[10px] font-bold",
+                        accStatus === "full" ? "bg-emerald-500/15 text-emerald-400" : accStatus === "partial" ? "bg-amber-500/15 text-amber-400" : "bg-white/5 text-slate-300",
+                      )}>{ACCOMMODATION_LABEL[accStatus]}</span>
+                    </div>
+
+                    {ageEntries.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {ageEntries.map(([group, count]) => (
+                          <span key={group} className={cn(
+                            "rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums",
+                            count < MIN_SQUAD_SIZE ? "bg-red-500/15 text-red-400" : "bg-emerald-500/15 text-emerald-400",
+                          )}>{group}: {count}</span>
+                        ))}
+                      </div>
+                    )}
+
+                    {t.contact_name && (
+                      <div className="mt-1.5 truncate text-[11px] text-slate-400">Contact: <span className="font-semibold text-slate-300">{t.contact_name}</span></div>
+                    )}
+
+                    <div className={cn("mt-2 grid gap-1.5 border-t border-white/10 pt-2", canEdit ? "grid-cols-3" : "grid-cols-1")}>
+                      <Button variant="outline" size="sm" className="h-8 min-w-0 border-white/15 bg-white/5 px-1 text-[11px] text-slate-200 hover:bg-white/10" onClick={() => setQrTeam({ id: t.id, name: t.name })} data-testid={`qr-team-mobile-${t.id}`}>
+                        <QrCode className="h-3.5 w-3.5" /> QR
                       </Button>
                       {canEdit && (
-                        <Button variant="ghost" size="icon" onClick={() => { setForm(t); setOpen(true); }} data-testid={`edit-team-${t.id}`}>
-                          <Pencil className="h-4 w-4" />
+                        <Button variant="outline" size="sm" className="h-8 min-w-0 border-white/15 bg-white/5 px-1 text-[11px] text-slate-200 hover:bg-white/10" onClick={() => { setForm(t); setOpen(true); }} data-testid={`edit-team-mobile-${t.id}`}>
+                          <Pencil className="h-3.5 w-3.5" /> Edit
                         </Button>
                       )}
                       {canEdit && (
-                        <Button variant="ghost" size="icon" onClick={() => remove(t.id)} data-testid={`delete-team-${t.id}`}>
-                          <Trash2 className="h-4 w-4 text-red-500" />
+                        <Button variant="danger" size="sm" className="h-8 min-w-0 border-red-500/30 bg-red-500/10 px-1 text-[11px] text-red-400 hover:bg-red-500/20" onClick={() => remove(t.id)} data-testid={`delete-team-mobile-${t.id}`}>
+                          <Trash2 className="h-3.5 w-3.5" /> Delete
                         </Button>
                       )}
                     </div>
-                  </TD>
-                </TR>
-              ))}
-            </tbody>
-          </Table>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* DESKTOP: table */}
+            <div className="hidden overflow-hidden rounded-lg border border-slate-200 bg-white lg:block">
+              <Table>
+                <THead>
+                  <TR className="hover:bg-transparent">
+                    <TH>#</TH>
+                    <TH>Team</TH>
+                    <TH>Last Year Winner</TH>
+                    <TH>Region</TH>
+                    <TH>Country</TH>
+                    <TH className="text-right">Members</TH>
+                    <TH>Members by Age Group</TH>
+                    <TH>Accommodation</TH>
+                    <TH>Contact</TH>
+                    <TH className="text-right">Actions</TH>
+                  </TR>
+                </THead>
+                <tbody>
+                  {teams.map((t, i) => (
+                    <TR key={t.id} data-testid={`team-row-${t.id}`}>
+                      <TD className="text-slate-400">{i + 1}</TD>
+                      <TD className="font-bold text-slate-900">{t.name}<div className="text-xs font-normal text-slate-500">{t.school}</div></TD>
+                      <TD><LastYearWinnerCell team={t} canEdit={canEdit} onToggle={toggleLastYearWinner} /></TD>
+                      <TD>{t.region || "—"}</TD>
+                      <TD><Badge tone={t.country === "India" ? "coral" : "blue"}>{t.country}</Badge></TD>
+                      <TD className="text-right font-semibold">{t.member_count ?? 0}</TD>
+                      <TD><AgeGroupCountsCell counts={t.age_group_counts} /></TD>
+                      <TD><AccommodationCell t={t} /></TD>
+                      <TD className="text-slate-600">{t.contact_name || "—"}</TD>
+                      <TD>
+                        <div className="flex justify-end gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => setQrTeam({ id: t.id, name: t.name })} data-testid={`qr-team-${t.id}`}>
+                            <QrCode className="h-4 w-4" />
+                          </Button>
+                          {canEdit && (
+                            <Button variant="ghost" size="icon" onClick={() => { setForm(t); setOpen(true); }} data-testid={`edit-team-${t.id}`}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {canEdit && (
+                            <Button variant="ghost" size="icon" onClick={() => remove(t.id)} data-testid={`delete-team-${t.id}`}>
+                              <Trash2 className="h-4 w-4 text-red-500" />
+                            </Button>
+                          )}
+                        </div>
+                      </TD>
+                    </TR>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
+          </>
         )}
       </div>
 

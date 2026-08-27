@@ -100,8 +100,8 @@ export default function Accommodation() {
 
   return (
     <div data-testid="admin-accommodation">
-      <h1 className="font-heading text-2xl font-black tracking-tight text-slate-950">Accommodation</h1>
-      <p className="mt-1 text-sm text-slate-500">Assign whole teams or individual participants to rooms; track live occupancy.</p>
+      <h1 className="font-heading text-2xl font-black tracking-tight text-white lg:text-slate-950">Accommodation</h1>
+      <p className="mt-1 text-sm text-slate-400 lg:text-slate-500">Assign whole teams or individual participants to rooms; track live occupancy.</p>
 
       {/* Occupancy per building */}
       <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3" data-testid="occupancy-grid">
@@ -109,13 +109,13 @@ export default function Accommodation() {
         {buildings.map((b) => {
           const pct = b.rooms ? Math.round((b.occupied_rooms / b.rooms) * 100) : 0;
           return (
-            <div key={b.id} className="rounded-lg border border-slate-200 bg-white p-5" data-testid={`occupancy-${b.id}`}>
+            <div key={b.id} className="min-w-0 rounded-lg border border-white/10 bg-white/5 p-4 lg:border-slate-200 lg:bg-white lg:p-5" data-testid={`occupancy-${b.id}`}>
               <div className="flex items-center gap-2">
                 <BedDouble className="h-4 w-4 text-slate-500" />
-                <p className="font-heading font-bold text-slate-950">{b.name}</p>
+                <p className="truncate font-heading font-bold text-white lg:text-slate-950">{b.name}</p>
               </div>
               <div className="mt-4 flex items-end justify-between">
-                <span className="font-heading text-3xl font-black text-slate-950">{b.occupied_rooms}<span className="text-lg text-slate-400">/{b.rooms}</span></span>
+                <span className="font-heading text-3xl font-black text-white lg:text-slate-950">{b.occupied_rooms}<span className="text-lg text-slate-400">/{b.rooms}</span></span>
                 <span className="text-xs font-semibold text-slate-500">rooms occupied</span>
               </div>
               <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100">
@@ -128,10 +128,10 @@ export default function Accommodation() {
       </div>
 
       {/* Assign form */}
-      <div className="mt-8 rounded-lg border border-slate-200 bg-white p-5">
+      <div className="mt-8 rounded-lg border border-white/10 bg-white/5 p-3 sm:p-5 lg:border-slate-200 lg:bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-heading text-lg font-bold text-slate-950">Assign to a Room</h2>
-          <div className="inline-flex rounded-md border border-slate-200 p-0.5" data-testid="assign-mode-toggle">
+          <h2 className="font-heading text-lg font-bold text-white lg:text-slate-950">Assign to a Room</h2>
+          <div className="inline-flex max-w-full rounded-md border border-white/15 p-0.5 lg:border-slate-200" data-testid="assign-mode-toggle">
             {(["team", "participant"] as Mode[]).map((m) => (
               <button
                 key={m}
@@ -139,7 +139,7 @@ export default function Accommodation() {
                 data-testid={`mode-${m}`}
                 className={cn(
                   "rounded px-3 py-1.5 text-xs font-bold capitalize transition-colors",
-                  mode === m ? "bg-obsidian text-white" : "text-slate-500 hover:text-slate-900",
+                  mode === m ? "bg-obsidian text-white" : "text-slate-400 hover:text-white lg:text-slate-500 lg:hover:text-slate-900",
                 )}
               >
                 {m === "team" ? "Whole Team" : "Individual (Bed)"}
@@ -191,11 +191,11 @@ export default function Accommodation() {
         </div>
 
         {mode === "participant" && form.room_id && (
-          <div className="mt-4 rounded-md bg-slate-50 p-3" data-testid="bed-manager">
+          <div className="mt-4 rounded-md bg-white/5 p-3 lg:bg-slate-50" data-testid="bed-manager">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Beds in this room</p>
-              <div className="flex gap-2">
-                <Input value={newBed} onChange={(e) => setNewBed(e.target.value)} placeholder="Bed label" className="h-8 w-32" data-testid="new-bed-input" />
+              <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+                <Input value={newBed} onChange={(e) => setNewBed(e.target.value)} placeholder="Bed label" className="h-8 min-w-0 flex-1 sm:w-32 sm:flex-none" data-testid="new-bed-input" />
                 <Button size="sm" variant="outline" onClick={async () => { if (!newBed.trim()) return; await api.post(`/accommodation/rooms/${form.room_id}/beds`, { label: newBed }); setNewBed(""); loadBeds(form.room_id); }} data-testid="add-bed-btn"><Plus className="h-3.5 w-3.5" /> Add</Button>
                 <Button size="sm" variant="outline" onClick={async () => { await api.post(`/accommodation/rooms/${form.room_id}/beds/generate`); loadBeds(form.room_id); toast.success("Beds generated"); }} data-testid="generate-beds-btn">Generate to capacity</Button>
               </div>
@@ -214,11 +214,23 @@ export default function Accommodation() {
       </div>
 
       {/* Assignments table */}
-      <div className="mt-6 rounded-lg border border-slate-200 bg-white">
+      <div className="mt-6 overflow-hidden rounded-lg border border-white/10 bg-white/5 lg:border-slate-200 lg:bg-white">
         {assignments.length === 0 ? (
           <div className="p-6"><EmptyState title="No assignments yet" hint="Assign a team or participant to a room above." /></div>
         ) : (
-          <Table>
+          <>
+          <div className="grid gap-2 p-2 lg:hidden">
+            {assignments.map((a, i) => (
+              <div key={a.id} data-testid={`assignment-card-${a.id}`} className="w-full min-w-0 rounded-lg border border-slate-800 bg-slate-900 p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0"><div className="text-[10px] font-semibold text-slate-500">#{i + 1}</div><div className="break-words text-sm font-bold text-white">{a.team_name || "—"}</div><div className="truncate text-[11px] text-slate-400">{a.participant_name || "Whole team"}{a.bed_label ? ` · ${a.bed_label}` : ""}</div></div>
+                  <Button variant="danger" size="sm" className="h-8 shrink-0 border-red-500/30 bg-red-500/10 px-2 text-red-400 hover:bg-red-500/20" onClick={() => remove(a.id)} data-testid={`delete-assignment-mobile-${a.id}`}><Trash2 className="h-3.5 w-3.5" /> Remove</Button>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1 border-t border-white/10 pt-2 text-[10px] font-bold"><span className="rounded bg-white/5 px-1.5 py-0.5 text-slate-300">{a.building_name || "—"}</span><span className="rounded bg-white/5 px-1.5 py-0.5 text-slate-300">{a.floor_name || "—"}</span><span className="rounded bg-coral/15 px-1.5 py-0.5 text-coral">{a.room_name || "—"}</span></div>
+              </div>
+            ))}
+          </div>
+          <div className="hidden lg:block"><Table>
             <THead>
               <TR className="hover:bg-transparent">
                 <TH>#</TH><TH>Team</TH><TH>Participant</TH><TH>Building</TH><TH>Floor</TH><TH>Room</TH><TH className="text-right">Actions</TH>
@@ -241,7 +253,8 @@ export default function Accommodation() {
                 </TR>
               ))}
             </tbody>
-          </Table>
+          </Table></div>
+          </>
         )}
       </div>
     </div>
