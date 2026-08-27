@@ -5,6 +5,7 @@ import {
   LayoutDashboard, Users, UserSquare2, BedDouble, Building2, UtensilsCrossed, Bus,
   MapPin, CalendarDays, Megaphone, ShoppingCart, CheckSquare, BookOpen, FileText,
   Contact as ContactIcon, Settings, Search, ExternalLink, LayoutGrid, HardHat, LogOut, UserCog, Radio,
+  Menu, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -49,6 +50,7 @@ export function AdminLayout() {
   const [openSearch, setOpenSearch] = useState(false);
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [me, setMe] = useState<Me | null>(null);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const navigate = useNavigate();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -100,21 +102,46 @@ export function AdminLayout() {
 
   return (
     <div className="flex min-h-screen bg-slate-50">
+      {/* MOBILE BACKDROP */}
+      {mobileNavOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
+          onClick={() => setMobileNavOpen(false)}
+          data-testid="admin-mobile-nav-backdrop"
+        />
+      )}
+
       {/* SIDEBAR */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col bg-obsidian text-slate-300 lg:flex">
-        <Link to="/admin" className="flex h-16 items-center gap-2.5 border-b border-white/10 px-5" data-testid="admin-brand">
-          <span className="grid h-8 w-8 place-items-center rounded-md bg-coral font-heading text-xs font-black text-white">CN</span>
-          <div className="leading-none">
-            <span className="block font-heading text-sm font-extrabold text-white">Operations</span>
-            <span className="block text-[10px] font-semibold tracking-widest text-slate-500">2026–27</span>
-          </div>
-        </Link>
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-40 flex w-60 flex-col bg-obsidian text-slate-300 transition-transform duration-200 lg:translate-x-0",
+          mobileNavOpen ? "translate-x-0" : "-translate-x-full",
+        )}
+      >
+        <div className="flex h-16 items-center justify-between gap-2.5 border-b border-white/10 px-5">
+          <Link to="/admin" className="flex items-center gap-2.5" data-testid="admin-brand" onClick={() => setMobileNavOpen(false)}>
+            <span className="grid h-8 w-8 place-items-center rounded-md bg-coral font-heading text-xs font-black text-white">CN</span>
+            <div className="leading-none">
+              <span className="block font-heading text-sm font-extrabold text-white">Operations</span>
+              <span className="block text-[10px] font-semibold tracking-widest text-slate-500">2026–27</span>
+            </div>
+          </Link>
+          <button
+            className="grid h-8 w-8 place-items-center rounded-md text-slate-400 hover:text-white lg:hidden"
+            onClick={() => setMobileNavOpen(false)}
+            aria-label="Close menu"
+            data-testid="admin-mobile-nav-close"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4">
           {visibleNav.map((n) => (
             <NavLink
               key={n.to}
               to={n.to}
               end={n.end}
+              onClick={() => setMobileNavOpen(false)}
               data-testid={`admin-nav-${n.label.toLowerCase().replace(/[^a-z]+/g, "-")}`}
               className={({ isActive }) =>
                 cn(
@@ -149,6 +176,14 @@ export function AdminLayout() {
       {/* MAIN */}
       <div className="flex-1 lg:pl-60">
         <header className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-slate-200 bg-white px-5 md:px-8">
+          <button
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-md border border-slate-200 text-slate-700 lg:hidden"
+            onClick={() => setMobileNavOpen(true)}
+            aria-label="Open menu"
+            data-testid="admin-mobile-nav-toggle"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
           <div className="relative w-full max-w-lg">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
