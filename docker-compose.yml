@@ -25,6 +25,8 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
       SESSION_SECRET: ${SESSION_SECRET:-dev-insecure-secret-change-me}
       SESSION_HTTPS_ONLY: ${SESSION_HTTPS_ONLY:-false}
+    volumes:
+      - ./backend:/app
     depends_on:
       postgres:
         condition: service_healthy
@@ -36,6 +38,9 @@ services:
     restart: unless-stopped
     environment:
       REACT_APP_BACKEND_URL: ${REACT_APP_BACKEND_URL:-http://localhost:8001}
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
     depends_on:
       - backend
     ports:
