@@ -56,6 +56,9 @@ class TeamUpdate(BaseModel):
     contact_phone: Optional[str] = None
     member_count: Optional[int] = None
     notes: Optional[str] = None
+    # Toggled directly from the Teams table (see PUT /teams/{id}), never part
+    # of the main edit form.
+    last_year_winner: Optional[bool] = None
 
 
 class AccommodationLocation(BaseModel):
@@ -71,6 +74,8 @@ class TeamRead(ORMModel, TeamBase):
     participant_count: Optional[int] = None
     accommodation_status: Optional[str] = None  # "none" | "partial" | "full"
     accommodation_locations: List[AccommodationLocation] = []
+    age_group_counts: dict[str, int] = {}  # e.g. {"Under 14": 10, "Under 17": 8}
+    last_year_winner: bool = False
     created_at: datetime
     updated_at: datetime
 

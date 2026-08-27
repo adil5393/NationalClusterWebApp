@@ -16,6 +16,24 @@ def _participant_counts(db: Session) -> dict[int, int]:
     )
 
 
+def _age_group_counts_map(db: Session, team_ids: list[int]) -> dict[int, dict[str, int]]:
+    """Per-team headcount broken out by age_group (e.g. {"Under 14": 10,
+    "Under 17": 8}) rather than one lumped total — a school can field squads
+    across several age categories, and each one needs its own minimum-squad
+    check, not a combined number that hides a short-handed category."""
+    if not team_ids:
+        return {}
+    result: dict[int, dict[str, int]] = {}
+    for team_id, age_group, count in (
+        db.query(models.Participant.team_id, models.Participant.age_group, func.count(models.Participant.id))
+        .filter(models.Participant.team_id.in_(team_ids), models.Participant.age_group.isnot(None))
+        .group_by(models.Participant.team_id, models.Participant.age_group)
+        .all()
+    ):
+        result.setdefault(team_id, {})[age_group] = count
+    return result
+
+
 def _accommodation_map(db: Session, team_ids: list[int], participant_counts: dict[int, int]) -> dict[int, dict]:
     """Per team: {"status": "none"|"partial"|"full", "locations": [{"room",
     "building", "whole_team", "count"}]}. Reuses the same real-headcount logic
@@ -80,12 +98,15 @@ def _accommodation_map(db: Session, team_ids: list[int], participant_counts: dic
 def list_teams(db: Session = Depends(get_db)):
     counts = _participant_counts(db)
     teams = db.query(models.Team).order_by(models.Team.name).all()
-    accommodation = _accommodation_map(db, [t.id for t in teams], counts)
+    team_ids = [t.id for t in teams]
+    accommodation = _accommodation_map(db, team_ids, counts)
+    age_group_counts = _age_group_counts_map(db, team_ids)
     for t in teams:
         t.participant_count = counts.get(t.id, 0)
         info = accommodation.get(t.id, {"status": "none", "locations": []})
         t.accommodation_status = info["status"]
         t.accommodation_locations = info["locations"]
+        t.age_group_counts = age_group_counts.get(t.id, {})
     return teams
 
 
@@ -98,6 +119,7 @@ def create_team(payload: schemas.TeamCreate, db: Session = Depends(get_db)):
     team.participant_count = 0
     team.accommodation_status = "none"
     team.accommodation_locations = []
+    team.age_group_counts = {}
     return team
 
 

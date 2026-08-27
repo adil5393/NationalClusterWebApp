@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Pencil, Trash2, QrCode, Upload } from "lucide-react";
+import { Plus, Pencil, Trash2, QrCode, Upload, Trophy, X } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,51 @@ interface Team {
   participant_count?: number;
   accommodation_status?: "none" | "partial" | "full";
   accommodation_locations?: { room?: string | null; building?: string | null; whole_team: boolean; count: number }[];
+  age_group_counts?: Record<string, number>;
+  last_year_winner?: boolean;
+}
+
+const MIN_SQUAD_SIZE = 12;
+
+// Same trick used elsewhere (Participants.tsx, Matches.tsx): age_group is free
+// text imported from the attendance list ("Under 14", "Under 17", ...).
+function ageGroupRank(g: string) {
+  const m = g.match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : 999;
+}
+
+function AgeGroupCountsCell({ counts }: { counts?: Record<string, number> }) {
+  const entries = Object.entries(counts ?? {}).sort(([a], [b]) => ageGroupRank(a) - ageGroupRank(b) || a.localeCompare(b));
+  if (entries.length === 0) return <span className="text-slate-400">—</span>;
+  return (
+    <div className="space-y-0.5">
+      {entries.map(([group, count]) => (
+        <div key={group} className="flex items-center justify-between gap-3 text-xs">
+          <span className="text-slate-500">{group}</span>
+          <span className={`tabular-nums font-bold ${count < MIN_SQUAD_SIZE ? "text-red-600" : "text-emerald-700"}`}>{count}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function LastYearWinnerCell({ team, canEdit, onToggle }: { team: Team; canEdit: boolean; onToggle: (team: Team) => void }) {
+  const isWinner = !!team.last_year_winner;
+  const badge = isWinner ? (
+    <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700 ring-1 ring-amber-200">
+      <Trophy className="h-3.5 w-3.5 shrink-0" /> Yes
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs font-bold text-slate-500 ring-1 ring-slate-200">
+      <X className="h-3.5 w-3.5 shrink-0" /> No
+    </span>
+  );
+  if (!canEdit) return badge;
+  return (
+    <button onClick={() => onToggle(team)} data-testid={`last-year-winner-toggle-${team.id}`} className="inline-flex items-center" title={isWinner ? "Mark as not a winner" : "Mark as last year's winner"}>
+      {badge}
+    </button>
+  );
 }
 
 const ACCOMMODATION_LABEL: Record<string, string> = { none: "Not Set Up", partial: "Partial", full: "Set Up" };
@@ -94,6 +139,17 @@ export default function AdminTeams() {
     load();
   };
 
+  const toggleLastYearWinner = async (t: Team) => {
+    const next = !t.last_year_winner;
+    setTeams((rows) => rows.map((r) => (r.id === t.id ? { ...r, last_year_winner: next } : r))); // optimistic
+    try {
+      await api.put(`/teams/${t.id}`, { last_year_winner: next });
+    } catch {
+      toast.error("Could not update Last Year Winner status");
+      setTeams((rows) => rows.map((r) => (r.id === t.id ? { ...r, last_year_winner: t.last_year_winner } : r))); // revert
+    }
+  };
+
   const emptyTeamCount = teams.filter((t) => (t.participant_count ?? 0) === 0).length;
 
   const removeEmptyTeams = async () => {
@@ -140,9 +196,11 @@ export default function AdminTeams() {
               <TR className="hover:bg-transparent">
                 <TH>#</TH>
                 <TH>Team</TH>
+                <TH>Last Year Winner</TH>
                 <TH>Region</TH>
                 <TH>Country</TH>
                 <TH className="text-right">Members</TH>
+                <TH>Members by Age Group</TH>
                 <TH>Accommodation</TH>
                 <TH>Contact</TH>
                 <TH className="text-right">Actions</TH>
@@ -153,9 +211,11 @@ export default function AdminTeams() {
                 <TR key={t.id} data-testid={`team-row-${t.id}`}>
                   <TD className="text-slate-400">{i + 1}</TD>
                   <TD className="font-bold text-slate-900">{t.name}<div className="text-xs font-normal text-slate-500">{t.school}</div></TD>
+                  <TD><LastYearWinnerCell team={t} canEdit={canEdit} onToggle={toggleLastYearWinner} /></TD>
                   <TD>{t.region || "—"}</TD>
                   <TD><Badge tone={t.country === "India" ? "coral" : "blue"}>{t.country}</Badge></TD>
                   <TD className="text-right font-semibold">{t.member_count ?? 0}</TD>
+                  <TD><AgeGroupCountsCell counts={t.age_group_counts} /></TD>
                   <TD><AccommodationCell t={t} /></TD>
                   <TD className="text-slate-600">{t.contact_name || "—"}</TD>
                   <TD>

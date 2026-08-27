@@ -57,6 +57,9 @@ class Team(TimestampMixin, Base):
     contact_phone = Column(String(60))
     member_count = Column(Integer, default=0)
     notes = Column(Text)
+    # Simple flag, toggled directly from the Teams table (not the edit form) —
+    # there's no historical-results model to derive it from, so it's set by hand.
+    last_year_winner = Column(Boolean, nullable=False, default=False)
 
     participants = relationship("Participant", back_populates="team", cascade="all, delete-orphan")
     coaches = relationship("Coach", back_populates="team", cascade="all, delete-orphan")

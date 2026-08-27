@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Capacitor } from "@capacitor/core";
 import {
   LayoutDashboard, Users, UserSquare2, BedDouble, Building2, UtensilsCrossed, Bus,
   MapPin, CalendarDays, Megaphone, ShoppingCart, CheckSquare, BookOpen, FileText,
@@ -134,9 +135,11 @@ export function AdminLayout() {
               <div className="truncate text-[11px] text-slate-500">@{me.username}</div>
             </div>
           )}
-          <Link to="/" className="flex items-center gap-2 px-5 py-3 text-xs font-semibold text-slate-400 hover:text-coral">
-            <ExternalLink className="h-3.5 w-3.5" /> View Public Site
-          </Link>
+          {!Capacitor.isNativePlatform() && (
+            <Link to="/" className="flex items-center gap-2 px-5 py-3 text-xs font-semibold text-slate-400 hover:text-coral">
+              <ExternalLink className="h-3.5 w-3.5" /> View Public Site
+            </Link>
+          )}
           <button onClick={logout} data-testid="admin-logout-btn" className="flex w-full items-center gap-2 px-5 pb-4 text-xs font-semibold text-slate-400 hover:text-coral">
             <LogOut className="h-3.5 w-3.5" /> Log Out
           </button>

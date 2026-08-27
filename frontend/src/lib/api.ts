@@ -1,6 +1,12 @@
 import axios from "axios";
+import { Capacitor } from "@capacitor/core";
 
-const BASE_URL = import.meta.env.REACT_APP_BACKEND_URL ?? "";
+// Browsers use the same origin and therefore need no explicit base URL. The
+// Android Capacitor WebView runs at https://localhost, so it must call the
+// public API origin explicitly.
+const BASE_URL = Capacitor.isNativePlatform()
+  ? "https://kabaddinationalscluster.info"
+  : (import.meta.env.REACT_APP_BACKEND_URL ?? "");
 
 export const api = axios.create({
   baseURL: `${BASE_URL}/api`,

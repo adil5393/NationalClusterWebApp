@@ -1,4 +1,5 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
+import { Capacitor } from "@capacitor/core";
 import { PublicLayout } from "@/components/public/PublicLayout";
 import { AdminLayout } from "@/components/admin/AdminLayout";
 import { ComingSoon } from "@/components/admin/ComingSoon";
@@ -29,11 +30,18 @@ import Matches from "@/pages/admin/Matches";
 import Accounts from "@/pages/admin/Accounts";
 import Login from "@/pages/admin/Login";
 
+// The Android app (Capacitor) is a dedicated Organizer Portal build — reusing
+// this same web bundle, but it should never land a user on the public
+// marketing site. Every in-app link only ever points at /admin/*, so this one
+// redirect on the entry route is enough; the public routes stay in the bundle
+// (still served fine to real browsers) but are simply unreachable in the app.
+const isNativeApp = Capacitor.isNativePlatform();
+
 export default function App() {
   return (
     <Routes>
       <Route element={<PublicLayout />}>
-        <Route path="/" element={<Home />} />
+        <Route path="/" element={isNativeApp ? <Navigate to="/admin/login" replace /> : <Home />} />
         <Route path="/teams" element={<PublicTeams />} />
         <Route path="/teams/:id" element={<TeamPortal />} />
         <Route path="/announcements" element={<PublicAnnouncements />} />

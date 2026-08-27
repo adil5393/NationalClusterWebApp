@@ -20,7 +20,16 @@ export default function Login() {
       await api.post("/auth/login", { username, password });
       navigate("/admin");
     } catch (e: any) {
-      toast.error(e?.response?.data?.detail ?? "Incorrect username or password");
+      if (e?.response) {
+        // Server actually answered — this is a real credential/validation rejection.
+        toast.error(e.response.data?.detail ?? "Incorrect username or password");
+      } else if (e?.request) {
+        // Request went out but got no response — network/DNS/CORS failure, not bad
+        // credentials. Reporting this as "incorrect password" would be misleading.
+        toast.error("Could not reach the server. Check your internet connection and try again.");
+      } else {
+        toast.error(e?.message ?? "Something went wrong. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
