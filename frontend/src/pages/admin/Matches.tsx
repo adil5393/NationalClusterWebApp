@@ -19,6 +19,7 @@ interface ParticipantT { team_id: number; age_group?: string | null; is_present?
 interface MatchT {
   id: number; tournament_id: number; tournament_name?: string | null; sport?: string | null; age_group?: string | null;
   round_id: number; round_name?: string | null; match_type?: string | null;
+  pool_id?: number | null; pool_name?: string | null;
   team_a_id?: number | null; team_a_name?: string | null;
   team_b_id?: number | null; team_b_name?: string | null;
   source_match_a_id?: number | null; source_match_b_id?: number | null;
@@ -76,6 +77,76 @@ function matchLabel(m: MatchT) {
   const a = m.team_a_name ?? (m.source_match_a_id ? `Winner of Match ${m.source_match_a_id}` : "TBD");
   const b = m.team_b_name ?? (m.source_match_b_id ? `Winner of Match ${m.source_match_b_id}` : "TBD");
   return `${a} vs ${b}`;
+}
+
+// The mobile card list + desktop table for one flat list of matches — shared
+// by a plain knockout round (called once) and a league round (called once
+// per pool, so pool-stage matches under Knockout/Fixtures read as grouped
+// fixtures instead of one undifferentiated list mixing every pool together).
+function RoundMatchesList({ matches, presentCounts, canEdit, onStart, onOpenConsole, onRemove }: {
+  matches: MatchT[];
+  presentCounts: Record<number, { present: number; total: number }>;
+  canEdit: boolean;
+  onStart: (id: number) => void;
+  onOpenConsole: (id: number) => void;
+  onRemove: (id: number) => void;
+}) {
+  return (
+    <>
+      <div className="mt-1.5 grid gap-1.5 lg:hidden">
+        {matches.map((m, i) => (
+          <div key={m.id} className="w-full min-w-0 overflow-hidden rounded-lg border border-slate-800 bg-slate-900 p-3" data-testid={`match-card-${m.id}`}>
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+              <div className="min-w-0"><p className="text-[10px] font-semibold leading-tight text-slate-500">#{i + 1}</p><p className="break-words text-sm font-bold leading-tight text-white">{matchLabel(m)}</p></div>
+              <div className="flex shrink-0 items-center gap-1">
+                <Badge tone={STATUS_TONE[m.status]}>{m.status}</Badge>
+                {canEdit && m.status === "SCHEDULED" && m.team_a_id && m.team_b_id && <Button variant="outline" size="icon" className="h-7 w-7 border-white/15 bg-white/5 text-emerald-400 hover:bg-white/10" onClick={() => onStart(m.id)} title="Start match"><Play className="h-3.5 w-3.5" /></Button>}
+                {(m.status === "ONGOING" || m.status === "PAUSED") && <Button variant="outline" size="icon" className="h-7 w-7 border-white/15 bg-white/5 text-emerald-400 hover:bg-white/10" onClick={() => onOpenConsole(m.id)} title="Open live console"><Radio className="h-3.5 w-3.5" /></Button>}
+                {canEdit && (m.status === "SCHEDULED" || m.status === "POSTPONED") && <Button variant="danger" size="icon" className="h-7 w-7 border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20" onClick={() => onRemove(m.id)} title="Delete fixture"><Trash2 className="h-3.5 w-3.5" /></Button>}
+              </div>
+            </div>
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{m.venue_name ?? "No venue"}</span>
+              <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{m.scheduled_at ? formatDate(m.scheduled_at) : "Not scheduled"}</span>
+              <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{m.status === "SCHEDULED" || m.status === "POSTPONED" ? "Score pending" : `${m.team_a_score} – ${m.team_b_score}`}</span>
+            </div>
+            {m.winner_team_name && <p className="mt-1.5 truncate text-[11px] text-emerald-400">Winner: {m.winner_team_name}</p>}
+          </div>
+        ))}
+      </div>
+      <div className="hidden lg:block"><Table className="mt-2">
+        <THead><TR className="hover:bg-transparent"><TH>Fixture</TH><TH>Present</TH><TH>Venue</TH><TH>Scheduled</TH><TH>Status</TH><TH>Score</TH><TH className="text-right">Actions</TH></TR></THead>
+        <tbody>
+          {matches.map((m) => (
+            <TR key={m.id} data-testid={`match-row-${m.id}`}>
+              <TD className="font-semibold text-slate-800">{matchLabel(m)}{m.winner_team_name && <div className="text-xs font-normal text-emerald-600">Winner: {m.winner_team_name}</div>}</TD>
+              <TD className="text-xs text-slate-500">
+                {m.team_a_id && <div>{m.team_a_name}: {presentCounts[m.team_a_id] ? `${presentCounts[m.team_a_id].present}/${presentCounts[m.team_a_id].total}` : "—"}</div>}
+                {m.team_b_id && <div>{m.team_b_name}: {presentCounts[m.team_b_id] ? `${presentCounts[m.team_b_id].present}/${presentCounts[m.team_b_id].total}` : "—"}</div>}
+              </TD>
+              <TD className="text-slate-500">{m.venue_name ?? "—"}</TD>
+              <TD className="text-slate-500">{m.scheduled_at ? formatDate(m.scheduled_at) : "—"}</TD>
+              <TD><Badge tone={STATUS_TONE[m.status]}>{m.status}</Badge></TD>
+              <TD className="text-slate-700">{m.status === "SCHEDULED" || m.status === "POSTPONED" ? "—" : `${m.team_a_score} – ${m.team_b_score}`}</TD>
+              <TD>
+                <div className="flex justify-end gap-1">
+                  {canEdit && m.status === "SCHEDULED" && m.team_a_id && m.team_b_id && (
+                    <Button variant="ghost" size="icon" onClick={() => onStart(m.id)} title="Start match" data-testid={`start-match-${m.id}`}><Play className="h-4 w-4 text-emerald-600" /></Button>
+                  )}
+                  {(m.status === "ONGOING" || m.status === "PAUSED") && (
+                    <Button variant="ghost" size="icon" onClick={() => onOpenConsole(m.id)}><Radio className="h-4 w-4 text-emerald-600" /></Button>
+                  )}
+                  {canEdit && (m.status === "SCHEDULED" || m.status === "POSTPONED") && (
+                    <Button variant="ghost" size="icon" onClick={() => onRemove(m.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                  )}
+                </div>
+              </TD>
+            </TR>
+          ))}
+        </tbody>
+      </Table></div>
+    </>
+  );
 }
 
 // Same trick as Participants.tsx: age_group is free text imported from the
@@ -159,6 +230,15 @@ export default function Matches() {
   };
 
   const [roundSearch, setRoundSearch] = useState<Record<number, string>>({});
+
+  const [collapsedPoolGroups, setCollapsedPoolGroups] = useState<Set<string>>(new Set());
+  const togglePoolGroupCollapsed = (key: string) => {
+    setCollapsedPoolGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
 
   const [tab, setTab] = useState<"fixtures" | "league">("fixtures");
 
@@ -560,57 +640,51 @@ export default function Matches() {
                       <p className="mt-2 text-sm text-slate-400">No matches in this round yet.</p>
                     ) : filteredMatches.length === 0 ? (
                       <p className="mt-2 text-sm text-slate-400">No matches found for "{roundSearch[r.id]}".</p>
-                    ) : (
-                      <>
-                      <div className="mt-1.5 grid gap-1.5 lg:hidden">
-                        {filteredMatches.map((m, i) => (
-                          <div key={m.id} className="w-full min-w-0 overflow-hidden rounded-lg border border-slate-800 bg-slate-900 p-3" data-testid={`match-card-${m.id}`}>
-                            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
-                              <div className="min-w-0"><p className="text-[10px] font-semibold leading-tight text-slate-500">#{i + 1}</p><p className="break-words text-sm font-bold leading-tight text-white">{matchLabel(m)}</p></div>
-                              <div className="flex shrink-0 items-center gap-1"><Badge tone={STATUS_TONE[m.status]}>{m.status}</Badge>{canEdit && m.status === "SCHEDULED" && m.team_a_id && m.team_b_id && <Button variant="outline" size="icon" className="h-7 w-7 border-white/15 bg-white/5 text-emerald-400 hover:bg-white/10" onClick={() => startMatch(m.id)} title="Start match"><Play className="h-3.5 w-3.5" /></Button>}{(m.status === "ONGOING" || m.status === "PAUSED") && <Button variant="outline" size="icon" className="h-7 w-7 border-white/15 bg-white/5 text-emerald-400 hover:bg-white/10" onClick={() => setConsoleMatchId(m.id)} title="Open live console"><Radio className="h-3.5 w-3.5" /></Button>}{canEdit && (m.status === "SCHEDULED" || m.status === "POSTPONED") && <Button variant="danger" size="icon" className="h-7 w-7 border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20" onClick={() => removeMatch(m.id)} title="Delete fixture"><Trash2 className="h-3.5 w-3.5" /></Button>}</div>
-                            </div>
-                            <div className="mt-1.5 flex flex-wrap gap-1">
-                              <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{m.venue_name ?? "No venue"}</span>
-                              <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{m.scheduled_at ? formatDate(m.scheduled_at) : "Not scheduled"}</span>
-                              <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{m.status === "SCHEDULED" || m.status === "POSTPONED" ? "Score pending" : `${m.team_a_score} – ${m.team_b_score}`}</span>
-                            </div>
-                            {m.winner_team_name && <p className="mt-1.5 truncate text-[11px] text-emerald-400">Winner: {m.winner_team_name}</p>}
-                          </div>
-                        ))}
-                      </div>
-                      <div className="hidden lg:block"><Table className="mt-2">
-                        <THead><TR className="hover:bg-transparent"><TH>Fixture</TH><TH>Present</TH><TH>Venue</TH><TH>Scheduled</TH><TH>Status</TH><TH>Score</TH><TH className="text-right">Actions</TH></TR></THead>
-                        <tbody>
-                          {filteredMatches.map((m) => (
-                            <TR key={m.id} data-testid={`match-row-${m.id}`}>
-                              <TD className="font-semibold text-slate-800">{matchLabel(m)}{m.winner_team_name && <div className="text-xs font-normal text-emerald-600">Winner: {m.winner_team_name}</div>}</TD>
-                              <TD className="text-xs text-slate-500">
-                                {m.team_a_id && <div>{m.team_a_name}: {presentCounts[m.team_a_id] ? `${presentCounts[m.team_a_id].present}/${presentCounts[m.team_a_id].total}` : "—"}</div>}
-                                {m.team_b_id && <div>{m.team_b_name}: {presentCounts[m.team_b_id] ? `${presentCounts[m.team_b_id].present}/${presentCounts[m.team_b_id].total}` : "—"}</div>}
-                              </TD>
-                              <TD className="text-slate-500">{m.venue_name ?? "—"}</TD>
-                              <TD className="text-slate-500">{m.scheduled_at ? formatDate(m.scheduled_at) : "—"}</TD>
-                              <TD><Badge tone={STATUS_TONE[m.status]}>{m.status}</Badge></TD>
-                              <TD className="text-slate-700">{m.status === "SCHEDULED" || m.status === "POSTPONED" ? "—" : `${m.team_a_score} – ${m.team_b_score}`}</TD>
-                              <TD>
-                                <div className="flex justify-end gap-1">
-                                  {canEdit && m.status === "SCHEDULED" && m.team_a_id && m.team_b_id && (
-                                    <Button variant="ghost" size="icon" onClick={() => startMatch(m.id)} title="Start match" data-testid={`start-match-${m.id}`}><Play className="h-4 w-4 text-emerald-600" /></Button>
-                                  )}
-                                  {(m.status === "ONGOING" || m.status === "PAUSED") && (
-                                    <Button variant="ghost" size="icon" onClick={() => setConsoleMatchId(m.id)} title="Open live console"><Radio className="h-4 w-4 text-emerald-600" /></Button>
-                                  )}
-                                  {canEdit && (m.status === "SCHEDULED" || m.status === "POSTPONED") && (
-                                    <Button variant="ghost" size="icon" onClick={() => removeMatch(m.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
-                                  )}
-                                </div>
-                              </TD>
-                            </TR>
-                          ))}
-                        </tbody>
-                      </Table></div>
-                      </>
-                    ))}
+                    ) : (() => {
+                      // A league round's matches all live on this same Match
+                      // row, one pool_id per pool — group them under their
+                      // pool instead of one flat undifferentiated list. A
+                      // knockout round has no pool_id anywhere, so it falls
+                      // straight through to the plain flat list unchanged.
+                      const byPool = new Map<string, { name: string; matches: MatchT[] }>();
+                      for (const m of filteredMatches) {
+                        const key = m.pool_id != null ? String(m.pool_id) : "";
+                        if (!byPool.has(key)) byPool.set(key, { name: m.pool_name ?? "Other Fixtures", matches: [] });
+                        byPool.get(key)!.matches.push(m);
+                      }
+                      const pools = [...byPool.entries()].map(([key, v]) => ({ key, ...v }));
+                      const hasPoolMatches = pools.some((p) => p.key !== "");
+
+                      if (!hasPoolMatches) {
+                        return (
+                          <RoundMatchesList matches={filteredMatches} presentCounts={presentCounts} canEdit={canEdit} onStart={startMatch} onOpenConsole={setConsoleMatchId} onRemove={removeMatch} />
+                        );
+                      }
+                      return (
+                        <div className="mt-2 space-y-4">
+                          {pools.map((p) => {
+                            const groupKey = `${r.id}:${p.key}`;
+                            const poolCollapsed = collapsedPoolGroups.has(groupKey);
+                            return (
+                              <div key={p.key || "none"}>
+                                <button
+                                  type="button"
+                                  onClick={() => togglePoolGroupCollapsed(groupKey)}
+                                  className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-400 lg:text-slate-500"
+                                  data-testid={`toggle-pool-group-${groupKey}`}
+                                >
+                                  <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform", poolCollapsed && "-rotate-90")} />
+                                  {p.name} <span className="font-normal normal-case text-slate-500">({p.matches.length})</span>
+                                </button>
+                                {!poolCollapsed && (
+                                  <RoundMatchesList matches={p.matches} presentCounts={presentCounts} canEdit={canEdit} onStart={startMatch} onOpenConsole={setConsoleMatchId} onRemove={removeMatch} />
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })())}
                   </div>
                   );
                 })}
@@ -1372,7 +1446,7 @@ function LeagueSetup({ tournamentId, rounds, teams, canEdit, onOpenConsole, onCh
             <span className="text-slate-300 lg:text-slate-600">Pools: <b className="text-white lg:text-slate-900">{summary.pool_count}</b></span>
             <span className="col-span-2 flex flex-wrap gap-x-3 gap-y-1 sm:ml-auto">
               <span className={summary.all_teams_assigned ? "text-emerald-400 lg:text-emerald-600" : "text-amber-400 lg:text-amber-600"}>{summary.all_teams_assigned ? "✓ All teams assigned" : `⚠ ${summary.unassigned_teams.length} unassigned`}</span>
-              <span className={summary.all_pools_valid ? "text-emerald-400 lg:text-emerald-600" : "text-amber-400 lg:text-amber-600"}>{summary.all_pools_valid ? "✓ All pools valid" : "⚠ Some pools need ≥5 teams"}</span>
+              <span className={summary.all_pools_valid ? "text-emerald-400 lg:text-emerald-600" : "text-amber-400 lg:text-amber-600"}>{summary.all_pools_valid ? "✓ All pools valid" : "⚠ Some pools need ≥2 teams"}</span>
               <span className={summary.fixtures_generated ? "text-emerald-600" : "text-slate-400"}>{summary.fixtures_generated ? "✓ Fixtures generated" : "Fixtures not finalized"}</span>
             </span>
           </div>
@@ -1405,7 +1479,7 @@ function LeagueSetup({ tournamentId, rounds, teams, canEdit, onOpenConsole, onCh
                 </div>
                 <div className="mt-1.5 flex flex-wrap gap-1">{p.teams.slice(0, 2).map((t) => <span key={t.id} className="max-w-full truncate rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{t.name}</span>)}{p.teams.length > 2 && <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">+{p.teams.length - 2} more</span>}{p.teams.length === 0 && <span className="text-[10px] text-slate-400">No teams yet</span>}</div>
                 <div className="mt-1.5 flex flex-wrap gap-1"><span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{p.team_count} teams</span><span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{p.status === "finalized" ? `${p.match_count} matches` : `${p.expected_match_count} matches`}</span></div>
-                {!p.is_valid && <p className="mt-1 text-xs font-semibold text-amber-600">⚠ Needs at least 5 teams</p>}
+                {!p.is_valid && <p className="mt-1 text-xs font-semibold text-amber-600">⚠ Needs at least 2 teams</p>}
               </div>
             ))}
             {summary.pools.length === 0 && (
@@ -1513,7 +1587,7 @@ function CreatePoolDialog({ tournamentId, roundId, teams, onClose, onCreated }: 
         <div><Label>Pool Name *</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Pool A" data-testid="pool-name-input" /></div>
         <div>
           <Label>Select Teams ({teamIds.length})</Label>
-          <p className="mt-0.5 text-xs text-slate-500">A pool can exist empty while you're setting it up — teams need at least 5 total before it can be finalized.</p>
+          <p className="mt-0.5 text-xs text-slate-500">A pool can exist empty while you're setting it up — teams need at least 2 total before it can be finalized.</p>
           <div className="mt-1.5 max-h-56 overflow-y-auto rounded-md border border-slate-200 p-2">
             {teams.map((t) => (
               <label key={t.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-slate-50">

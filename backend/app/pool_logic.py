@@ -5,7 +5,7 @@ database or running server.
 """
 from itertools import combinations
 
-MIN_POOL_SIZE = 5
+MIN_POOL_SIZE = 2
 
 
 def distribute_pool_sizes(team_count: int, target_size: int = MIN_POOL_SIZE) -> list[int]:

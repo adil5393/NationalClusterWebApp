@@ -30,6 +30,46 @@ def _get_bucket(db: Session, bucket_id: int) -> models.Bucket:
     return b
 
 
+def _team_still_committed(round_result: models.Round, team_id: int) -> bool:
+    """Whether a team pulled into some other bucket that became `round_result`
+    is still tied up there. For a knockout round every entrant is guaranteed
+    a match at creation time, so an absent or fully-cancelled match means it
+    was cancelled/deleted and the team is free again. A league round's
+    entrants aren't guaranteed pool matches yet (pools are built by hand
+    afterward), so a team there stays committed for as long as the round
+    itself exists — freeing it up means deleting that round, which already
+    reopens the bucket automatically (round_id reverts to NULL)."""
+    if round_result.format == "LEAGUE":
+        return True
+    team_matches = [m for m in round_result.matches if m.team_a_id == team_id or m.team_b_id == team_id]
+    return any(m.status != "CANCELLED" for m in team_matches)
+
+
+def _teams_committed_elsewhere(db: Session, bucket: models.Bucket) -> set[int]:
+    """Every team already tied up in another bucket sourced from the same
+    round as `bucket`, whose placement there is still active. Prevents the
+    same round's teams from being pulled into two different next-rounds at
+    once — a team frees up again once its match from that placement is
+    cancelled/deleted, or that whole round gets deleted."""
+    others = (
+        db.query(models.Bucket)
+        .filter(
+            models.Bucket.source_round_id == bucket.source_round_id,
+            models.Bucket.id != bucket.id,
+            models.Bucket.round_id.isnot(None),
+        )
+        .all()
+    )
+    committed: set[int] = set()
+    for other in others:
+        if not other.round:
+            continue
+        for e in other.entries:
+            if _team_still_committed(other.round, e.team_id):
+                committed.add(e.team_id)
+    return committed
+
+
 def _bucket_dict(db: Session, bucket: models.Bucket) -> dict:
     try:
         advancing = _compute_advancing_teams(db, bucket.source_round) if bucket.source_round else None
@@ -124,6 +164,13 @@ def pull_into_bucket(bucket_id: int, payload: schemas.BucketPullRequest, db: Ses
     team_ids = list(dict.fromkeys(payload.team_ids))
     if not team_ids:
         raise HTTPException(400, "Pick at least one team to pull")
+
+    committed = _teams_committed_elsewhere(db, bucket)
+    conflicting = [tid for tid in team_ids if tid in committed]
+    if conflicting:
+        names = sorted(t.name for t in db.query(models.Team).filter(models.Team.id.in_(conflicting)).all())
+        verb = "has" if len(names) == 1 else "have"
+        raise HTTPException(409, f"{', '.join(names)} already {verb} an active match from this round in another bucket — cancel or delete it first")
 
     advancing = _compute_advancing_teams(db, bucket.source_round)
 

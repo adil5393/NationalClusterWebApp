@@ -100,6 +100,8 @@ def public_bracket(tournament_id: int, db: Session = Depends(get_db)):
                 "id": r.id,
                 "name": r.name,
                 "sequence": r.sequence,
+                "format": r.format,
+                "source_round_id": r.source_round_id,
                 # Knockout tree matches only here — pool/league matches live under
                 # this round's "pools" instead, each with its own round-robin set.
                 "matches": [_public_match_dict(m, db) for m in r.matches if m.match_type == "KNOCKOUT"],
