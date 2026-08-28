@@ -188,7 +188,7 @@ export default function Campus() {
       const acc = res.data.accommodation ?? [];
       const resList: ResolvedRoom[] = acc.map((r) => ({
         ...r,
-        hotspot: r.room ? findHotspot(r.room, r.building) : undefined,
+        hotspot: r.room ? findHotspot(r.building, r.room) : undefined,
       }));
       setResolved(resList);
       const firstHit = resList.find((r) => r.hotspot);
