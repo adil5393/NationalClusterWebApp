@@ -46,11 +46,13 @@ interface BucketPoolStatusT {
   qualifiers: TeamBrief[]; needs_tiebreak: boolean; tie_candidates: TeamBrief[]; tie_need: number;
 }
 interface BucketKnockoutStatusT { ready: boolean; blocking?: string | null; new_winners: TeamBrief[] }
-interface BucketTeamT { id: number; name: string; source_pool_id?: number | null; source_pool_name?: string | null; seed_rank?: number | null }
+interface BucketTeamT {
+  id: number; name: string; source_pool_id?: number | null; source_pool_name?: string | null; seed_rank?: number | null;
+  pushed_round_id?: number | null; pushed_round_name?: string | null;
+}
 interface BucketT {
   id: number; tournament_id: number; name: string;
   source_round_id: number; source_round_name?: string | null; source_format?: "KNOCKOUT" | "LEAGUE" | null;
-  round_id?: number | null;
   teams: BucketTeamT[];
   pools: BucketPoolStatusT[] | null;
   knockout: BucketKnockoutStatusT | null;
@@ -454,8 +456,8 @@ export default function Matches() {
     <div className="min-w-0 max-w-full" data-testid="admin-matches">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-black tracking-tight text-white lg:text-slate-950">Matches & Fixtures</h1>
-          <p className="mt-1 text-sm text-slate-400 lg:text-slate-500">Tournaments, rounds, brackets, and live scoring.</p>
+          <h1 className="font-heading text-2xl font-black tracking-tight text-white">Matches &amp; Fixtures</h1>
+          <p className="mt-1 text-sm text-slate-400">Tournaments, rounds, brackets, and live scoring.</p>
         </div>
         {canEdit && (
           <Button onClick={() => { setTForm({ name: "", sport: "", age_group: "", status: "draft", notes: "" }); setTOpen(true); }} data-testid="add-tournament-btn">
@@ -465,35 +467,35 @@ export default function Matches() {
       </div>
 
       {/* LIVE NOW */}
-      <div className="mt-6 min-w-0 max-w-full rounded-lg border border-emerald-900 bg-emerald-950/40 p-4 lg:border-emerald-200 lg:bg-emerald-50/40">
+      <div className="mt-6 min-w-0 max-w-full rounded-lg border border-emerald-900 bg-emerald-950/40 p-4">
         <div className="flex items-center gap-2">
-          <Radio className="h-4 w-4 text-emerald-600" />
-          <h2 className="font-heading text-sm font-bold text-white lg:text-slate-900">Ongoing Matches</h2>
-          <span className="text-xs text-slate-400 lg:text-slate-500">({live.length})</span>
+          <Radio className="h-4 w-4 text-emerald-400" />
+          <h2 className="font-heading text-sm font-bold text-white">Ongoing Matches</h2>
+          <span className="text-xs text-slate-400">({live.length})</span>
         </div>
         {live.length === 0 ? (
-          <p className="mt-2 text-sm text-slate-400 lg:text-slate-500">Nothing live right now.</p>
+          <p className="mt-2 text-sm text-slate-400">Nothing live right now.</p>
         ) : (
           <div className="mt-3 space-y-4">
             {liveByAgeGroup.map(([group, matches]) => (
               <div key={group}>
-                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">{group} <span className="font-normal normal-case text-slate-400">({matches.length})</span></h3>
+                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-400">{group} <span className="font-normal normal-case text-slate-500">({matches.length})</span></h3>
                 <div className="mt-1.5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {matches.map((m) => (
                     <button
                       key={m.id}
                       onClick={() => setConsoleMatchId(m.id)}
                       data-testid={`live-match-${m.id}`}
-                    className="w-full min-w-0 overflow-hidden rounded-md border border-emerald-900 bg-obsidian p-3 text-left hover:border-emerald-500 hover:shadow-sm lg:border-slate-200 lg:bg-white lg:hover:border-emerald-300"
+                      className="w-full min-w-0 overflow-hidden rounded-md border border-emerald-900 bg-obsidian p-3 text-left hover:border-emerald-500 hover:shadow-sm"
                     >
                       <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-2">
                         <Badge tone={STATUS_TONE[m.status]}>{m.status}</Badge>
                         <span className="truncate text-xs text-slate-400">{m.tournament_name ?? m.round_name}</span>
                       </div>
-                      <div className="mt-2 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 text-sm font-bold text-white lg:text-slate-900">
+                      <div className="mt-2 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 text-sm font-bold text-white">
                         <span className="truncate">{m.team_a_name ?? "TBD"}</span><span className="shrink-0">{m.team_a_score}</span>
                       </div>
-                      <div className="mt-1 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 text-sm font-bold text-white lg:text-slate-900">
+                      <div className="mt-1 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 text-sm font-bold text-white">
                         <span className="truncate">{m.team_b_name ?? "TBD"}</span><span className="shrink-0">{m.team_b_score}</span>
                       </div>
                     </button>
@@ -506,12 +508,12 @@ export default function Matches() {
       </div>
 
       {loading ? <div className="mt-6"><Spinner /></div> : tournaments.length === 0 ? (
-        <div className="mt-6 rounded-lg border border-slate-800 bg-slate-900 p-6 lg:border-slate-200 lg:bg-white">
+        <div className="mt-6 rounded-lg border border-slate-800 bg-slate-900 p-6">
           <EmptyState title="No tournaments yet" hint="Create one to start building fixtures." />
         </div>
       ) : (
-        <div className="mt-6 min-w-0 max-w-full overflow-hidden rounded-lg border border-slate-800 bg-slate-900 lg:border-slate-200 lg:bg-white">
-          <div className="flex gap-1 overflow-x-auto border-b border-slate-800 px-2 pt-2 lg:border-slate-200" data-testid="tournament-tabs">
+        <div className="mt-6 min-w-0 max-w-full overflow-hidden rounded-lg border border-slate-800 bg-slate-900">
+          <div className="flex gap-1 overflow-x-auto border-b border-slate-800 px-2 pt-2" data-testid="tournament-tabs">
             {tournaments.map((t) => (
               <button
                 key={t.id}
@@ -519,8 +521,8 @@ export default function Matches() {
                 data-testid={`tournament-tab-${t.id}`}
                 className={`shrink-0 whitespace-nowrap rounded-t-md border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${
                   selectedId === t.id
-                    ? "border-coral text-coral-600"
-                    : "border-transparent text-slate-400 hover:border-slate-700 hover:text-white lg:text-slate-500 lg:hover:border-slate-200 lg:hover:text-slate-800"
+                    ? "border-coral text-coral"
+                    : "border-transparent text-slate-400 hover:border-slate-700 hover:text-white"
                 }`}
               >
                 {t.name}
@@ -529,16 +531,16 @@ export default function Matches() {
               </button>
             ))}
           </div>
-          <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-slate-800 p-3 lg:border-slate-200 lg:p-4">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-slate-800 p-3 sm:p-4">
             {detail && (
               <>
                 <Badge tone={detail.status === "active" ? "green" : detail.status === "completed" ? "slate" : "neutral"}>{detail.status}</Badge>
                 {detail.age_group && <Badge tone="coral">{detail.age_group}</Badge>}
-                {detail.sport && <span className="text-xs text-slate-500">{detail.sport}</span>}
+                {detail.sport && <span className="text-xs text-slate-400">{detail.sport}</span>}
                 {canEdit && (
                   <div className="grid w-full min-w-0 grid-cols-[auto_auto_minmax(0,1fr)_minmax(0,1fr)] gap-1 sm:ml-auto sm:w-auto">
                     <Button variant="ghost" size="icon" className="shrink-0" onClick={() => { setTForm({ id: detail.id, name: detail.name, sport: detail.sport ?? "", age_group: detail.age_group ?? "", status: detail.status, notes: detail.notes ?? "" }); setTOpen(true); }}><Pencil className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className="shrink-0" onClick={() => removeTournament(detail.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                    <Button variant="ghost" size="icon" className="shrink-0" onClick={() => removeTournament(detail.id)}><Trash2 className="h-4 w-4 text-red-400" /></Button>
                     <Button variant="outline" size="sm" className="min-w-0 px-1 text-[11px]" onClick={() => { setRForm({ name: "", sequence: String((detail.rounds?.length ?? 0) + 1) }); setROpen(true); }} data-testid="add-round-btn"><Plus className="h-3.5 w-3.5" /> Round</Button>
                     <Button variant="outline" size="sm" className="min-w-0 px-1 text-[11px]" onClick={openGenerateBracket} data-testid="generate-bracket-btn"><Shuffle className="h-3.5 w-3.5" /> Bracket</Button>
                   </div>
@@ -548,11 +550,11 @@ export default function Matches() {
           </div>
 
           {detail && (
-            <div className="flex gap-4 overflow-x-auto border-b border-slate-800 px-4 text-sm font-semibold lg:border-slate-200">
-              <button onClick={() => setTab("fixtures")} className={`shrink-0 border-b-2 py-2.5 ${tab === "fixtures" ? "border-coral text-coral-600" : "border-transparent text-slate-400 hover:text-white lg:text-slate-500 lg:hover:text-slate-800"}`} data-testid="subtab-fixtures">
+            <div className="flex gap-4 overflow-x-auto border-b border-slate-800 px-4 text-sm font-semibold">
+              <button onClick={() => setTab("fixtures")} className={`shrink-0 border-b-2 py-2.5 ${tab === "fixtures" ? "border-coral text-coral" : "border-transparent text-slate-400 hover:text-white"}`} data-testid="subtab-fixtures">
                 Knockout / Fixtures
               </button>
-              <button onClick={() => setTab("league")} className={`shrink-0 border-b-2 py-2.5 ${tab === "league" ? "border-coral text-coral-600" : "border-transparent text-slate-400 hover:text-white lg:text-slate-500 lg:hover:text-slate-800"}`} data-testid="subtab-league">
+              <button onClick={() => setTab("league")} className={`shrink-0 border-b-2 py-2.5 ${tab === "league" ? "border-coral text-coral" : "border-transparent text-slate-400 hover:text-white"}`} data-testid="subtab-league">
                 League Setup
               </button>
             </div>
@@ -608,7 +610,7 @@ export default function Matches() {
                         data-testid={`toggle-round-${r.id}`}
                       >
                         <ChevronDown className={cn("h-4 w-4 shrink-0 text-slate-400 transition-transform", collapsed && "-rotate-90")} />
-                        <h3 className="font-heading text-sm font-bold text-white lg:text-slate-900">{r.name}</h3>
+                        <h3 className="font-heading text-sm font-bold text-white">{r.name}</h3>
                         {fmt && <Badge tone={fmt === "LEAGUE" ? "blue" : "neutral"}>{fmt === "LEAGUE" ? "League" : "Knockout"}</Badge>}
                         <span className="text-xs font-normal text-slate-400">({r.matches.length})</span>
                       </button>
@@ -620,7 +622,7 @@ export default function Matches() {
                               Advance to Bucket →
                             </Button>
                           )}
-                          <Button variant="ghost" size="icon" onClick={() => removeRound(r.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                          <Button variant="ghost" size="icon" onClick={() => removeRound(r.id)}><Trash2 className="h-4 w-4 text-red-400" /></Button>
                         </div>
                       )}
                     </div>
@@ -631,7 +633,7 @@ export default function Matches() {
                           value={roundSearch[r.id] ?? ""}
                           onChange={(e) => setRoundSearch((prev) => ({ ...prev, [r.id]: e.target.value }))}
                           placeholder="Search team or school…"
-                          className="h-8 border-white/10 bg-white/5 pl-8 text-xs text-slate-200 placeholder:text-slate-500 lg:border-slate-200 lg:bg-white lg:text-slate-900"
+                          className="h-8 border-white/10 bg-white/5 pl-8 text-xs text-slate-200 placeholder:text-slate-500"
                           data-testid={`round-search-${r.id}`}
                         />
                       </div>
@@ -670,7 +672,7 @@ export default function Matches() {
                                 <button
                                   type="button"
                                   onClick={() => togglePoolGroupCollapsed(groupKey)}
-                                  className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-400 lg:text-slate-500"
+                                  className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-400"
                                   data-testid={`toggle-pool-group-${groupKey}`}
                                 >
                                   <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform", poolCollapsed && "-rotate-90")} />
@@ -806,24 +808,24 @@ export default function Matches() {
                 onClick={() => setBgWholeSeason(true)}
                 data-testid="bracket-scope-whole"
                 className={cn(
-                  "rounded-md border p-2.5 text-left text-xs",
-                  bgWholeSeason ? "border-coral bg-orange-50 ring-1 ring-coral" : "border-slate-200 hover:bg-slate-50",
+                  "rounded-md border p-2.5 text-left text-xs transition-colors",
+                  bgWholeSeason ? "border-coral bg-coral/15 ring-1 ring-coral" : "border-white/10 bg-white/5 hover:bg-white/10",
                 )}
               >
-                <p className="font-bold text-slate-800">Whole season</p>
-                <p className="mt-0.5 text-slate-500">Auto-create every round through the Final now, wired to fill in winners as matches complete.</p>
+                <p className="font-bold text-white">Whole season</p>
+                <p className="mt-0.5 text-slate-400">Auto-create every round through the Final now, wired to fill in winners as matches complete.</p>
               </button>
               <button
                 type="button"
                 onClick={() => setBgWholeSeason(false)}
                 data-testid="bracket-scope-first-round"
                 className={cn(
-                  "rounded-md border p-2.5 text-left text-xs",
-                  !bgWholeSeason ? "border-coral bg-orange-50 ring-1 ring-coral" : "border-slate-200 hover:bg-slate-50",
+                  "rounded-md border p-2.5 text-left text-xs transition-colors",
+                  !bgWholeSeason ? "border-coral bg-coral/15 ring-1 ring-coral" : "border-white/10 bg-white/5 hover:bg-white/10",
                 )}
               >
-                <p className="font-bold text-slate-800">Round 1 only</p>
-                <p className="mt-0.5 text-slate-500">Just build Round 1 — you'll pick each later round's format (Knockout or League) once it finishes.</p>
+                <p className="font-bold text-white">Round 1 only</p>
+                <p className="mt-0.5 text-slate-400">Just build Round 1 — you'll pick each later round's format (Knockout or League) once it finishes.</p>
               </button>
             </div>
           </div>
@@ -831,13 +833,13 @@ export default function Matches() {
           <div className="flex items-center justify-between">
             <Label>Teams ({bgTeamIds.length} selected)</Label>
             <div className="flex gap-2 text-xs">
-              <button className="font-semibold text-coral-600" onClick={() => setBgTeamIds(eligibleTeams.map((t) => t.id))}>Select all</button>
-              <button className="font-semibold text-slate-500" onClick={() => setBgTeamIds([])}>Clear</button>
+              <button className="font-semibold text-coral" onClick={() => setBgTeamIds(eligibleTeams.map((t) => t.id))}>Select all</button>
+              <button className="font-semibold text-slate-400 hover:text-white" onClick={() => setBgTeamIds([])}>Clear</button>
             </div>
           </div>
-          <div className="max-h-56 overflow-y-auto rounded-md border border-slate-200 p-2" data-testid="bracket-team-list">
+          <div className="max-h-56 overflow-y-auto rounded-md border border-white/10 bg-white/5 p-2" data-testid="bracket-team-list">
             {eligibleTeams.map((t) => (
-              <label key={t.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-slate-50">
+              <label key={t.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm text-slate-200 hover:bg-white/10">
                 <input type="checkbox" checked={bgTeamIds.includes(t.id)} onChange={() => toggleBgTeam(t.id)} />
                 {t.name}
               </label>
@@ -845,7 +847,7 @@ export default function Matches() {
             {eligibleTeams.length === 0 && <p className="p-2 text-sm text-slate-400">No eligible teams found.</p>}
           </div>
 
-          <label className="flex items-center gap-2 text-sm text-slate-700">
+          <label className="flex items-center gap-2 text-sm text-slate-200">
             <input type="checkbox" checked={bgShuffle} onChange={(e) => setBgShuffle(e.target.checked)} />
             Shuffle team order (random draw)
           </label>
@@ -855,12 +857,12 @@ export default function Matches() {
               <Label>
                 Round 1 Byes ({bgByeTeamIds.length} of {bgNumByes} selected)
               </Label>
-              <p className="mt-0.5 text-xs text-slate-500">
+              <p className="mt-0.5 text-xs text-slate-400">
                 {bgTeamIds.length} teams isn't a power of two — pick exactly {bgNumByes} team{bgNumByes === 1 ? "" : "s"} to advance straight to round 2 without playing in Round 1.
               </p>
-              <div className="mt-1.5 max-h-40 overflow-y-auto rounded-md border border-slate-200 p-2" data-testid="bracket-bye-team-list">
+              <div className="mt-1.5 max-h-40 overflow-y-auto rounded-md border border-white/10 bg-white/5 p-2" data-testid="bracket-bye-team-list">
                 {eligibleTeams.filter((t) => bgTeamIds.includes(t.id)).map((t) => (
-                  <label key={t.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-slate-50">
+                  <label key={t.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm text-slate-200 hover:bg-white/10">
                     <input
                       type="checkbox"
                       checked={bgByeTeamIds.includes(t.id)}
@@ -875,8 +877,8 @@ export default function Matches() {
           )}
 
           {bgTeamIds.length >= 2 && (
-            <div className="rounded-md bg-slate-50 p-3 text-xs text-slate-600">
-              <span className="font-bold text-slate-800">Preview:</span>{" "}
+            <div className="rounded-md bg-white/5 border border-white/10 p-3 text-xs text-slate-300">
+              <span className="font-bold text-white">Preview:</span>{" "}
               {previewBracketRounds(bgTeamIds.length).map((r) => `${r.name} (${r.matches})`).join(" → ")}
             </div>
           )}
@@ -968,12 +970,12 @@ function LiveConsole({ matchId, canEdit, onClose, onChanged }: { matchId: number
   }, [m?.team_a_score, m?.team_b_score]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <Dialog open onClose={onClose} title="Live Match Console" className="border-slate-800 bg-slate-900 lg:border-slate-200 lg:bg-white [&>div:first-child]:border-slate-800 [&>div:first-child_button]:text-slate-300 [&>div:first-child_button:hover]:bg-white/10 [&>div:first-child_h3]:text-white lg:[&>div:first-child]:border-slate-100 lg:[&>div:first-child_button]:text-slate-700 lg:[&>div:first-child_h3]:text-slate-950" testId="live-console">
+    <Dialog open onClose={onClose} title="Live Match Console" className="border-slate-800 bg-slate-900 [&>div:first-child]:border-slate-800 [&>div:first-child_button]:text-slate-300 [&>div:first-child_button:hover]:bg-white/10 [&>div:first-child_h3]:text-white" testId="live-console">
       {loading || !m ? <Spinner /> : (
         <div className="space-y-5">
           <div className="flex items-center justify-between">
             <Badge tone={STATUS_TONE[m.status]}>{m.status === "ONGOING" ? "● LIVE" : m.status}</Badge>
-            <span className="text-xs text-slate-400 lg:text-slate-500">{m.round_name}</span>
+            <span className="text-xs text-slate-400">{m.round_name}</span>
           </div>
 
           {(["a", "b"] as const).map((side) => {
@@ -981,17 +983,17 @@ function LiveConsole({ matchId, canEdit, onClose, onChanged }: { matchId: number
             const value = side === "a" ? m.team_a_score : m.team_b_score;
             const isLeader = leader === side;
             return (
-              <div key={side} className={`flex items-center justify-between rounded-md border p-3 transition-colors ${isLeader ? "border-emerald-800 bg-emerald-950/40 lg:border-emerald-300 lg:bg-emerald-50" : "border-slate-800 bg-obsidian lg:border-slate-200 lg:bg-slate-50"}`}>
+              <div key={side} className={`flex items-center justify-between rounded-md border p-3 transition-colors ${isLeader ? "border-emerald-800 bg-emerald-950/40" : "border-slate-800 bg-obsidian"}`}>
                 <div className="flex items-center gap-2 truncate">
-                  {isLeader && <Flag className="h-4 w-4 shrink-0 text-emerald-600" />}
-                  <span className="truncate font-bold text-white lg:text-slate-900">{name}</span>
+                  {isLeader && <Flag className="h-4 w-4 shrink-0 text-emerald-400" />}
+                  <span className="truncate font-bold text-white">{name}</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span key={value} className="w-10 text-right font-heading text-2xl font-black tabular-nums text-white lg:text-slate-950" data-testid={`console-score-${side}`}>{value}</span>
+                  <span key={value} className="w-10 text-right font-heading text-2xl font-black tabular-nums text-white" data-testid={`console-score-${side}`}>{value}</span>
                   {canEdit && m.status === "ONGOING" && (
                     <div className="flex gap-1">
                       {[1, 2, 3].map((n) => (
-                        <Button key={n} size="sm" variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 lg:border-slate-300 lg:bg-white lg:text-slate-900" onClick={() => score(side, n)} data-testid={`score-${side}-plus-${n}`}>+{n}</Button>
+                        <Button key={n} size="sm" variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10" onClick={() => score(side, n)} data-testid={`score-${side}-plus-${n}`}>+{n}</Button>
                       ))}
                     </div>
                   )}
@@ -1001,10 +1003,10 @@ function LiveConsole({ matchId, canEdit, onClose, onChanged }: { matchId: number
           })}
 
           {canEdit && (
-            <div className="flex flex-wrap justify-end gap-2 border-t border-slate-800 pt-4 lg:border-slate-200">
-              {m.status === "ONGOING" && <Button variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 lg:border-slate-300 lg:bg-white lg:text-slate-900" onClick={() => act("pause", "Match paused")}><Pause className="h-4 w-4" /> Pause</Button>}
-              {m.status === "PAUSED" && <Button variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 lg:border-slate-300 lg:bg-white lg:text-slate-900" onClick={() => act("resume", "Match resumed")}><PlayCircle className="h-4 w-4" /> Resume</Button>}
-              <Button variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 lg:border-slate-300 lg:bg-white lg:text-slate-900" onClick={() => act("cancel", "Match cancelled")}><Ban className="h-4 w-4" /> Cancel</Button>
+            <div className="flex flex-wrap justify-end gap-2 border-t border-slate-800 pt-4">
+              {m.status === "ONGOING" && <Button variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10" onClick={() => act("pause", "Match paused")}><Pause className="h-4 w-4" /> Pause</Button>}
+              {m.status === "PAUSED" && <Button variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10" onClick={() => act("resume", "Match resumed")}><PlayCircle className="h-4 w-4" /> Resume</Button>}
+              <Button variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10" onClick={() => act("cancel", "Match cancelled")}><Ban className="h-4 w-4" /> Cancel</Button>
               <Button onClick={complete} data-testid="end-match-btn"><Flag className="h-4 w-4" /> End Match</Button>
             </div>
           )}
@@ -1100,8 +1102,25 @@ function BucketDialog({ tournamentId, roundId, onClose, onRoundCreated }: {
     }
   };
 
-  const bucketTeamCount = bucket?.teams.length ?? 0;
+  // A team stays in the bucket forever once pulled — "pushed" ones are
+  // already placed into a round built from an earlier create-round call
+  // against this same bucket (e.g. pool A/B advanced early while pool C/D
+  // were still finishing). Only the still-"pulled" ones count toward this
+  // create-round call's team count/byes, and are eligible bye picks.
+  const allTeams = bucket?.teams ?? [];
+  const pulledTeams = allTeams.filter((t) => t.pushed_round_id == null);
+  const pushedTeams = allTeams.filter((t) => t.pushed_round_id != null);
+  const bucketTeamCount = pulledTeams.length;
   const numByes = bucketTeamCount >= 2 ? bracketSizeFor(bucketTeamCount) - bucketTeamCount : 0;
+  // How many sources (league pools, or the knockout-winners feed) haven't
+  // been pulled into this bucket yet — if there are any, the current byes
+  // count isn't final; waiting for the rest could land on a power of two
+  // with no byes needed at all.
+  const pendingSourceCount = bucket
+    ? bucket.pools
+      ? bucket.pools.filter((p) => !p.pulled).length
+      : bucket.knockout && (!bucket.knockout.ready || bucket.knockout.new_winners.length > 0) ? 1 : 0
+    : 0;
   const toggleByeTeam = (id: number) => {
     setByeTeamIds((ids) => {
       if (ids.includes(id)) return ids.filter((x) => x !== id);
@@ -1112,16 +1131,17 @@ function BucketDialog({ tournamentId, roundId, onClose, onRoundCreated }: {
   // Pre-fill the bye picks with however many are needed (rather than making
   // the organizer check dozens of boxes by hand) — they can still swap any
   // pick by unchecking one and checking another. Only tops up/trims when the
-  // bucket's own team list changes, never fights a manual toggle.
+  // bucket's own pulled-team list changes, never fights a manual toggle.
   useEffect(() => {
-    const bucketTeamIds = bucket?.teams.map((t) => t.id) ?? [];
+    const pulledIds = pulledTeams.map((t) => t.id);
     setByeTeamIds((ids) => {
-      const valid = ids.filter((id) => bucketTeamIds.includes(id));
+      const valid = ids.filter((id) => pulledIds.includes(id));
       if (valid.length === numByes) return valid;
       if (valid.length > numByes) return valid.slice(0, numByes);
-      const remaining = bucketTeamIds.filter((id) => !valid.includes(id));
+      const remaining = pulledIds.filter((id) => !valid.includes(id));
       return [...valid, ...remaining.slice(0, numByes - valid.length)];
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bucket, numByes]);
 
   const createRound = async () => {
@@ -1141,27 +1161,25 @@ function BucketDialog({ tournamentId, roundId, onClose, onRoundCreated }: {
     }
   };
 
-  const bucketConsumed = bucket?.round_id != null;
-
   return (
     <Dialog open onClose={onClose} title={bucket ? bucket.name : "Bucket"} testId="bucket-dialog">
-      {loading || !bucket ? <Spinner /> : bucketConsumed ? (
-        <div className="space-y-3">
-          <p className="text-sm text-slate-600">This bucket has already been turned into a round.</p>
-          <div className="flex justify-end"><Button variant="outline" onClick={onClose}>Close</Button></div>
-        </div>
-      ) : (
+      {loading || !bucket ? <Spinner /> : (
         <div className="space-y-4">
           <div>
-            <Label>Bucket ({bucketTeamCount} team{bucketTeamCount === 1 ? "" : "s"})</Label>
-            {bucketTeamCount === 0 ? (
+            <Label>Bucket ({allTeams.length} team{allTeams.length === 1 ? "" : "s"})</Label>
+            {allTeams.length === 0 ? (
               <p className="mt-1 text-xs text-slate-500">Nothing pulled in yet.</p>
             ) : (
               <div className="mt-1.5 flex flex-wrap gap-1" data-testid="bucket-teams">
-                {bucket.teams.map((t) => (
+                {pulledTeams.map((t) => (
                   <span key={t.id} className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-700">
                     {t.name}{t.source_pool_name ? ` (${t.source_pool_name})` : ""}
                     <button onClick={() => removeTeam(t.id)} className="text-slate-400 hover:text-red-500" title="Remove">×</button>
+                  </span>
+                ))}
+                {pushedTeams.map((t) => (
+                  <span key={t.id} className="inline-flex items-center gap-1 rounded bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-400/80" title={`Already playing in ${t.pushed_round_name ?? "a later round"}`}>
+                    {t.name}{t.source_pool_name ? ` (${t.source_pool_name})` : ""} → {t.pushed_round_name ?? "further round"}
                   </span>
                 ))}
               </div>
@@ -1171,29 +1189,29 @@ function BucketDialog({ tournamentId, roundId, onClose, onRoundCreated }: {
           {bucket.pools && (
             <div>
               <Label>Pools{bucket.source_round_name ? ` — ${bucket.source_round_name}` : ""}</Label>
-              <p className="mt-0.5 text-xs text-slate-500">Pull a pool in as soon as it's finished — you don't have to wait on the others.</p>
+              <p className="mt-0.5 text-xs text-slate-400">Pull a pool in as soon as it's finished — you don't have to wait on the others.</p>
               <div className="mt-1.5 space-y-2">
                 {bucket.pools.map((p) => (
-                  <div key={p.pool_id} className="rounded-md border border-slate-200 p-2.5">
+                  <div key={p.pool_id} className="rounded-md border border-white/10 bg-white/5 p-2.5">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs font-bold text-slate-800">{p.pool_name}</p>
+                      <p className="text-xs font-bold text-white">{p.pool_name}</p>
                       {p.pulled ? <Badge tone="green">Pulled</Badge> : !p.ready ? <Badge tone="amber">In progress</Badge> : null}
                     </div>
                     {!p.pulled && p.ready && (
                       <>
                         <div className="mt-1 flex flex-wrap gap-1">
                           {p.qualifiers.map((t) => (
-                            <span key={t.id} className="rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200">{t.name}</span>
+                            <span key={t.id} className="rounded bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-400">{t.name}</span>
                           ))}
                         </div>
                         {p.needs_tiebreak && (
                           <div className="mt-2">
-                            <p className="text-xs font-semibold text-amber-600">
+                            <p className="text-xs font-semibold text-amber-400">
                               Tie for the last qualifying spot — pick {p.tie_need} of {p.tie_candidates.length} ({(tiePicks[p.pool_id] ?? []).length} selected)
                             </p>
                             <div className="mt-1 space-y-0.5" data-testid={`tiebreak-pool-${p.pool_id}`}>
                               {p.tie_candidates.map((t) => (
-                                <label key={t.id} className="flex items-center gap-2 text-sm">
+                                <label key={t.id} className="flex items-center gap-2 text-sm text-slate-200">
                                   <input
                                     type="checkbox"
                                     checked={(tiePicks[p.pool_id] ?? []).includes(t.id)}
@@ -1228,14 +1246,14 @@ function BucketDialog({ tournamentId, roundId, onClose, onRoundCreated }: {
             <div>
               <Label>Knockout Winners</Label>
               {!bucket.knockout.ready ? (
-                <p className="mt-1 text-xs text-slate-500">{bucket.knockout.blocking ?? "Not finished yet."}</p>
+                <p className="mt-1 text-xs text-slate-400">{bucket.knockout.blocking ?? "Not finished yet."}</p>
               ) : bucket.knockout.new_winners.length === 0 ? (
-                <p className="mt-1 text-xs text-slate-500">All current winners are already in the bucket.</p>
+                <p className="mt-1 text-xs text-slate-400">All current winners are already in the bucket.</p>
               ) : (
                 <div className="mt-1.5">
                   <div className="flex flex-wrap gap-1">
                     {bucket.knockout.new_winners.map((t) => (
-                      <span key={t.id} className="rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200">{t.name}</span>
+                      <span key={t.id} className="rounded bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-400">{t.name}</span>
                     ))}
                   </div>
                   <div className="mt-2 flex justify-end">
@@ -1249,7 +1267,7 @@ function BucketDialog({ tournamentId, roundId, onClose, onRoundCreated }: {
           )}
 
           {bucketTeamCount >= 2 ? (
-            <div className="space-y-4 border-t border-slate-200 pt-4">
+            <div className="space-y-4 border-t border-white/10 pt-4">
               <div><Label>New Round Name *</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Round 2, Semi Final…" data-testid="advance-round-name-input" /></div>
               <div>
                 <Label>Format</Label>
@@ -1261,13 +1279,18 @@ function BucketDialog({ tournamentId, roundId, onClose, onRoundCreated }: {
 
               {format === "KNOCKOUT" && numByes > 0 && (
                 <div>
-                  <Label>Round 1 Byes ({byeTeamIds.length} of {numByes} selected)</Label>
-                  <p className="mt-0.5 text-xs text-slate-500">
+                  <Label>Byes ({byeTeamIds.length} of {numByes} selected)</Label>
+                  <p className="mt-0.5 text-xs text-slate-400">
                     {bucketTeamCount} teams isn't a power of two — pick exactly {numByes} team{numByes === 1 ? "" : "s"} to advance without playing.
                   </p>
-                  <div className="mt-1.5 max-h-40 overflow-y-auto rounded-md border border-slate-200 p-2" data-testid="advance-bye-team-list">
-                    {bucket.teams.map((t) => (
-                      <label key={t.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-slate-50">
+                  {pendingSourceCount > 0 && (
+                    <p className="mt-1.5 rounded-md border border-amber-400/30 bg-amber-400/10 px-2.5 py-2 text-xs text-amber-300">
+                      {pendingSourceCount} more {bucket.pools ? "pool" : "source"}{pendingSourceCount === 1 ? " hasn't" : "s haven't"} been pulled into this bucket yet — waiting for {pendingSourceCount === 1 ? "it" : "them"} could land on a power of two with no byes needed. You can close this dialog and pull the rest in first, or continue now and pick byes below.
+                    </p>
+                  )}
+                  <div className="mt-1.5 max-h-40 overflow-y-auto rounded-md border border-white/10 bg-white/5 p-2" data-testid="advance-bye-team-list">
+                    {pulledTeams.map((t) => (
+                      <label key={t.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm text-slate-200 hover:bg-white/10">
                         <input
                           type="checkbox"
                           checked={byeTeamIds.includes(t.id)}
@@ -1437,17 +1460,17 @@ function LeagueSetup({ tournamentId, rounds, teams, canEdit, onOpenConsole, onCh
         <div className="mt-4"><Spinner /></div>
       ) : (
         <>
-          <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-1.5 rounded-md border border-slate-700 bg-slate-800/60 p-2.5 text-xs sm:flex sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-2 sm:border-slate-200 sm:bg-slate-50 sm:p-3 sm:text-sm" data-testid="league-summary">
-            <span className="text-slate-300 lg:text-slate-600">Teams: <b className="text-white lg:text-slate-900">{summary.eligible_team_count}</b></span>
-            <span className="text-slate-300 lg:text-slate-600">Assigned: <b className="text-white lg:text-slate-900">{summary.assigned_team_count}</b></span>
-            <span className={summary.unassigned_teams.length > 0 ? "font-semibold text-amber-400 lg:text-amber-600" : "text-slate-300 lg:text-slate-600"}>
+          <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-1.5 rounded-md border border-slate-800 bg-obsidian p-2.5 text-xs sm:flex sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-2 sm:p-3 sm:text-sm" data-testid="league-summary">
+            <span className="text-slate-300">Teams: <b className="text-white">{summary.eligible_team_count}</b></span>
+            <span className="text-slate-300">Assigned: <b className="text-white">{summary.assigned_team_count}</b></span>
+            <span className={summary.unassigned_teams.length > 0 ? "font-semibold text-amber-400" : "text-slate-300"}>
               Unassigned: <b>{summary.unassigned_teams.length}</b>
             </span>
-            <span className="text-slate-300 lg:text-slate-600">Pools: <b className="text-white lg:text-slate-900">{summary.pool_count}</b></span>
+            <span className="text-slate-300">Pools: <b className="text-white">{summary.pool_count}</b></span>
             <span className="col-span-2 flex flex-wrap gap-x-3 gap-y-1 sm:ml-auto">
-              <span className={summary.all_teams_assigned ? "text-emerald-400 lg:text-emerald-600" : "text-amber-400 lg:text-amber-600"}>{summary.all_teams_assigned ? "✓ All teams assigned" : `⚠ ${summary.unassigned_teams.length} unassigned`}</span>
-              <span className={summary.all_pools_valid ? "text-emerald-400 lg:text-emerald-600" : "text-amber-400 lg:text-amber-600"}>{summary.all_pools_valid ? "✓ All pools valid" : "⚠ Some pools need ≥2 teams"}</span>
-              <span className={summary.fixtures_generated ? "text-emerald-600" : "text-slate-400"}>{summary.fixtures_generated ? "✓ Fixtures generated" : "Fixtures not finalized"}</span>
+              <span className={summary.all_teams_assigned ? "text-emerald-400" : "text-amber-400"}>{summary.all_teams_assigned ? "✓ All teams assigned" : `⚠ ${summary.unassigned_teams.length} unassigned`}</span>
+              <span className={summary.all_pools_valid ? "text-emerald-400" : "text-amber-400"}>{summary.all_pools_valid ? "✓ All pools valid" : "⚠ Some pools need ≥2 teams"}</span>
+              <span className={summary.fixtures_generated ? "text-emerald-400" : "text-slate-400"}>{summary.fixtures_generated ? "✓ Fixtures generated" : "Fixtures not finalized"}</span>
             </span>
           </div>
 
@@ -1472,14 +1495,14 @@ function LeagueSetup({ tournamentId, rounds, teams, canEdit, onOpenConsole, onCh
 
           <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {summary.pools.map((p) => (
-              <div key={p.id} className="w-full min-w-0 overflow-hidden rounded-lg border border-slate-800 bg-slate-900 p-3 lg:border-slate-200 lg:bg-white" data-testid={`pool-card-${p.id}`}>
+              <div key={p.id} className="w-full min-w-0 overflow-hidden rounded-lg border border-slate-800 bg-slate-900 p-3" data-testid={`pool-card-${p.id}`}>
                 <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
-                  <div className="min-w-0"><p className="text-[10px] font-semibold leading-tight text-slate-500">Pool</p><h4 className="truncate font-heading text-sm font-bold text-white lg:text-slate-900">{p.name}</h4></div>
+                  <div className="min-w-0"><p className="text-[10px] font-semibold leading-tight text-slate-500">Pool</p><h4 className="truncate font-heading text-sm font-bold text-white">{p.name}</h4></div>
                   <div className="flex shrink-0 items-center gap-1"><Badge tone={p.status === "finalized" ? "green" : "neutral"}>{p.status}</Badge><Button size="icon" variant="outline" className="h-7 w-7 border-white/15 bg-white/5 text-slate-200 hover:bg-white/10" onClick={() => setDetailPoolId(p.id)} title="View pool"><Eye className="h-3.5 w-3.5" /></Button>{canEdit && p.is_valid && p.team_count > 0 && <Button size="icon" variant="outline" className="h-7 w-7 border-white/15 bg-white/5 text-emerald-400 hover:bg-white/10" onClick={() => finalizePool(p, p.status === "finalized")} title={p.status === "finalized" ? "Regenerate fixtures" : "Finalize pool"}>{p.status === "finalized" ? <Shuffle className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}</Button>}{canEdit && <Button size="icon" variant="danger" className="h-7 w-7 border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20" onClick={() => deletePool(p)} title="Delete pool"><Trash2 className="h-3.5 w-3.5" /></Button>}</div>
                 </div>
                 <div className="mt-1.5 flex flex-wrap gap-1">{p.teams.slice(0, 2).map((t) => <span key={t.id} className="max-w-full truncate rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{t.name}</span>)}{p.teams.length > 2 && <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">+{p.teams.length - 2} more</span>}{p.teams.length === 0 && <span className="text-[10px] text-slate-400">No teams yet</span>}</div>
                 <div className="mt-1.5 flex flex-wrap gap-1"><span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{p.team_count} teams</span><span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{p.status === "finalized" ? `${p.match_count} matches` : `${p.expected_match_count} matches`}</span></div>
-                {!p.is_valid && <p className="mt-1 text-xs font-semibold text-amber-600">⚠ Needs at least 2 teams</p>}
+                {!p.is_valid && <p className="mt-1 text-xs font-semibold text-amber-400">⚠ Needs at least 2 teams</p>}
               </div>
             ))}
             {summary.pools.length === 0 && (
@@ -1487,18 +1510,18 @@ function LeagueSetup({ tournamentId, rounds, teams, canEdit, onOpenConsole, onCh
             )}
           </div>
 
-          <div className="mt-3 rounded-md border border-slate-700 bg-slate-800/60 p-2.5 lg:border-slate-200 lg:bg-white lg:p-3">
-            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-400 lg:text-slate-500">Unassigned Teams ({summary.unassigned_teams.length})</h4>
+          <div className="mt-3 rounded-md border border-slate-800 bg-slate-900 p-2.5 sm:p-3">
+            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-400">Unassigned Teams ({summary.unassigned_teams.length})</h4>
             {summary.unassigned_teams.length === 0 ? (
               <p className="mt-1.5 text-sm text-slate-400">None — every eligible team is in a pool.</p>
             ) : (
-              <div className="mt-1 divide-y divide-slate-700 lg:divide-slate-100">
+              <div className="mt-1 divide-y divide-slate-800">
                 {summary.unassigned_teams.map((t) => (
                   <div key={t.id} className="flex items-center justify-between gap-3 py-1.5 text-sm">
-                    <span className="truncate text-slate-200 lg:text-slate-700">{t.name}</span>
+                    <span className="truncate text-slate-200">{t.name}</span>
                     {canEdit && summary.pools.length > 0 && (
                       <select
-                        className="rounded-md border border-slate-300 px-2 py-1 text-xs"
+                        className="rounded-md border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
                         defaultValue=""
                         onChange={(e) => { if (e.target.value) assignTeam(t.id, Number(e.target.value)); e.target.value = ""; }}
                         data-testid={`assign-team-${t.id}`}
@@ -1528,12 +1551,12 @@ function LeagueSetup({ tournamentId, rounds, teams, canEdit, onOpenConsole, onCh
       {autoPreview && (
         <Dialog open onClose={() => setAutoPreview(null)} title="Create Pools?" testId="auto-create-preview-dialog">
           <div className="space-y-3">
-            <p className="text-sm text-slate-600">This will create {autoPreview.pool_count} pool{autoPreview.pool_count === 1 ? "" : "s"} from every unassigned eligible team and immediately generate round-robin fixtures for each.</p>
-            <div className="divide-y divide-slate-100 rounded-md border border-slate-200">
+            <p className="text-sm text-slate-300">This will create {autoPreview.pool_count} pool{autoPreview.pool_count === 1 ? "" : "s"} from every unassigned eligible team and immediately generate round-robin fixtures for each.</p>
+            <div className="divide-y divide-white/10 rounded-md border border-white/10 bg-white/5">
               {autoPreview.pools.map((p) => (
                 <div key={p.name} className="flex items-center justify-between px-3 py-2 text-sm">
-                  <span className="font-semibold text-slate-800">{p.name}</span>
-                  <span className="text-slate-500">{p.team_count} teams</span>
+                  <span className="font-semibold text-white">{p.name}</span>
+                  <span className="text-slate-400">{p.team_count} teams</span>
                 </div>
               ))}
             </div>
@@ -1587,10 +1610,10 @@ function CreatePoolDialog({ tournamentId, roundId, teams, onClose, onCreated }: 
         <div><Label>Pool Name *</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Pool A" data-testid="pool-name-input" /></div>
         <div>
           <Label>Select Teams ({teamIds.length})</Label>
-          <p className="mt-0.5 text-xs text-slate-500">A pool can exist empty while you're setting it up — teams need at least 2 total before it can be finalized.</p>
-          <div className="mt-1.5 max-h-56 overflow-y-auto rounded-md border border-slate-200 p-2">
+          <p className="mt-0.5 text-xs text-slate-400">A pool can exist empty while you're setting it up — teams need at least 2 total before it can be finalized.</p>
+          <div className="mt-1.5 max-h-56 overflow-y-auto rounded-md border border-white/10 bg-white/5 p-2">
             {teams.map((t) => (
-              <label key={t.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-slate-50">
+              <label key={t.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm text-slate-200 hover:bg-white/10">
                 <input type="checkbox" checked={teamIds.includes(t.id)} onChange={() => toggle(t.id)} />
                 {t.name}
               </label>
@@ -1652,17 +1675,17 @@ function PoolDetailDialog({ poolId, canEdit, onClose, onOpenConsole, onChanged }
   };
 
   return (
-    <Dialog open onClose={onClose} title={pool ? pool.name : "Pool"} className="max-w-md border-slate-800 bg-slate-900 lg:max-w-3xl lg:border-slate-200 lg:bg-white [&>div:first-child]:border-slate-800 [&>div:first-child_button]:text-slate-300 [&>div:first-child_button:hover]:bg-white/10 [&>div:first-child_h3]:text-white lg:[&>div:first-child]:border-slate-100 lg:[&>div:first-child_button]:text-slate-700 lg:[&>div:first-child_h3]:text-slate-950" testId="pool-detail-dialog">
+    <Dialog open onClose={onClose} title={pool ? pool.name : "Pool"} className="max-w-md border-slate-800 bg-slate-900 lg:max-w-3xl [&>div:first-child]:border-slate-800 [&>div:first-child_button]:text-slate-300 [&>div:first-child_button:hover]:bg-white/10 [&>div:first-child_h3]:text-white" testId="pool-detail-dialog">
       {loading || !pool ? <Spinner /> : (
         <div className="space-y-4">
           <div>
-            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-400 lg:text-slate-500">Teams</h4>
+            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-400">Teams</h4>
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {pool.teams.map((t) => (
-                <span key={t.id} className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-200 lg:border-slate-200 lg:bg-slate-50 lg:text-slate-900">
+                <span key={t.id} className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-200">
                   {t.name}
                   {canEdit && pool.status !== "finalized" && (
-                    <button onClick={() => removeTeam(t.id)} className="text-slate-400 hover:text-red-400 lg:hover:text-red-500">×</button>
+                    <button onClick={() => removeTeam(t.id)} className="text-slate-400 hover:text-red-400">×</button>
                   )}
                 </span>
               ))}
@@ -1670,21 +1693,21 @@ function PoolDetailDialog({ poolId, canEdit, onClose, onOpenConsole, onChanged }
           </div>
 
           <div>
-            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-400 lg:text-slate-500">Fixtures ({matches.length})</h4>
+            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-400">Fixtures ({matches.length})</h4>
             {matches.length === 0 ? (
               <p className="mt-1.5 text-sm text-slate-400">Not generated yet — finalize the pool first.</p>
             ) : (<>
               <div className="mt-1.5 grid gap-2 lg:hidden">
                 {matches.map((m, i) => (
-                  <div key={m.id} className="rounded-md border border-slate-800 bg-obsidian p-3 lg:border-slate-200 lg:bg-white">
+                  <div key={m.id} className="rounded-md border border-slate-800 bg-obsidian p-3">
                     <div className="flex items-start justify-between gap-2">
-                      <p className="min-w-0 break-words text-sm font-semibold text-white lg:text-slate-800">{i + 1}. {m.team_a_name} <span className="text-slate-400">vs</span> {m.team_b_name}</p>
+                      <p className="min-w-0 break-words text-sm font-semibold text-white">{i + 1}. {m.team_a_name} <span className="text-slate-400">vs</span> {m.team_b_name}</p>
                       <Badge tone={STATUS_TONE[m.status]}>{m.status}</Badge>
                     </div>
-                    <p className="mt-1.5 text-xs text-slate-400 lg:text-slate-500">{m.status === "SCHEDULED" ? "Score pending" : `${m.team_a_score} – ${m.team_b_score}`}</p>
+                    <p className="mt-1.5 text-xs text-slate-400">{m.status === "SCHEDULED" ? "Score pending" : `${m.team_a_score} – ${m.team_b_score}`}</p>
                     <div className="mt-2 flex gap-2">
-                      {canEdit && m.status === "SCHEDULED" && <Button size="sm" variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 lg:border-slate-300 lg:bg-white lg:text-slate-900" onClick={() => startMatch(m.id)}>Start</Button>}
-                      {(m.status === "ONGOING" || m.status === "PAUSED") && <Button size="sm" variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 lg:border-slate-300 lg:bg-white lg:text-slate-900" onClick={() => onOpenConsole(m.id)}>Live</Button>}
+                      {canEdit && m.status === "SCHEDULED" && <Button size="sm" variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10" onClick={() => startMatch(m.id)}>Start</Button>}
+                      {(m.status === "ONGOING" || m.status === "PAUSED") && <Button size="sm" variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10" onClick={() => onOpenConsole(m.id)}>Live</Button>}
                     </div>
                   </div>
                 ))}
@@ -1695,16 +1718,16 @@ function PoolDetailDialog({ poolId, canEdit, onClose, onOpenConsole, onChanged }
                   {matches.map((m, i) => (
                     <TR key={m.id}>
                       <TD className="text-slate-400">{i + 1}</TD>
-                      <TD className="font-semibold text-slate-800">{m.team_a_name} vs {m.team_b_name}</TD>
+                      <TD className="font-semibold text-white">{m.team_a_name} vs {m.team_b_name}</TD>
                       <TD><Badge tone={STATUS_TONE[m.status]}>{m.status}</Badge></TD>
-                      <TD>{m.status === "SCHEDULED" ? "—" : `${m.team_a_score} – ${m.team_b_score}`}</TD>
+                      <TD className="text-slate-300">{m.status === "SCHEDULED" ? "—" : `${m.team_a_score} – ${m.team_b_score}`}</TD>
                       <TD>
                         <div className="flex justify-end gap-1">
                           {canEdit && m.status === "SCHEDULED" && (
                             <Button size="sm" variant="outline" onClick={() => startMatch(m.id)}><Play className="h-3.5 w-3.5" /> Start</Button>
                           )}
                           {(m.status === "ONGOING" || m.status === "PAUSED") && (
-                            <Button size="sm" variant="outline" onClick={() => onOpenConsole(m.id)}><Radio className="h-3.5 w-3.5 text-emerald-600" /> Open Live</Button>
+                            <Button size="sm" variant="outline" onClick={() => onOpenConsole(m.id)}><Radio className="h-3.5 w-3.5 text-emerald-400" /> Open Live</Button>
                           )}
                         </div>
                       </TD>
@@ -1716,15 +1739,15 @@ function PoolDetailDialog({ poolId, canEdit, onClose, onOpenConsole, onChanged }
           </div>
 
           <div>
-            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-400 lg:text-slate-500">Standings</h4>
+            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-400">Standings</h4>
             {standings.every((s) => s.played === 0) ? (
               <p className="mt-1.5 text-sm text-slate-400">No completed matches yet.</p>
             ) : (<>
               <div className="mt-1.5 space-y-1.5 lg:hidden">
                 {standings.map((s) => (
-                  <div key={s.team_id} className="flex items-center justify-between gap-3 rounded-md border border-slate-800 bg-obsidian px-3 py-2 text-sm lg:border-slate-200 lg:bg-white">
-                    <span className="min-w-0 truncate font-semibold text-white lg:text-slate-800">{s.position}. {s.team_name}</span>
-                    <span className="shrink-0 text-xs text-slate-400 lg:text-slate-500">P {s.played} · W {s.won} · {s.points} pts</span>
+                  <div key={s.team_id} className="flex items-center justify-between gap-3 rounded-md border border-slate-800 bg-obsidian px-3 py-2 text-sm">
+                    <span className="min-w-0 truncate font-semibold text-white">{s.position}. {s.team_name}</span>
+                    <span className="shrink-0 text-xs text-slate-400">P {s.played} · W {s.won} · {s.points} pts</span>
                   </div>
                 ))}
               </div>
@@ -1734,14 +1757,14 @@ function PoolDetailDialog({ poolId, canEdit, onClose, onOpenConsole, onChanged }
                   {standings.map((s) => (
                     <TR key={s.team_id}>
                       <TD className="text-slate-400">{s.position}</TD>
-                      <TD className="font-semibold text-slate-800">{s.team_name}</TD>
-                      <TD className="text-right">{s.played}</TD>
-                      <TD className="text-right">{s.won}</TD>
-                      <TD className="text-right">{s.lost}</TD>
-                      <TD className="text-right">{s.drawn}</TD>
-                      <TD className="text-right">{s.points_for}</TD>
-                      <TD className="text-right">{s.points_against}</TD>
-                      <TD className="text-right font-bold">{s.points}</TD>
+                      <TD className="font-semibold text-white">{s.team_name}</TD>
+                      <TD className="text-right text-slate-300">{s.played}</TD>
+                      <TD className="text-right text-slate-300">{s.won}</TD>
+                      <TD className="text-right text-slate-300">{s.lost}</TD>
+                      <TD className="text-right text-slate-300">{s.drawn}</TD>
+                      <TD className="text-right text-slate-300">{s.points_for}</TD>
+                      <TD className="text-right text-slate-300">{s.points_against}</TD>
+                      <TD className="text-right font-bold text-white">{s.points}</TD>
                     </TR>
                   ))}
                 </tbody>

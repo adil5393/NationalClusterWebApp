@@ -6,7 +6,7 @@ export const Input = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTML
     <input
       ref={ref}
       className={cn(
-        "h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm font-body text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:border-orange-500",
+        "h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-sm font-body text-white placeholder:text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:border-orange-500",
         className,
       )}
       {...props}
@@ -22,7 +22,7 @@ export const Textarea = forwardRef<
   <textarea
     ref={ref}
     className={cn(
-      "min-h-[80px] w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-body text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:border-orange-500",
+      "min-h-[80px] w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm font-body text-white placeholder:text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:border-orange-500",
       className,
     )}
     {...props}
@@ -37,7 +37,7 @@ export const Select = forwardRef<
   <select
     ref={ref}
     className={cn(
-      "h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm font-body text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:border-orange-500",
+      "h-10 w-full rounded-md border border-white/10 bg-slate-900 px-3 text-sm font-body text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:border-orange-500 [&>option]:bg-slate-900 [&>option]:text-white",
       className,
     )}
     {...props}
@@ -50,7 +50,7 @@ Select.displayName = "Select";
 export function Label({ className, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) {
   return (
     <label
-      className={cn("mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500", className)}
+      className={cn("mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-400", className)}
       {...props}
     />
   );

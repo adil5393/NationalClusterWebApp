@@ -94,18 +94,18 @@ export function AdminLayout() {
 
   if (authed === null) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+      <div className="flex min-h-screen items-center justify-center bg-obsidian">
         <Spinner label="Checking session…" />
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen bg-obsidian lg:bg-slate-50">
+    <div className="flex min-h-screen bg-obsidian text-slate-100">
       {/* MOBILE BACKDROP */}
       {mobileNavOpen && (
         <div
-          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
+          className="fixed inset-0 z-30 bg-black/60 lg:hidden"
           onClick={() => setMobileNavOpen(false)}
           data-testid="admin-mobile-nav-backdrop"
         />
@@ -114,7 +114,7 @@ export function AdminLayout() {
       {/* SIDEBAR */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex w-60 flex-col bg-obsidian text-slate-300 transition-transform duration-200 lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r border-white/10 bg-obsidian text-slate-300 transition-transform duration-200 lg:translate-x-0",
           mobileNavOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
@@ -146,7 +146,7 @@ export function AdminLayout() {
               className={({ isActive }) =>
                 cn(
                   "flex items-center gap-3 rounded-md px-3 py-2 text-[13px] font-semibold transition-colors",
-                  isActive ? "bg-coral text-white" : "text-slate-400 hover:bg-white/5 hover:text-white",
+                  isActive ? "bg-coral text-white shadow-sm" : "text-slate-400 hover:bg-white/5 hover:text-white",
                 )
               }
             >
@@ -175,7 +175,7 @@ export function AdminLayout() {
 
       {/* MAIN */}
       <div className="min-w-0 flex-1 lg:pl-60">
-        <header className="fixed inset-x-0 top-0 z-20 flex h-16 items-center gap-4 border-b border-white/10 bg-obsidian px-5 md:px-8 lg:sticky lg:inset-x-auto lg:border-slate-200 lg:bg-white">
+        <header className="fixed inset-x-0 top-0 z-20 flex h-16 items-center gap-4 border-b border-white/10 bg-obsidian/95 backdrop-blur-md px-5 md:px-8 lg:sticky lg:inset-x-auto">
           <button
             className="grid h-10 w-10 shrink-0 place-items-center rounded-md border border-white/15 text-slate-300 lg:hidden"
             onClick={() => setMobileNavOpen(true)}
@@ -185,7 +185,7 @@ export function AdminLayout() {
             <Menu className="h-5 w-5" />
           </button>
           <div className="relative w-full max-w-lg">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 lg:text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
@@ -193,25 +193,25 @@ export function AdminLayout() {
               onBlur={() => setTimeout(() => setOpenSearch(false), 150)}
               placeholder="Search teams, rooms, decisions, procurement…"
               data-testid="global-search-input"
-              className="h-10 w-full rounded-md border border-white/10 bg-white/5 pl-9 pr-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 lg:border-slate-300 lg:bg-slate-50 lg:text-slate-900 lg:placeholder:text-slate-400"
+              className="h-10 w-full rounded-md border border-white/10 bg-white/5 pl-9 pr-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
             />
             {openSearch && results.length > 0 && (
-              <div className="absolute mt-1 w-full overflow-hidden rounded-md border border-white/10 bg-obsidian shadow-lg lg:border-slate-200 lg:bg-white" data-testid="global-search-results">
+              <div className="absolute mt-1 w-full overflow-hidden rounded-md border border-white/10 bg-slate-900 shadow-2xl z-30" data-testid="global-search-results">
                 {results.map((r) => (
                   <button
                     key={`${r.type}-${r.id}`}
                     onMouseDown={() => { navigate(ROUTE[r.type] ?? "/admin"); setQ(""); }}
-                    className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm hover:bg-white/5 lg:hover:bg-slate-50"
+                    className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm hover:bg-white/5 text-slate-200"
                   >
-                    <span className="font-semibold text-white lg:text-slate-800">{r.label}</span>
-                    <span className="text-xs uppercase tracking-wide text-slate-500 lg:text-slate-400">{r.type}</span>
+                    <span className="font-semibold text-white">{r.label}</span>
+                    <span className="text-xs uppercase tracking-wide text-slate-400">{r.type}</span>
                   </button>
                 ))}
               </div>
             )}
           </div>
           <div className="ml-auto hidden items-center gap-2 sm:flex">
-            <span className="rounded-md bg-coral/15 px-3 py-1.5 text-xs font-bold text-coral ring-1 ring-coral/30 lg:bg-orange-50 lg:text-coral-600 lg:ring-orange-200">
+            <span className="rounded-md bg-coral/15 px-3 py-1.5 text-xs font-bold text-coral ring-1 ring-coral/30">
               DEV / SAMPLE DATA
             </span>
           </div>

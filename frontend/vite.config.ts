@@ -15,7 +15,7 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     allowedHosts: true,
-    hmr: { clientPort: 443, protocol: "wss" },
+    hmr: process.env.VITE_HMR_WSS === "true" ? { clientPort: 443, protocol: "wss" } : undefined,
     // android/** alone is 17k+ files (Gradle build output included) — polling
     // all of it every 300ms over the Docker/Windows bind mount was starving
     // the dev server's event loop until it stopped responding to requests.

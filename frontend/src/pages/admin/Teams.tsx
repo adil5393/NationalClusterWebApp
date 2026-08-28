@@ -37,8 +37,6 @@ type LastYearField = "last_year_winner" | "last_year_runner";
 
 const MIN_SQUAD_SIZE = 12;
 
-// Same trick used elsewhere (Participants.tsx, Matches.tsx): age_group is free
-// text imported from the attendance list ("Under 14", "Under 17", ...).
 function ageGroupRank(g: string) {
   const m = g.match(/(\d+)/);
   return m ? parseInt(m[1], 10) : 999;
@@ -51,8 +49,8 @@ function AgeGroupCountsCell({ counts }: { counts?: Record<string, number> }) {
     <div className="space-y-0.5">
       {entries.map(([group, count]) => (
         <div key={group} className="flex items-center justify-between gap-3 text-xs">
-          <span className="text-slate-500">{group}</span>
-          <span className={`tabular-nums font-bold ${count < MIN_SQUAD_SIZE ? "text-red-600" : "text-emerald-700"}`}>{count}</span>
+          <span className="text-slate-400">{group}</span>
+          <span className={`tabular-nums font-bold ${count < MIN_SQUAD_SIZE ? "text-red-400" : "text-emerald-400"}`}>{count}</span>
         </div>
       ))}
     </div>
@@ -65,27 +63,20 @@ const LAST_YEAR_FIELD_LABEL: Record<LastYearField, string> = {
 };
 
 function LastYearAwardCell({
-  team, field, canEdit, onToggle, dark,
+  team, field, canEdit, onToggle,
 }: {
   team: Team;
   field: LastYearField;
   canEdit: boolean;
   onToggle: (team: Team, field: LastYearField) => void;
-  dark?: boolean;
 }) {
   const isSet = !!team[field];
   const badge = isSet ? (
-    <span className={cn(
-      "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-bold ring-1",
-      dark ? "bg-amber-500/15 text-amber-400 ring-amber-500/30" : "bg-amber-50 text-amber-700 ring-amber-200",
-    )}>
+    <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-bold ring-1 bg-amber-500/15 text-amber-400 ring-amber-500/30">
       <Trophy className="h-3.5 w-3.5 shrink-0" /> Yes
     </span>
   ) : (
-    <span className={cn(
-      "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-bold ring-1",
-      dark ? "bg-white/5 text-slate-400 ring-white/10" : "bg-slate-100 text-slate-500 ring-slate-200",
-    )}>
+    <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-bold ring-1 bg-white/5 text-slate-400 ring-white/10">
       <X className="h-3.5 w-3.5 shrink-0" /> No
     </span>
   );
@@ -113,12 +104,12 @@ function AccommodationCell({ t }: { t: Team }) {
     <div>
       <Badge tone={ACCOMMODATION_TONE[status]}>{ACCOMMODATION_LABEL[status]}</Badge>
       {locations.length > 0 && (
-        <div className="mt-1 space-y-0.5 text-xs text-slate-500">
+        <div className="mt-1 space-y-0.5 text-xs text-slate-400">
           {locations.map((loc, i) => (
             <div key={i} className="truncate" title={`${loc.room ?? "Unknown room"} · ${loc.building ?? "Unknown building"}`}>
               {loc.room ?? "Unknown room"}
-              {loc.building && <span className="text-slate-400"> · {loc.building}</span>}
-              {!loc.whole_team && <span className="text-slate-400"> ({loc.count})</span>}
+              {loc.building && <span className="text-slate-500"> · {loc.building}</span>}
+              {!loc.whole_team && <span className="text-slate-500"> ({loc.count})</span>}
             </div>
           ))}
         </div>
@@ -172,9 +163,6 @@ export default function AdminTeams() {
     const next = !t[field];
     try {
       await api.put(`/teams/${t.id}`, { [field]: next });
-      // Setting yes can silently clear the flag on whichever other team held
-      // it (only one winner/runner is allowed at a time) — reload rather than
-      // patch locally so every row stays in sync.
       load();
     } catch (e: any) {
       const detail = e?.response?.data?.detail;
@@ -199,16 +187,16 @@ export default function AdminTeams() {
     <div data-testid="admin-teams">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-black tracking-tight text-white lg:text-slate-950">Teams</h1>
-          <p className="mt-1 text-sm text-slate-400 lg:text-slate-500">{teams.length} teams registered</p>
+          <h1 className="font-heading text-2xl font-black tracking-tight text-white">Teams</h1>
+          <p className="mt-1 text-sm text-slate-400">{teams.length} teams registered</p>
         </div>
         {canEdit && (
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 lg:border-slate-300 lg:bg-white lg:text-slate-900 lg:hover:bg-slate-50" onClick={() => setAttendanceImportOpen(true)} data-testid="import-attendance-list-btn"><Upload className="h-4 w-4" /> Import Attendance List</Button>
-            <Button variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 lg:border-slate-300 lg:bg-white lg:text-slate-900 lg:hover:bg-slate-50" onClick={() => setImportOpen(true)} data-testid="import-teams-btn"><Upload className="h-4 w-4" /> Import</Button>
+            <Button variant="outline" onClick={() => setAttendanceImportOpen(true)} data-testid="import-attendance-list-btn"><Upload className="h-4 w-4" /> Import Attendance List</Button>
+            <Button variant="outline" onClick={() => setImportOpen(true)} data-testid="import-teams-btn"><Upload className="h-4 w-4" /> Import</Button>
             {emptyTeamCount > 0 && (
-              <Button variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 lg:border-slate-300 lg:bg-white lg:text-slate-900 lg:hover:bg-slate-50" onClick={removeEmptyTeams} data-testid="delete-empty-teams-btn">
-                <Trash2 className="h-4 w-4 text-red-500" /> Delete {emptyTeamCount} Team{emptyTeamCount === 1 ? "" : "s"} with 0 Players
+              <Button variant="outline" onClick={removeEmptyTeams} data-testid="delete-empty-teams-btn">
+                <Trash2 className="h-4 w-4 text-red-400" /> Delete {emptyTeamCount} Team{emptyTeamCount === 1 ? "" : "s"} with 0 Players
               </Button>
             )}
             <Button onClick={() => { setForm(empty); setOpen(true); }} data-testid="add-team-btn">
@@ -220,12 +208,12 @@ export default function AdminTeams() {
 
       <div className="mt-6">
         {loading ? (
-          <div className="rounded-lg border border-white/10 bg-white/5 lg:border-slate-200 lg:bg-white"><Spinner /></div>
+          <div className="rounded-lg border border-white/10 bg-slate-900"><Spinner /></div>
         ) : teams.length === 0 ? (
-          <div className="rounded-lg border border-white/10 bg-white/5 p-6 lg:border-slate-200 lg:bg-white"><EmptyState title="No teams yet" hint="Add your first team to get started." /></div>
+          <div className="rounded-lg border border-white/10 bg-slate-900 p-6"><EmptyState title="No teams yet" hint="Add your first team to get started." /></div>
         ) : (
           <>
-            {/* MOBILE: card list (dark) */}
+            {/* MOBILE: card list */}
             <div className="grid gap-2 lg:hidden">
               {teams.map((t, i) => {
                 const ageEntries = Object.entries(t.age_group_counts ?? {}).sort(
@@ -242,12 +230,12 @@ export default function AdminTeams() {
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1">
                         <div className="flex items-center gap-1">
-                          <span className="text-[10px] font-semibold leading-tight text-slate-500">Winner</span>
-                          <LastYearAwardCell team={t} field="last_year_winner" canEdit={canEdit} onToggle={toggleLastYearAward} dark />
+                          <span className="text-[10px] font-semibold leading-tight text-slate-400">Winner</span>
+                          <LastYearAwardCell team={t} field="last_year_winner" canEdit={canEdit} onToggle={toggleLastYearAward} />
                         </div>
                         <div className="flex items-center gap-1">
-                          <span className="text-[10px] font-semibold leading-tight text-slate-500">Runner</span>
-                          <LastYearAwardCell team={t} field="last_year_runner" canEdit={canEdit} onToggle={toggleLastYearAward} dark />
+                          <span className="text-[10px] font-semibold leading-tight text-slate-400">Runner</span>
+                          <LastYearAwardCell team={t} field="last_year_runner" canEdit={canEdit} onToggle={toggleLastYearAward} />
                         </div>
                       </div>
                     </div>
@@ -281,16 +269,16 @@ export default function AdminTeams() {
                     )}
 
                     <div className={cn("mt-2 grid gap-1.5 border-t border-white/10 pt-2", canEdit ? "grid-cols-3" : "grid-cols-1")}>
-                      <Button variant="outline" size="sm" className="h-8 min-w-0 border-white/15 bg-white/5 px-1 text-[11px] text-slate-200 hover:bg-white/10" onClick={() => setQrTeam({ id: t.id, name: t.name })} data-testid={`qr-team-mobile-${t.id}`}>
+                      <Button variant="outline" size="sm" className="h-8 min-w-0 px-1 text-[11px]" onClick={() => setQrTeam({ id: t.id, name: t.name })} data-testid={`qr-team-mobile-${t.id}`}>
                         <QrCode className="h-3.5 w-3.5" /> QR
                       </Button>
                       {canEdit && (
-                        <Button variant="outline" size="sm" className="h-8 min-w-0 border-white/15 bg-white/5 px-1 text-[11px] text-slate-200 hover:bg-white/10" onClick={() => { setForm(t); setOpen(true); }} data-testid={`edit-team-mobile-${t.id}`}>
+                        <Button variant="outline" size="sm" className="h-8 min-w-0 px-1 text-[11px]" onClick={() => { setForm(t); setOpen(true); }} data-testid={`edit-team-mobile-${t.id}`}>
                           <Pencil className="h-3.5 w-3.5" /> Edit
                         </Button>
                       )}
                       {canEdit && (
-                        <Button variant="danger" size="sm" className="h-8 min-w-0 border-red-500/30 bg-red-500/10 px-1 text-[11px] text-red-400 hover:bg-red-500/20" onClick={() => remove(t.id)} data-testid={`delete-team-mobile-${t.id}`}>
+                        <Button variant="danger" size="sm" className="h-8 min-w-0 px-1 text-[11px]" onClick={() => remove(t.id)} data-testid={`delete-team-mobile-${t.id}`}>
                           <Trash2 className="h-3.5 w-3.5" /> Delete
                         </Button>
                       )}
@@ -301,7 +289,7 @@ export default function AdminTeams() {
             </div>
 
             {/* DESKTOP: table */}
-            <div className="hidden overflow-hidden rounded-lg border border-slate-200 bg-white lg:block">
+            <div className="hidden overflow-hidden rounded-lg border border-slate-800 bg-slate-900 lg:block">
               <Table>
                 <THead>
                   <TR className="hover:bg-transparent">
@@ -322,15 +310,15 @@ export default function AdminTeams() {
                   {teams.map((t, i) => (
                     <TR key={t.id} data-testid={`team-row-${t.id}`}>
                       <TD className="text-slate-400">{i + 1}</TD>
-                      <TD className="font-bold text-slate-900">{t.name}<div className="text-xs font-normal text-slate-500">{t.school}</div></TD>
+                      <TD className="font-bold text-white">{t.name}<div className="text-xs font-normal text-slate-400">{t.school}</div></TD>
                       <TD><LastYearAwardCell team={t} field="last_year_winner" canEdit={canEdit} onToggle={toggleLastYearAward} /></TD>
                       <TD><LastYearAwardCell team={t} field="last_year_runner" canEdit={canEdit} onToggle={toggleLastYearAward} /></TD>
-                      <TD>{t.region || "—"}</TD>
+                      <TD className="text-slate-300">{t.region || "—"}</TD>
                       <TD><Badge tone={t.country === "India" ? "coral" : "blue"}>{t.country}</Badge></TD>
-                      <TD className="text-right font-semibold">{t.member_count ?? 0}</TD>
+                      <TD className="text-right font-semibold text-white">{t.member_count ?? 0}</TD>
                       <TD><AgeGroupCountsCell counts={t.age_group_counts} /></TD>
                       <TD><AccommodationCell t={t} /></TD>
-                      <TD className="text-slate-600">{t.contact_name || "—"}</TD>
+                      <TD className="text-slate-300">{t.contact_name || "—"}</TD>
                       <TD>
                         <div className="flex justify-end gap-1">
                           <Button variant="ghost" size="icon" onClick={() => setQrTeam({ id: t.id, name: t.name })} data-testid={`qr-team-${t.id}`}>
@@ -343,7 +331,7 @@ export default function AdminTeams() {
                           )}
                           {canEdit && (
                             <Button variant="ghost" size="icon" onClick={() => remove(t.id)} data-testid={`delete-team-${t.id}`}>
-                              <Trash2 className="h-4 w-4 text-red-500" />
+                              <Trash2 className="h-4 w-4 text-red-400" />
                             </Button>
                           )}
                         </div>

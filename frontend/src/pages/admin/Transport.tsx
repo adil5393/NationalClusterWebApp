@@ -86,13 +86,13 @@ export default function Transport() {
 
   return (
     <div data-testid="admin-transport">
-      <h1 className="font-heading text-2xl font-black tracking-tight text-white lg:text-slate-950">Transport</h1>
-      <p className="mt-1 text-sm text-slate-400 lg:text-slate-500">Buses, drivers and pickup schedules — these appear on each team's portal.</p>
+      <h1 className="font-heading text-2xl font-black tracking-tight text-white">Transport</h1>
+      <p className="mt-1 text-sm text-slate-400">Buses, drivers and pickup schedules — these appear on each team's portal.</p>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         {/* Drivers */}
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4 lg:border-slate-200 lg:bg-white lg:p-5">
-          <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-white lg:text-slate-950"><UserCog className="h-4 w-4" /> Drivers</h2>
+        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4 sm:p-5">
+          <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-white"><UserCog className="h-4 w-4 text-coral" /> Drivers</h2>
           {canEdit && (
             <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_10rem_auto]">
               <Input placeholder="Driver name" value={driver.name} onChange={(e) => setDriver((d) => ({ ...d, name: e.target.value }))} data-testid="driver-name-input" />
@@ -103,17 +103,17 @@ export default function Transport() {
           <div className="mt-4 space-y-2">
             {drivers.length === 0 && <p className="text-sm text-slate-400">No drivers yet.</p>}
             {drivers.map((d) => (
-              <div key={d.id} className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-slate-800 px-3 py-2 text-sm lg:border-slate-200" data-testid={`driver-row-${d.id}`}>
-                <span className="min-w-0 break-words"><span className="font-bold text-white lg:text-slate-900">{d.name}</span>{d.phone && <span className="text-slate-400 lg:text-slate-500"> · {d.phone}</span>}</span>
-                {canEdit && <button onClick={() => del("drivers", d.id)} className="text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>}
+              <div key={d.id} className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-slate-800 bg-obsidian px-3 py-2 text-sm" data-testid={`driver-row-${d.id}`}>
+                <span className="min-w-0 break-words"><span className="font-bold text-white">{d.name}</span>{d.phone && <span className="text-slate-400"> · {d.phone}</span>}</span>
+                {canEdit && <button onClick={() => del("drivers", d.id)} className="text-slate-400 hover:text-red-400"><Trash2 className="h-4 w-4" /></button>}
               </div>
             ))}
           </div>
         </div>
 
         {/* Vehicles */}
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4 lg:border-slate-200 lg:bg-white lg:p-5">
-          <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-white lg:text-slate-950"><Bus className="h-4 w-4" /> Vehicles</h2>
+        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4 sm:p-5">
+          <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-white"><Bus className="h-4 w-4 text-coral" /> Vehicles</h2>
           {canEdit && (
             <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_5rem_minmax(0,1fr)_auto]">
               <Input placeholder="Label (Bus B3)" value={vehicle.label} onChange={(e) => setVehicle((v) => ({ ...v, label: e.target.value }))} data-testid="vehicle-label-input" />
@@ -128,9 +128,9 @@ export default function Transport() {
           <div className="mt-4 space-y-2">
             {vehicles.length === 0 && <p className="text-sm text-slate-400">No vehicles yet.</p>}
             {vehicles.map((v) => (
-              <div key={v.id} className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-slate-800 px-3 py-2 text-sm lg:border-slate-200" data-testid={`vehicle-row-${v.id}`}>
-                <span className="min-w-0 break-words"><span className="font-bold text-white lg:text-slate-900">{v.label}</span><span className="text-slate-400 lg:text-slate-500"> · {v.capacity ?? "—"} seats{v.driver_name ? ` · ${v.driver_name}` : ""}</span></span>
-                {canEdit && <button onClick={() => del("vehicles", v.id)} className="text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>}
+              <div key={v.id} className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-slate-800 bg-obsidian px-3 py-2 text-sm" data-testid={`vehicle-row-${v.id}`}>
+                <span className="min-w-0 break-words"><span className="font-bold text-white">{v.label}</span><span className="text-slate-400"> · {v.capacity ?? "—"} seats{v.driver_name ? ` · ${v.driver_name}` : ""}</span></span>
+                {canEdit && <button onClick={() => del("vehicles", v.id)} className="text-slate-400 hover:text-red-400"><Trash2 className="h-4 w-4" /></button>}
               </div>
             ))}
           </div>
@@ -138,8 +138,8 @@ export default function Transport() {
       </div>
 
       {/* Assignments */}
-      <div className="mt-6 rounded-lg border border-slate-800 bg-slate-900 p-4 lg:border-slate-200 lg:bg-white lg:p-5">
-        <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-white lg:text-slate-950"><MapPin className="h-4 w-4" /> Team Transport Assignments</h2>
+      <div className="mt-6 rounded-lg border border-slate-800 bg-slate-900 p-4 sm:p-5">
+        <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-white"><MapPin className="h-4 w-4 text-coral" /> Team Transport Assignments</h2>
         {canEdit && (
           <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
             <Select value={assign.team_id} onChange={(e) => setAssign((a) => ({ ...a, team_id: e.target.value }))} data-testid="ta-team-select">
@@ -165,7 +165,7 @@ export default function Transport() {
             <div className="grid gap-2 lg:hidden">
               {assignments.map((a) => (
                 <div key={a.id} className="rounded-md border border-slate-800 bg-obsidian p-3" data-testid={`ta-card-${a.id}`}>
-                  <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="break-words font-bold text-white">{a.team_name || "—"}</p><p className="mt-1 text-sm text-slate-300">{a.vehicle_label || "—"}</p></div>{canEdit && <Button variant="outline" size="sm" onClick={() => del("assignments", a.id)} className="text-red-400">Remove</Button>}</div>
+                  <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="break-words font-bold text-white">{a.team_name || "—"}</p><p className="mt-1 text-sm text-slate-300">{a.vehicle_label || "—"}</p></div>{canEdit && <Button variant="outline" size="sm" onClick={() => del("assignments", a.id)} className="text-red-400 border-red-500/30">Remove</Button>}</div>
                   <p className="mt-3 text-xs text-slate-400">{a.pickup_location || "—"} → {a.drop_location || "—"}</p><p className="mt-1 text-xs text-slate-400">{a.pickup_time ? formatDate(a.pickup_time) : "No pickup time"}</p>
                 </div>
               ))}
@@ -180,12 +180,12 @@ export default function Transport() {
                 {assignments.map((a, i) => (
                   <TR key={a.id} data-testid={`ta-row-${a.id}`}>
                     <TD className="text-slate-400">{i + 1}</TD>
-                    <TD className="font-bold text-slate-900">{a.team_name || "—"}</TD>
-                    <TD>{a.vehicle_label || "—"}</TD>
-                    <TD>{a.pickup_location || "—"}</TD>
-                    <TD>{a.drop_location || "—"}</TD>
-                    <TD>{a.pickup_time ? formatDate(a.pickup_time) : "—"}</TD>
-                    <TD><div className="flex justify-end">{canEdit && <Button variant="ghost" size="icon" onClick={() => del("assignments", a.id)} data-testid={`delete-ta-${a.id}`}><Trash2 className="h-4 w-4 text-red-500" /></Button>}</div></TD>
+                    <TD className="font-bold text-white">{a.team_name || "—"}</TD>
+                    <TD className="text-slate-300">{a.vehicle_label || "—"}</TD>
+                    <TD className="text-slate-300">{a.pickup_location || "—"}</TD>
+                    <TD className="text-slate-300">{a.drop_location || "—"}</TD>
+                    <TD className="text-slate-300">{a.pickup_time ? formatDate(a.pickup_time) : "—"}</TD>
+                    <TD><div className="flex justify-end">{canEdit && <Button variant="ghost" size="icon" onClick={() => del("assignments", a.id)} data-testid={`delete-ta-${a.id}`}><Trash2 className="h-4 w-4 text-red-400" /></Button>}</div></TD>
                   </TR>
                 ))}
               </tbody>

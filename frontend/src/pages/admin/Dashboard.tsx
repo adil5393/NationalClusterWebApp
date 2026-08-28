@@ -32,8 +32,8 @@ export default function Dashboard() {
     <div data-testid="admin-dashboard">
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-black tracking-tight text-white lg:text-slate-950">Operations Dashboard</h1>
-          <p className="mt-1 text-sm text-slate-400 lg:text-slate-500">Cluster Nationals 2026–27 · single source of truth</p>
+          <h1 className="font-heading text-2xl font-black tracking-tight text-white">Operations Dashboard</h1>
+          <p className="mt-1 text-sm text-slate-400">Cluster Nationals 2026–27 · single source of truth</p>
         </div>
       </div>
 
@@ -56,7 +56,7 @@ export default function Dashboard() {
       {s.rooms.over_capacity > 0 && (
         <Link
           to="/admin/accommodation"
-          className="mt-4 flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 hover:bg-red-100"
+          className="mt-4 flex items-center gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-400 hover:bg-red-500/20"
           data-testid="over-capacity-warning"
         >
           <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -66,20 +66,20 @@ export default function Dashboard() {
       )}
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <Card className="border-slate-800 bg-slate-900 lg:border-slate-200 lg:bg-white">
-          <CardHeader className="flex items-center justify-between border-slate-800 lg:border-slate-100">
-            <CardTitle className="text-white lg:text-slate-950">Recent Decisions</CardTitle>
-            <Link to="/admin/knowledge" className="inline-flex items-center gap-1 text-sm font-bold text-coral-600">
+        <Card className="border-slate-800 bg-slate-900">
+          <CardHeader className="flex items-center justify-between border-slate-800">
+            <CardTitle className="text-white">Recent Decisions</CardTitle>
+            <Link to="/admin/knowledge" className="inline-flex items-center gap-1 text-sm font-bold text-coral hover:underline">
               Knowledge Base <ArrowRight className="h-4 w-4" />
             </Link>
           </CardHeader>
           <CardContent className="space-y-3">
-            {s.decisions.length === 0 && <p className="text-sm text-slate-400 lg:text-slate-500">No decisions yet.</p>}
+            {s.decisions.length === 0 && <p className="text-sm text-slate-400">No decisions yet.</p>}
             {s.decisions.map((d) => (
-              <div key={d.id} className="flex items-center justify-between gap-3 border-b border-slate-800 pb-3 last:border-0 last:pb-0 lg:border-slate-100">
+              <div key={d.id} className="flex items-center justify-between gap-3 border-b border-white/5 pb-3 last:border-0 last:pb-0">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-bold text-white lg:text-slate-900">{d.title}</p>
-                  <p className="text-xs text-slate-400 lg:text-slate-500">{d.category} · {formatDate(d.updated_at)}</p>
+                  <p className="truncate text-sm font-bold text-white">{d.title}</p>
+                  <p className="text-xs text-slate-400">{d.category} · {formatDate(d.updated_at)}</p>
                 </div>
                 <Badge tone={knowledgeStatusTone(d.status)}>{d.status}</Badge>
               </div>
@@ -87,20 +87,20 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="border-slate-800 bg-slate-900 lg:border-slate-200 lg:bg-white">
-          <CardHeader className="flex items-center justify-between border-slate-800 lg:border-slate-100">
-            <CardTitle className="text-white lg:text-slate-950">Recent Announcements</CardTitle>
-            <Link to="/admin/announcements" className="inline-flex items-center gap-1 text-sm font-bold text-coral-600">
+        <Card className="border-slate-800 bg-slate-900">
+          <CardHeader className="flex items-center justify-between border-slate-800">
+            <CardTitle className="text-white">Recent Announcements</CardTitle>
+            <Link to="/admin/announcements" className="inline-flex items-center gap-1 text-sm font-bold text-coral hover:underline">
               All <ArrowRight className="h-4 w-4" />
             </Link>
           </CardHeader>
           <CardContent className="space-y-3">
-            {s.announcements.length === 0 && <p className="text-sm text-slate-400 lg:text-slate-500">No announcements yet.</p>}
+            {s.announcements.length === 0 && <p className="text-sm text-slate-400">No announcements yet.</p>}
             {s.announcements.map((a) => (
-              <div key={a.id} className="flex items-center justify-between gap-3 border-b border-slate-800 pb-3 last:border-0 last:pb-0 lg:border-slate-100">
+              <div key={a.id} className="flex items-center justify-between gap-3 border-b border-white/5 pb-3 last:border-0 last:pb-0">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-bold text-white lg:text-slate-900">{a.title}</p>
-                  <p className="text-xs text-slate-400 lg:text-slate-500">{formatDate(a.published_at)}</p>
+                  <p className="truncate text-sm font-bold text-white">{a.title}</p>
+                  <p className="text-xs text-slate-400">{formatDate(a.published_at)}</p>
                 </div>
                 <Badge tone={priorityTone(a.priority)}>{a.priority.toUpperCase()}</Badge>
               </div>
@@ -109,7 +109,7 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <p className="mt-6 text-xs text-slate-500 lg:text-slate-400">
+      <p className="mt-6 text-xs text-slate-500">
         Figures are computed live from the database. Current records are clearly-labelled DEVELOPMENT data.
       </p>
     </div>

@@ -15,18 +15,18 @@ export function Dialog({ open, onClose, title, children, className, testId }: Di
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/75 p-4 backdrop-blur-sm"
       onClick={onClose}
       data-testid={testId ? `${testId}-overlay` : undefined}
     >
       <div
-        className={cn("mt-16 w-full max-w-lg rounded-lg border border-slate-200 bg-white shadow-xl", className)}
+        className={cn("mt-16 w-full max-w-lg rounded-lg border border-slate-800 bg-slate-900 text-slate-100 shadow-2xl", className)}
         onClick={(e) => e.stopPropagation()}
         data-testid={testId}
       >
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-          <h3 className="font-heading text-lg font-bold text-slate-950">{title}</h3>
-          <Button variant="ghost" size="icon" onClick={onClose} data-testid="dialog-close-btn" aria-label="Close">
+        <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
+          <h3 className="font-heading text-lg font-bold text-white">{title}</h3>
+          <Button variant="ghost" size="icon" onClick={onClose} data-testid="dialog-close-btn" aria-label="Close" className="text-slate-400 hover:text-white hover:bg-white/10">
             <X className="h-4 w-4" />
           </Button>
         </div>

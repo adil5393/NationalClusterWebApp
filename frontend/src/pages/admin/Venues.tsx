@@ -52,20 +52,38 @@ export default function Venues() {
     <div data-testid="admin-venues">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-black tracking-tight text-white lg:text-slate-950">Venues</h1>
-          <p className="mt-1 text-sm text-slate-400 lg:text-slate-500">{venues.length} venues · used by schedule events</p>
+          <h1 className="font-heading text-2xl font-black tracking-tight text-white">Venues</h1>
+          <p className="mt-1 text-sm text-slate-400">{venues.length} venues · used by schedule events</p>
         </div>
         {canEdit && <Button onClick={() => { setForm(empty); setOpen(true); }} data-testid="add-venue-btn"><Plus className="h-4 w-4" /> Add Venue</Button>}
       </div>
 
-      <div className="mt-6 overflow-hidden rounded-lg border border-white/10 bg-white/5 lg:border-slate-200 lg:bg-white">
+      <div className="mt-6 overflow-hidden rounded-lg border border-slate-800 bg-slate-900">
         {loading ? <Spinner /> : venues.length === 0 ? (
           <div className="p-6"><EmptyState title="No venues yet" hint="Add venues so schedule events can show a location." /></div>
         ) : (
           <>
           <div className="grid gap-2 p-2 lg:hidden">
             {venues.map((v, i) => (
-              <div key={v.id} data-testid={`venue-card-${v.id}`} className="w-full min-w-0 rounded-lg border border-slate-800 bg-slate-900 p-3"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><div className="text-[10px] font-semibold text-slate-500">#{i + 1}</div><div className="break-words text-sm font-bold text-white">{v.name}</div><div className="truncate text-[11px] text-slate-400">{v.location || "No location"}</div></div><span className="shrink-0 rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{v.capacity ?? "—"} cap.</span></div><div className="mt-2 flex flex-wrap gap-1 border-t border-white/10 pt-2">{v.venue_type && <span className="rounded bg-coral/15 px-1.5 py-0.5 text-[10px] font-bold text-coral">{v.venue_type}</span>}</div>{canEdit && <div className="mt-2 grid grid-cols-2 gap-1.5"><Button variant="outline" size="sm" className="h-8 min-w-0 border-white/15 bg-white/5 px-1 text-[11px] text-slate-200 hover:bg-white/10" onClick={() => { setForm(v); setOpen(true); }}><Pencil className="h-3.5 w-3.5" /> Edit</Button><Button variant="danger" size="sm" className="h-8 min-w-0 border-red-500/30 bg-red-500/10 px-1 text-[11px] text-red-400 hover:bg-red-500/20" onClick={() => remove(v.id)}><Trash2 className="h-3.5 w-3.5" /> Delete</Button></div>}</div>
+              <div key={v.id} data-testid={`venue-card-${v.id}`} className="w-full min-w-0 rounded-lg border border-slate-800 bg-obsidian p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-semibold text-slate-500">#{i + 1}</div>
+                    <div className="break-words text-sm font-bold text-white">{v.name}</div>
+                    <div className="truncate text-[11px] text-slate-400">{v.location || "No location"}</div>
+                  </div>
+                  <span className="shrink-0 rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{v.capacity ?? "—"} cap.</span>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1 border-t border-white/10 pt-2">
+                  {v.venue_type && <span className="rounded bg-coral/15 px-1.5 py-0.5 text-[10px] font-bold text-coral">{v.venue_type}</span>}
+                </div>
+                {canEdit && (
+                  <div className="mt-2 grid grid-cols-2 gap-1.5">
+                    <Button variant="outline" size="sm" className="h-8 min-w-0 px-1 text-[11px]" onClick={() => { setForm(v); setOpen(true); }}><Pencil className="h-3.5 w-3.5" /> Edit</Button>
+                    <Button variant="danger" size="sm" className="h-8 min-w-0 px-1 text-[11px]" onClick={() => remove(v.id)}><Trash2 className="h-3.5 w-3.5" /> Delete</Button>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
           <div className="hidden lg:block"><Table>
@@ -74,13 +92,13 @@ export default function Venues() {
               {venues.map((v, i) => (
                 <TR key={v.id} data-testid={`venue-row-${v.id}`}>
                   <TD className="text-slate-400">{i + 1}</TD>
-                  <TD className="font-bold text-slate-900">{v.name}</TD>
-                  <TD>{v.venue_type || "—"}</TD>
-                  <TD className="text-slate-600">{v.location || "—"}</TD>
-                  <TD className="text-right">{v.capacity ?? "—"}</TD>
+                  <TD className="font-bold text-white">{v.name}</TD>
+                  <TD className="text-slate-300">{v.venue_type || "—"}</TD>
+                  <TD className="text-slate-300">{v.location || "—"}</TD>
+                  <TD className="text-right text-slate-300">{v.capacity ?? "—"}</TD>
                   <TD><div className="flex justify-end gap-1">
                     {canEdit && <Button variant="ghost" size="icon" onClick={() => { setForm(v); setOpen(true); }} data-testid={`edit-venue-${v.id}`}><Pencil className="h-4 w-4" /></Button>}
-                    {canEdit && <Button variant="ghost" size="icon" onClick={() => remove(v.id)} data-testid={`delete-venue-${v.id}`}><Trash2 className="h-4 w-4 text-red-500" /></Button>}
+                    {canEdit && <Button variant="ghost" size="icon" onClick={() => remove(v.id)} data-testid={`delete-venue-${v.id}`}><Trash2 className="h-4 w-4 text-red-400" /></Button>}
                   </div></TD>
                 </TR>
               ))}

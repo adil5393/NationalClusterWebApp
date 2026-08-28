@@ -7,18 +7,20 @@
 
 :root {
   --coral: #ff4500;
+  color-scheme: dark;
 }
 
 html {
   scroll-behavior: smooth;
   overflow-x: hidden;
+  background-color: #0A0A0A;
 }
 
 body {
   margin: 0;
   font-family: 'Manrope', ui-sans-serif, system-ui, sans-serif;
-  color: #1e293b;
-  background: #f8fafc;
+  color: #f1f5f9;
+  background: #0A0A0A;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
 }
@@ -33,11 +35,11 @@ h1, h2, h3, h4, h5, h6 {
   color: #ffffff;
 }
 
-/* Thin, technical scrollbar for the admin command-center feel */
+/* Thin, technical scrollbar for dark command-center feel */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
-::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+::-webkit-scrollbar-track { background: #0A0A0A; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: #475569; }
 
 /* Print only the QR card when printing a team QR code */
 @media print {

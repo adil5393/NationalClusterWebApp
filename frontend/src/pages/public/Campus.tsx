@@ -139,97 +139,60 @@ export default function Campus() {
       const layerY = (cy - curPos.y) / curScale;
       const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
       const next = clamp(curScale * factor, fitScaleRef.current * MIN_ZOOM_MULT, fitScaleRef.current * MAX_ZOOM_MULT);
-      setAnimated(false);
-      setScale(next);
-      setPos(clampPan({ x: cx - layerX * next, y: cy - layerY * next }, next, el.clientWidth, el.clientHeight));
+      const w = el.clientWidth, h = el.clientHeight;
+      applyTransform(clampPan({ x: cx - layerX * next, y: cy - layerY * next }, next, w, h), next, false);
     };
     el.addEventListener("wheel", handler, { passive: false });
     return () => el.removeEventListener("wheel", handler);
-  }, []);
-
-  // Two-finger pinch-to-zoom (mobile). The viewport has touch-action:none (so the
-  // browser doesn't fight us with its own page-zoom gesture), which means pinch has
-  // to be reimplemented by hand from raw pointer events — tracked here as a map of
-  // active touch points, switching between single-finger pan and two-finger pinch.
-  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
-  const pinchRef = useRef<{ startDist: number; startScale: number } | null>(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applyTransform]);
 
   const onPointerDown = (e: React.PointerEvent) => {
-    try { (e.target as HTMLElement).setPointerCapture(e.pointerId); } catch { /* not capturable (e.g. synthetic pointer) — still handle the gesture */ }
-    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startPosX: pos.x,
+      startPosY: pos.y,
+      dragging: true,
+    };
     setAnimated(false);
-
-    if (pointersRef.current.size === 2) {
-      dragRef.current.dragging = false;
-      const [a, b] = Array.from(pointersRef.current.values());
-      pinchRef.current = { startDist: Math.hypot(a.x - b.x, a.y - b.y), startScale: scale };
-    } else if (pointersRef.current.size === 1) {
-      dragRef.current = { startX: e.clientX, startY: e.clientY, startPosX: pos.x, startPosY: pos.y, dragging: true };
-    }
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
-    const el = viewportRef.current;
-    if (!el) return;
-    if (pointersRef.current.has(e.pointerId)) {
-      pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    }
-
-    if (pointersRef.current.size === 2 && pinchRef.current) {
-      const [a, b] = Array.from(pointersRef.current.values());
-      const dist = Math.hypot(a.x - b.x, a.y - b.y);
-      const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
-      const rect = el.getBoundingClientRect();
-      const localX = midX - rect.left, localY = midY - rect.top;
-
-      const next = clamp(
-        pinchRef.current.startScale * (dist / pinchRef.current.startDist),
-        fitScale * MIN_ZOOM_MULT, fitScale * MAX_ZOOM_MULT,
-      );
-      // Keep the pinch midpoint stationary on screen while the scale changes.
-      const layerX = (localX - pos.x) / scale;
-      const layerY = (localY - pos.y) / scale;
-      setScale(next);
-      setPos(clampPan({ x: localX - layerX * next, y: localY - layerY * next }, next, el.clientWidth, el.clientHeight));
-      return;
-    }
-
     if (!dragRef.current.dragging) return;
     const dx = e.clientX - dragRef.current.startX;
     const dy = e.clientY - dragRef.current.startY;
-    setPos(clampPan(
-      { x: dragRef.current.startPosX + dx, y: dragRef.current.startPosY + dy },
-      scale, el.clientWidth, el.clientHeight,
-    ));
+    const el = viewportRef.current;
+    const w = el ? el.clientWidth : viewportSize.w;
+    const h = el ? el.clientHeight : viewportSize.h;
+    setPos(clampPan({ x: dragRef.current.startPosX + dx, y: dragRef.current.startPosY + dy }, scale, w, h));
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
-    pointersRef.current.delete(e.pointerId);
-    if (pointersRef.current.size < 2) pinchRef.current = null;
-    if (pointersRef.current.size === 1) {
-      // Resume single-finger panning from the remaining finger without a jump.
-      const [[, p]] = Array.from(pointersRef.current.entries());
-      dragRef.current = { startX: p.x, startY: p.y, startPosX: pos.x, startPosY: pos.y, dragging: true };
-    } else {
-      dragRef.current.dragging = false;
-    }
+    if (!dragRef.current.dragging) return;
+    dragRef.current.dragging = false;
+    (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
   };
 
   const selectTeam = async (id: string) => {
     setTeamId(id);
-    setResolved([]);
     setActiveIdx(0);
-    if (!id) return;
+    if (!id) {
+      setResolved([]);
+      return;
+    }
     setLoadingTeam(true);
     try {
-      const r = await api.get<TeamDetail>(`/public/teams/${id}`);
-      const rows: ResolvedRoom[] = (r.data.accommodation || []).map((a) => ({
-        ...a,
-        hotspot: findHotspot(a.building, a.room),
+      const res = await api.get<TeamDetail>(`/public/teams/${id}`);
+      const acc = res.data.accommodation ?? [];
+      const resList: ResolvedRoom[] = acc.map((r) => ({
+        ...r,
+        hotspot: r.room ? findHotspot(r.room, r.building) : undefined,
       }));
-      setResolved(rows);
-      const firstHit = rows.find((r2) => r2.hotspot);
-      if (firstHit?.hotspot) {
+      setResolved(resList);
+      const firstHit = resList.find((r) => r.hotspot);
+      if (firstHit && firstHit.hotspot) {
         centerAt(firstHit.hotspot.x, firstHit.hotspot.y, fitScale * FIND_ZOOM_MULT, true);
       }
     } finally {
@@ -247,32 +210,32 @@ export default function Campus() {
   const unresolved = useMemo(() => resolved.filter((r) => !r.hotspot), [resolved]);
 
   return (
-    <div className="mx-auto max-w-7xl px-5 md:px-8 py-14 md:py-16" data-testid="public-campus">
-      <span className="text-xs font-bold uppercase tracking-widest text-coral-600">Campus</span>
-      <h1 className="mt-3 font-heading text-4xl font-black tracking-tight text-slate-950 sm:text-5xl">Campus Map</h1>
-      <p className="mt-3 max-w-2xl text-base leading-relaxed text-slate-600">
+    <div className="mx-auto max-w-7xl px-5 md:px-8 py-14 md:py-16 text-slate-100" data-testid="public-campus">
+      <span className="text-xs font-bold uppercase tracking-widest text-coral">Campus</span>
+      <h1 className="mt-3 font-heading text-4xl font-black tracking-tight text-white sm:text-5xl">Campus Map</h1>
+      <p className="mt-3 max-w-2xl text-base leading-relaxed text-slate-400">
         Explore the venue, or find exactly where your team is staying.
       </p>
 
-      <div className="mt-6 inline-flex rounded-md border border-slate-200 bg-white p-0.5" data-testid="campus-mode-toggle">
+      <div className="mt-6 inline-flex rounded-md border border-white/10 bg-slate-900 p-0.5" data-testid="campus-mode-toggle">
         <button
           onClick={() => { setMode("view"); fitToViewport(true); }}
           data-testid="mode-view"
-          className={cn("flex items-center gap-1.5 rounded px-4 py-2 text-sm font-bold transition-colors", mode === "view" ? "bg-obsidian text-white" : "text-slate-500 hover:text-slate-900")}
+          className={cn("flex items-center gap-1.5 rounded px-4 py-2 text-sm font-bold transition-colors", mode === "view" ? "bg-coral text-white" : "text-slate-400 hover:text-white")}
         >
           <MapIcon className="h-4 w-4" /> View Campus
         </button>
         <button
           onClick={() => setMode("find")}
           data-testid="mode-find"
-          className={cn("flex items-center gap-1.5 rounded px-4 py-2 text-sm font-bold transition-colors", mode === "find" ? "bg-obsidian text-white" : "text-slate-500 hover:text-slate-900")}
+          className={cn("flex items-center gap-1.5 rounded px-4 py-2 text-sm font-bold transition-colors", mode === "find" ? "bg-coral text-white" : "text-slate-400 hover:text-white")}
         >
           <LocateFixed className="h-4 w-4" /> Find My Room
         </button>
       </div>
 
       {mode === "find" && (
-        <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
+        <div className="mt-4 rounded-lg border border-slate-800 bg-slate-900 p-4">
           <div className="flex flex-wrap items-center gap-3">
             <Select value={teamId} onChange={(e) => selectTeam(e.target.value)} className="max-w-xs" data-testid="campus-team-select">
               <option value="">Select your team…</option>
@@ -282,7 +245,7 @@ export default function Campus() {
           </div>
 
           {!loadingTeam && teamId && resolved.length === 0 && (
-            <p className="mt-3 text-sm text-slate-500">This team hasn't been assigned a room yet.</p>
+            <p className="mt-3 text-sm text-slate-400">This team hasn't been assigned a room yet.</p>
           )}
 
           {!loadingTeam && resolvedHits.length > 0 && (
@@ -294,7 +257,7 @@ export default function Campus() {
                   data-testid={`room-chip-${i}`}
                   className={cn(
                     "inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-bold transition-colors",
-                    i === activeIdx ? "border-coral bg-orange-50 text-coral-600" : "border-slate-200 text-slate-600 hover:bg-slate-50",
+                    i === activeIdx ? "border-coral bg-coral/15 text-coral" : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10",
                   )}
                 >
                   <MapPin className="h-3.5 w-3.5" /> {r.building} · {r.room}
@@ -306,10 +269,10 @@ export default function Campus() {
           {!loadingTeam && unresolved.length > 0 && (
             <div className="mt-3 space-y-1">
               {unresolved.map((r, i) => (
-                <p key={i} className="text-sm text-slate-500">
-                  <span className="font-semibold text-slate-700">Room {r.room ?? "—"}</span>
+                <p key={i} className="text-sm text-slate-400">
+                  <span className="font-semibold text-slate-200">Room {r.room ?? "—"}</span>
                   {r.building && <span> · {r.building}</span>}{r.floor && <span> · {r.floor}</span>}
-                  <span className="ml-1 text-slate-400">(not pinned on the interactive map yet)</span>
+                  <span className="ml-1 text-slate-500">(not pinned on the interactive map yet)</span>
                 </p>
               ))}
             </div>
@@ -317,7 +280,7 @@ export default function Campus() {
         </div>
       )}
 
-      <div className="mt-6 rounded-lg border border-slate-200 bg-slate-100 overflow-hidden">
+      <div className="mt-6 rounded-lg border border-slate-800 bg-obsidian overflow-hidden">
         <div
           ref={viewportRef}
           onPointerDown={onPointerDown}
@@ -368,7 +331,7 @@ export default function Campus() {
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-2 border-t border-slate-200 bg-white px-4 py-2.5">
+        <div className="flex items-center justify-between gap-2 border-t border-white/10 bg-slate-900 px-4 py-2.5">
           <p className="text-xs text-slate-400">Scroll to zoom · drag to pan</p>
           <div className="flex gap-1.5">
             <Button variant="outline" size="icon" onClick={() => zoomBy(1 / 1.4)} data-testid="zoom-out-btn"><ZoomOut className="h-4 w-4" /></Button>

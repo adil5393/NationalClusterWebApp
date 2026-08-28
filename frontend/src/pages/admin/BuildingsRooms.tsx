@@ -60,8 +60,8 @@ export default function BuildingsRooms() {
     <div data-testid="admin-buildings">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-black tracking-tight text-white lg:text-slate-950">Buildings &amp; Rooms</h1>
-          <p className="mt-1 text-sm text-slate-400 lg:text-slate-500">Building → Floor → Room hierarchy</p>
+          <h1 className="font-heading text-2xl font-black tracking-tight text-white">Buildings &amp; Rooms</h1>
+          <p className="mt-1 text-sm text-slate-400">Building → Floor → Room hierarchy</p>
         </div>
         {canEdit && (
           <Button onClick={() => openDialog("building")} data-testid="add-building-btn">
@@ -81,48 +81,48 @@ export default function BuildingsRooms() {
             const totalRooms = b.floors.reduce((n, f) => n + f.rooms.length, 0);
             const totalCap = b.floors.reduce((n, f) => n + f.rooms.reduce((c, r) => c + (r.capacity || 0), 0), 0);
             return (
-              <div key={b.id} className="overflow-hidden rounded-lg border border-white/10 bg-white/5 lg:border-slate-200 lg:bg-white" data-testid={`building-${b.id}`}>
+              <div key={b.id} className="overflow-hidden rounded-lg border border-slate-800 bg-slate-900" data-testid={`building-${b.id}`}>
                 <div className="flex flex-wrap items-center gap-2 p-3 sm:p-4">
                   <button onClick={() => setExpanded((e) => ({ ...e, [b.id]: !isOpen }))} className="text-slate-400">
                     {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                   </button>
-                  <Building2 className="h-5 w-5 text-slate-700" />
+                  <Building2 className="h-5 w-5 text-coral" />
                   <div className="min-w-0 flex-1">
-                    <p className="break-words font-heading font-bold text-white lg:text-slate-950">{b.name} {b.code && <span className="text-slate-400">· {b.code}</span>}</p>
-                    <p className="text-xs text-slate-400 lg:text-slate-500">{b.floors.length} floors · {totalRooms} rooms · capacity {totalCap}</p>
+                    <p className="break-words font-heading font-bold text-white">{b.name} {b.code && <span className="text-slate-400">· {b.code}</span>}</p>
+                    <p className="text-xs text-slate-400">{b.floors.length} floors · {totalRooms} rooms · capacity {totalCap}</p>
                   </div>
                   {canEdit && (
-                    <Button variant="outline" size="sm" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 lg:border-slate-300 lg:bg-white lg:text-slate-900" onClick={() => openDialog("floor", b.id)} data-testid={`add-floor-${b.id}`}>
+                    <Button variant="outline" size="sm" onClick={() => openDialog("floor", b.id)} data-testid={`add-floor-${b.id}`}>
                       <Plus className="h-3.5 w-3.5" /> Floor
                     </Button>
                   )}
-                  {canEdit && <Button variant="ghost" size="icon" onClick={() => del("building", b.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>}
+                  {canEdit && <Button variant="ghost" size="icon" onClick={() => del("building", b.id)}><Trash2 className="h-4 w-4 text-red-400" /></Button>}
                 </div>
 
                 {isOpen && (
-                  <div className="space-y-3 border-t border-white/10 bg-black/10 p-3 sm:p-4 lg:border-slate-100 lg:bg-slate-50/50">
+                  <div className="space-y-3 border-t border-white/10 bg-black/20 p-3 sm:p-4">
                     {b.floors.length === 0 && <p className="text-sm text-slate-400">No floors yet.</p>}
                     {b.floors.map((f) => (
-                      <div key={f.id} className="rounded-md border border-slate-200 bg-white p-3">
+                      <div key={f.id} className="rounded-md border border-slate-800 bg-obsidian p-3">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-slate-800">{f.name}</span>
+                          <span className="text-sm font-bold text-white">{f.name}</span>
                           <span className="text-xs text-slate-400">Level {f.level}</span>
                           {canEdit && (
                             <div className="ml-auto flex gap-1">
                               <Button variant="outline" size="sm" onClick={() => openDialog("room", f.id)} data-testid={`add-room-${f.id}`}>
                                 <Plus className="h-3.5 w-3.5" /> Room
                               </Button>
-                              <Button variant="ghost" size="icon" onClick={() => del("floor", f.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                              <Button variant="ghost" size="icon" onClick={() => del("floor", f.id)}><Trash2 className="h-4 w-4 text-red-400" /></Button>
                             </div>
                           )}
                         </div>
                         {f.rooms.length > 0 && (
                           <div className="mt-3 flex flex-wrap gap-2">
                             {f.rooms.map((r) => (
-                              <span key={r.id} className="group inline-flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                              <span key={r.id} className="group inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-semibold text-slate-200">
                                 {r.name}
                                 <Badge tone="neutral">{r.capacity}</Badge>
-                                {canEdit && <button onClick={() => del("room", r.id)} className="text-slate-300 hover:text-red-500"><Trash2 className="h-3 w-3" /></button>}
+                                {canEdit && <button onClick={() => del("room", r.id)} className="text-slate-400 hover:text-red-400"><Trash2 className="h-3 w-3" /></button>}
                               </span>
                             ))}
                           </div>

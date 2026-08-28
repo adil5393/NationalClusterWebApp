@@ -88,8 +88,8 @@ export default function Knowledge() {
     <div data-testid="admin-knowledge">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="font-heading text-2xl font-black tracking-tight text-white lg:text-slate-950">Knowledge Base</h1>
-          <p className="mt-1 text-sm text-slate-400 lg:text-slate-500">Decisions with the reasoning behind them — the single source of truth.</p>
+          <h1 className="font-heading text-2xl font-black tracking-tight text-white">Knowledge Base</h1>
+          <p className="mt-1 text-sm text-slate-400">Decisions with the reasoning behind them — the single source of truth.</p>
         </div>
         <Button onClick={openNew} data-testid="add-knowledge-btn"><Plus className="h-4 w-4" /> New Decision</Button>
       </div>
@@ -112,39 +112,39 @@ export default function Knowledge() {
       ) : (
         <div className="mt-6 space-y-3" data-testid="knowledge-list">
           {items.map((it) => (
-            <div key={it.id} className="rounded-lg border border-slate-800 bg-slate-900 p-4 lg:border-slate-200 lg:bg-white lg:p-5" data-testid={`knowledge-${it.id}`}>
+            <div key={it.id} className="rounded-lg border border-slate-800 bg-slate-900 p-4 sm:p-5" data-testid={`knowledge-${it.id}`}>
               <div className="flex flex-col gap-4 md:flex-row">
                 <div className="flex shrink-0 flex-col gap-2 md:w-40">
                   <Badge tone="slate">{it.category}</Badge>
                   <Badge tone={knowledgeStatusTone(it.status)}>{it.status}</Badge>
-                  {it.owner && <span className="text-xs text-slate-500">Owner: <strong className="text-slate-700">{it.owner}</strong></span>}
-                  <span className="text-xs text-slate-400">Updated {formatDate(it.updated_at)}</span>
+                  {it.owner && <span className="text-xs text-slate-400">Owner: <strong className="text-slate-200">{it.owner}</strong></span>}
+                  <span className="text-xs text-slate-500">Updated {formatDate(it.updated_at)}</span>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h3 className="break-words font-heading text-lg font-bold text-white lg:text-slate-950">{it.title}</h3>
-                  {it.description && <p className="mt-1 text-sm text-slate-300 lg:text-slate-600">{it.description}</p>}
+                  <h3 className="break-words font-heading text-lg font-bold text-white">{it.title}</h3>
+                  {it.description && <p className="mt-1 text-sm text-slate-300">{it.description}</p>}
                   {it.decision && (
-                    <div className="mt-3 rounded-md border-l-2 border-coral bg-orange-50/60 px-3 py-2">
-                      <p className="text-[11px] font-bold uppercase tracking-wide text-coral-600">Decision</p>
-                      <p className="text-sm font-semibold text-slate-800">{it.decision}</p>
+                    <div className="mt-3 rounded-md border-l-2 border-coral bg-coral/10 px-3 py-2">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-coral">Decision</p>
+                      <p className="text-sm font-semibold text-slate-200">{it.decision}</p>
                     </div>
                   )}
                   {it.reason && (
-                    <div className="mt-2 rounded-md bg-slate-50 px-3 py-2">
-                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Reason / Why</p>
-                      <p className="text-sm text-slate-700">{it.reason}</p>
+                    <div className="mt-2 rounded-md bg-white/5 px-3 py-2">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Reason / Why</p>
+                      <p className="text-sm text-slate-300">{it.reason}</p>
                     </div>
                   )}
                   {it.tags?.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-1.5">
-                      {it.tags.map((t) => <span key={t} className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">#{t}</span>)}
+                      {it.tags.map((t) => <span key={t} className="rounded bg-white/5 border border-white/10 px-2 py-0.5 text-xs text-slate-300">#{t}</span>)}
                     </div>
                   )}
                 </div>
                 <div className="flex shrink-0 gap-1">
                   <Button variant="ghost" size="icon" onClick={() => setDetailId(it.id)} data-testid={`details-knowledge-${it.id}`}><Paperclip className="h-4 w-4" /></Button>
                   <Button variant="ghost" size="icon" onClick={() => openEdit(it)} data-testid={`edit-knowledge-${it.id}`}><Pencil className="h-4 w-4" /></Button>
-                  <Button variant="ghost" size="icon" onClick={() => remove(it.id)} data-testid={`delete-knowledge-${it.id}`}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                  <Button variant="ghost" size="icon" onClick={() => remove(it.id)} data-testid={`delete-knowledge-${it.id}`}><Trash2 className="h-4 w-4 text-red-400" /></Button>
                 </div>
               </div>
             </div>

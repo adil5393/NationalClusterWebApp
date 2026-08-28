@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, Upload, Download, CheckCircle2, Circle } from "lucide-react";
+import { Plus, Pencil, Trash2, CheckCircle2, Circle, Upload, Download } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -11,26 +11,33 @@ import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { useModuleAccess } from "@/lib/permissions";
 
-interface Team { id: number; name: string }
 interface Participant {
-  id: number; team_id: number; full_name: string; registration_no?: string | null;
-  gender?: string; age?: number; age_group?: string; role?: string; notes?: string;
-  is_present?: boolean; checked_in_at?: string | null;
+  id: number;
+  team_id: number;
+  full_name: string;
+  registration_no?: string;
+  role?: string;
+  gender?: string;
+  age?: number;
+  age_group?: string;
+  is_present?: boolean;
+  notes?: string;
 }
+interface Team { id: number; name: string }
 
-const empty: Partial<Participant> = { full_name: "", role: "", gender: "", team_id: undefined };
 const PAGE_SIZE = 25;
+const empty: Partial<Participant> = { full_name: "", role: "Player", is_present: false };
 
 export default function Participants() {
   const { canEdit } = useModuleAccess("teams");
-  const { canEdit: canMarkAttendance } = useModuleAccess("attendance");
+  const canMarkAttendance = canEdit;
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [teamFilter, setTeamFilter] = useState("");
-  const [ageGroupFilter, setAgeGroupFilter] = useState("");
-  const [presenceFilter, setPresenceFilter] = useState("");
+  const [teamFilter, setTeamFilter] = useState<string>("");
+  const [ageGroupFilter, setAgeGroupFilter] = useState<string>("");
+  const [presenceFilter, setPresenceFilter] = useState<string>("");
   const [page, setPage] = useState(1);
   const [open, setOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -44,41 +51,53 @@ export default function Participants() {
   };
   useEffect(load, []);
 
-  const teamName = (id: number) => teams.find((t) => t.id === id)?.name ?? "—";
-
-  const ageGroupRank = (g: string) => {
-    const m = g.match(/(\d+)/);
-    return m ? parseInt(m[1], 10) : 999;
-  };
   const ageGroups = useMemo(() => {
-    const set = new Set(participants.map((p) => p.age_group).filter(Boolean) as string[]);
-    return Array.from(set).sort((a, b) => ageGroupRank(a) - ageGroupRank(b) || a.localeCompare(b));
+    const set = new Set<string>();
+    participants.forEach((p) => { if (p.age_group) set.add(p.age_group); });
+    return Array.from(set).sort((a, b) => {
+      const ma = a.match(/(\d+)/), mb = b.match(/(\d+)/);
+      const na = ma ? parseInt(ma[1], 10) : 999;
+      const nb = mb ? parseInt(mb[1], 10) : 999;
+      return na - nb || a.localeCompare(b);
+    });
   }, [participants]);
 
-  const presentCount = useMemo(() => participants.filter((p) => p.is_present).length, [participants]);
+  const teamName = (tid?: number) => teams.find((t) => t.id === tid)?.name || "—";
+  const presentCount = participants.filter((p) => p.is_present).length;
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return participants
-      .filter((p) => (teamFilter ? p.team_id === Number(teamFilter) : true))
-      .filter((p) => (ageGroupFilter ? p.age_group === ageGroupFilter : true))
-      .filter((p) => (presenceFilter === "present" ? p.is_present : presenceFilter === "absent" ? !p.is_present : true))
-      .filter((p) => (q ? p.full_name.toLowerCase().includes(q) || (p.registration_no ?? "").toLowerCase().includes(q) : true));
-  }, [participants, teamFilter, ageGroupFilter, presenceFilter, search]);
+    const s = search.trim().toLowerCase();
+    return participants.filter((p) => {
+      if (teamFilter && String(p.team_id) !== teamFilter) return false;
+      if (ageGroupFilter && (p.age_group || "") !== ageGroupFilter) return false;
+      if (presenceFilter === "present" && !p.is_present) return false;
+      if (presenceFilter === "absent" && p.is_present) return false;
+      if (!s) return true;
+      return (
+        p.full_name.toLowerCase().includes(s) ||
+        (p.registration_no && p.registration_no.toLowerCase().includes(s)) ||
+        teamName(p.team_id).toLowerCase().includes(s)
+      );
+    });
+  }, [participants, teams, search, teamFilter, ageGroupFilter, presenceFilter]);
 
-  useEffect(() => { setPage(1); }, [search, teamFilter, ageGroupFilter, presenceFilter]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  useEffect(() => { if (page > pageCount) setPage(pageCount); }, [page, pageCount]);
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
+  useEffect(() => { setPage(1); }, [search, teamFilter, ageGroupFilter, presenceFilter]);
+
   const save = async () => {
-    if (!form.full_name?.trim()) return toast.error("Name is required");
-    if (!form.team_id) return toast.error("Select a team");
-    const payload = { ...form, age: form.age ? Number(form.age) : null, team_id: Number(form.team_id) };
+    if (!form.full_name?.trim()) return toast.error("Full name is required");
+    if (!form.team_id) return toast.error("Team is required");
     try {
+      const payload = {
+        ...form,
+        team_id: Number(form.team_id),
+        age: form.age ? Number(form.age) : undefined,
+      };
       if (form.id) await api.put(`/participants/${form.id}`, payload);
       else await api.post("/participants", payload);
-      toast.success(form.id ? "Participant updated" : "Participant added");
+      toast.success(form.id ? "Participant updated" : "Participant created");
       setOpen(false);
       load();
     } catch {
@@ -89,18 +108,18 @@ export default function Participants() {
   const remove = async (id: number) => {
     if (!confirm("Delete this participant?")) return;
     await api.delete(`/participants/${id}`);
-    toast.success("Deleted");
+    toast.success("Participant deleted");
     load();
   };
 
   const toggleAttendance = async (p: Participant) => {
     const next = !p.is_present;
-    setParticipants((rows) => rows.map((r) => (r.id === p.id ? { ...r, is_present: next } : r))); // optimistic
+    setParticipants((rows) => rows.map((r) => (r.id === p.id ? { ...r, is_present: next } : r)));
     try {
       await api.post(`/participants/${p.id}/attendance`, { present: next });
     } catch {
       toast.error("Could not update attendance");
-      setParticipants((rows) => rows.map((r) => (r.id === p.id ? { ...r, is_present: p.is_present } : r))); // revert
+      setParticipants((rows) => rows.map((r) => (r.id === p.id ? { ...r, is_present: p.is_present } : r)));
     }
   };
 
@@ -110,17 +129,17 @@ export default function Participants() {
     <div data-testid="admin-participants">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-black tracking-tight text-white lg:text-slate-950">Participants</h1>
-          <p className="mt-1 text-sm text-slate-400 lg:text-slate-500">
+          <h1 className="font-heading text-2xl font-black tracking-tight text-white">Participants</h1>
+          <p className="mt-1 text-sm text-slate-400">
             {participants.length} participants across {teams.length} teams ·{" "}
-            <span className="font-semibold text-emerald-600">{presentCount} present</span>
+            <span className="font-semibold text-emerald-400">{presentCount} present</span>
           </p>
         </div>
         {canEdit && <Button onClick={() => { setForm(empty); setOpen(true); }} data-testid="add-participant-btn"><Plus className="h-4 w-4" /> Add Participant</Button>}
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
-        {canEdit && <Button variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 lg:border-slate-300 lg:bg-white lg:text-slate-800 lg:hover:bg-slate-50" onClick={() => setImportOpen(true)} data-testid="import-participants-btn"><Upload className="h-4 w-4" /> Import from spreadsheet</Button>}
-        <a href={`${(import.meta.env.REACT_APP_BACKEND_URL ?? "")}/api/export/participants.csv`} className="inline-flex min-w-0 items-center gap-2 rounded-md border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-white/10 lg:border-slate-300 lg:bg-white lg:text-slate-800 lg:hover:bg-slate-50" data-testid="export-participants-btn"><Download className="h-4 w-4 shrink-0" /> Export CSV</a>
+        {canEdit && <Button variant="outline" onClick={() => setImportOpen(true)} data-testid="import-participants-btn"><Upload className="h-4 w-4" /> Import from spreadsheet</Button>}
+        <a href={`${(import.meta.env.REACT_APP_BACKEND_URL ?? "")}/api/export/participants.csv`} className="inline-flex min-w-0 items-center gap-2 rounded-md border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-white/10" data-testid="export-participants-btn"><Download className="h-4 w-4 shrink-0" /> Export CSV</a>
       </div>
 
       <div className="mt-6 grid gap-2 sm:flex sm:flex-wrap sm:gap-3">
@@ -148,7 +167,7 @@ export default function Participants() {
         </Select>
       </div>
 
-      <div className="mt-4 overflow-hidden rounded-lg border border-white/10 bg-white/5 lg:border-slate-200 lg:bg-white">
+      <div className="mt-4 overflow-hidden rounded-lg border border-white/10 bg-slate-900">
         {loading ? (
           <Spinner />
         ) : filtered.length === 0 ? (
@@ -158,7 +177,7 @@ export default function Participants() {
             {/* MOBILE: participant cards */}
             <div className="grid gap-2 p-2 lg:hidden">
               {paged.map((p, i) => (
-                <div key={p.id} data-testid={`participant-card-${p.id}`} className="w-full min-w-0 overflow-hidden rounded-lg border border-slate-800 bg-slate-900 p-3">
+                <div key={p.id} data-testid={`participant-card-${p.id}`} className="w-full min-w-0 overflow-hidden rounded-lg border border-slate-800 bg-obsidian p-3">
                   <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
                     <div className="min-w-0">
                       <div className="text-[10px] font-semibold leading-tight text-slate-500">#{(page - 1) * PAGE_SIZE + i + 1}</div>
@@ -182,8 +201,8 @@ export default function Participants() {
 
                   {canEdit && (
                     <div className="mt-2 grid grid-cols-2 gap-1.5 border-t border-white/10 pt-2">
-                      <Button variant="outline" size="sm" className="h-8 min-w-0 border-white/15 bg-white/5 px-1 text-[11px] text-slate-200 hover:bg-white/10" onClick={() => { setForm(p); setOpen(true); }} data-testid={`edit-participant-mobile-${p.id}`}><Pencil className="h-3.5 w-3.5" /> Edit</Button>
-                      <Button variant="danger" size="sm" className="h-8 min-w-0 border-red-500/30 bg-red-500/10 px-1 text-[11px] text-red-400 hover:bg-red-500/20" onClick={() => remove(p.id)} data-testid={`delete-participant-mobile-${p.id}`}><Trash2 className="h-3.5 w-3.5" /> Delete</Button>
+                      <Button variant="outline" size="sm" className="h-8 min-w-0 px-1 text-[11px]" onClick={() => { setForm(p); setOpen(true); }} data-testid={`edit-participant-mobile-${p.id}`}><Pencil className="h-3.5 w-3.5" /> Edit</Button>
+                      <Button variant="danger" size="sm" className="h-8 min-w-0 px-1 text-[11px]" onClick={() => remove(p.id)} data-testid={`delete-participant-mobile-${p.id}`}><Trash2 className="h-3.5 w-3.5" /> Delete</Button>
                     </div>
                   )}
                 </div>
@@ -202,12 +221,12 @@ export default function Participants() {
                 {paged.map((p, i) => (
                   <TR key={p.id} data-testid={`participant-row-${p.id}`}>
                     <TD className="text-slate-400">{(page - 1) * PAGE_SIZE + i + 1}</TD>
-                    <TD className="font-bold text-slate-900">{p.full_name}</TD>
-                    <TD className="text-slate-500">{p.registration_no || "—"}</TD>
-                    <TD className="text-slate-600">{teamName(p.team_id)}</TD>
-                    <TD>{p.role || "—"}</TD>
-                    <TD className="text-right">{p.age ?? "—"}</TD>
-                    <TD className="text-slate-600">{p.age_group || "—"}</TD>
+                    <TD className="font-bold text-white">{p.full_name}</TD>
+                    <TD className="text-slate-400">{p.registration_no || "—"}</TD>
+                    <TD className="text-slate-300">{teamName(p.team_id)}</TD>
+                    <TD className="text-slate-300">{p.role || "—"}</TD>
+                    <TD className="text-right text-slate-300">{p.age ?? "—"}</TD>
+                    <TD className="text-slate-300">{p.age_group || "—"}</TD>
                     <TD>
                       {canMarkAttendance ? (
                         <button
@@ -231,7 +250,7 @@ export default function Participants() {
                     <TD>
                       <div className="flex justify-end gap-1">
                         {canEdit && <Button variant="ghost" size="icon" onClick={() => { setForm(p); setOpen(true); }} data-testid={`edit-participant-${p.id}`}><Pencil className="h-4 w-4" /></Button>}
-                        {canEdit && <Button variant="ghost" size="icon" onClick={() => remove(p.id)} data-testid={`delete-participant-${p.id}`}><Trash2 className="h-4 w-4 text-red-500" /></Button>}
+                        {canEdit && <Button variant="ghost" size="icon" onClick={() => remove(p.id)} data-testid={`delete-participant-${p.id}`}><Trash2 className="h-4 w-4 text-red-400" /></Button>}
                       </div>
                     </TD>
                   </TR>
@@ -239,13 +258,13 @@ export default function Participants() {
               </tbody>
             </Table>
             </div>
-            <div className="flex flex-col gap-2 border-t border-white/10 px-3 py-3 sm:flex-row sm:items-center sm:justify-between lg:border-slate-200 lg:px-4" data-testid="participant-pagination">
-              <span className="text-xs text-slate-400 lg:text-slate-500">
+            <div className="flex flex-col gap-2 border-t border-white/10 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4" data-testid="participant-pagination">
+              <span className="text-xs text-slate-400">
                 Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}
               </span>
               <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-start">
                 <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} data-testid="participant-page-prev">Previous</Button>
-                <span className="text-xs font-semibold text-slate-300 lg:text-slate-600">Page {page} of {pageCount}</span>
+                <span className="text-xs font-semibold text-slate-300">Page {page} of {pageCount}</span>
                 <Button variant="outline" size="sm" disabled={page >= pageCount} onClick={() => setPage((p) => p + 1)} data-testid="participant-page-next">Next</Button>
               </div>
             </div>

@@ -34,14 +34,14 @@ export default function PublicTeams() {
 
   return (
     <div className="mx-auto max-w-7xl px-5 md:px-8 py-16 md:py-20" data-testid="public-teams">
-      <span className="text-xs font-bold uppercase tracking-widest text-coral-600">Participants</span>
-      <h1 className="mt-3 font-heading text-4xl font-black tracking-tight text-slate-950 sm:text-5xl">Participating Teams</h1>
-      <p className="mt-3 max-w-2xl text-base text-slate-600">
+      <span className="text-xs font-bold uppercase tracking-widest text-coral">Participants</span>
+      <h1 className="mt-3 font-heading text-4xl font-black tracking-tight text-white sm:text-5xl">Participating Teams</h1>
+      <p className="mt-3 max-w-2xl text-base text-slate-400">
         Teams travelling from across India and international teams from Saudi Arabia.
       </p>
 
       <div className="mt-8 relative max-w-md">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
         <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -60,15 +60,15 @@ export default function PublicTeams() {
       ) : (
         <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3" data-testid="team-grid">
           {filtered.map((t) => (
-            <Link key={t.id} to={`/teams/${t.id}`} data-testid={`team-card-${t.id}`} className="block rounded-lg border border-slate-200 bg-white p-5 transition-transform hover:-translate-y-1 hover:border-coral">
+            <Link key={t.id} to={`/teams/${t.id}`} data-testid={`team-card-${t.id}`} className="block rounded-lg border border-slate-800 bg-slate-900 p-5 transition-transform hover:-translate-y-1 hover:border-coral">
               <div className="flex items-start justify-between gap-3">
-                <h3 className="font-heading text-lg font-bold leading-snug text-slate-950">{t.name}</h3>
+                <h3 className="font-heading text-lg font-bold leading-snug text-white">{t.name}</h3>
                 <Badge tone={t.country === "India" ? "coral" : "blue"}>{t.country}</Badge>
               </div>
-              {t.region && <p className="mt-1 text-sm text-slate-500">{t.region}</p>}
-              <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-sm">
-                <span className="text-slate-500">Members</span>
-                <span className="font-bold text-slate-900">{t.member_count ?? "—"}</span>
+              {t.region && <p className="mt-1 text-sm text-slate-400">{t.region}</p>}
+              <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3 text-sm">
+                <span className="text-slate-400">Members</span>
+                <span className="font-bold text-white">{t.member_count ?? "—"}</span>
               </div>
             </Link>
           ))}

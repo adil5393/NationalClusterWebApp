@@ -162,13 +162,13 @@ export default function Staff() {
 
   return (
     <div data-testid="admin-staff">
-      <h1 className="font-heading text-2xl font-black tracking-tight text-white lg:text-slate-950">Staff & Duties</h1>
-      <p className="mt-1 text-sm text-slate-400 lg:text-slate-500">School/event staff and their duty allotments — fooding, cleaning, medical, security and more — by floor and room.</p>
+      <h1 className="font-heading text-2xl font-black tracking-tight text-white">Staff &amp; Duties</h1>
+      <p className="mt-1 text-sm text-slate-400">School/event staff and their duty allotments — fooding, cleaning, medical, security and more — by floor and room.</p>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         {/* Staff members */}
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4 lg:border-slate-200 lg:bg-white lg:p-5">
-          <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-white lg:text-slate-950"><HardHat className="h-4 w-4" /> Staff Members</h2>
+        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4 sm:p-5">
+          <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-white"><HardHat className="h-4 w-4 text-coral" /> Staff Members</h2>
           {canEdit && (
             <>
               <div className="mt-4 grid gap-2 sm:grid-cols-2">
@@ -193,7 +193,7 @@ export default function Staff() {
           )}
           {staff.length > 0 && (
             <div className="relative mt-4">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
               <Input
                 placeholder="Search staff by name…"
                 value={staffSearch}
@@ -213,26 +213,26 @@ export default function Staff() {
                 key={s.id}
                 className={cn(
                   "flex min-w-0 items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm",
-                  editingId === s.id ? "border-coral bg-orange-50" : "border-slate-200",
+                  editingId === s.id ? "border-coral bg-coral/10" : "border-white/10 bg-white/5",
                 )}
                 data-testid={`staff-row-${s.id}`}
               >
                 <span className="min-w-0 break-words">
-                  <span className="font-bold text-white lg:text-slate-900">{s.full_name}</span>
-                  {s.category && <span className="text-slate-400 lg:text-slate-500"> · {s.category}</span>}
-                  {s.phone && <span className="text-slate-400 lg:text-slate-500"> · {s.phone}</span>}
+                  <span className="font-bold text-white">{s.full_name}</span>
+                  {s.category && <span className="text-slate-400"> · {s.category}</span>}
+                  {s.phone && <span className="text-slate-400"> · {s.phone}</span>}
                 </span>
                 {canEdit && (
                   <span className="flex items-center gap-1">
-                    <button onClick={() => startEdit(s)} className="text-slate-300 hover:text-coral-600" data-testid={`edit-staff-${s.id}`}><Pencil className="h-4 w-4" /></button>
-                    <button onClick={() => delMember(s.id)} className="text-slate-300 hover:text-red-500" data-testid={`delete-staff-${s.id}`}><Trash2 className="h-4 w-4" /></button>
+                    <button onClick={() => startEdit(s)} className="text-slate-400 hover:text-coral" data-testid={`edit-staff-${s.id}`}><Pencil className="h-4 w-4" /></button>
+                    <button onClick={() => delMember(s.id)} className="text-slate-400 hover:text-red-400" data-testid={`delete-staff-${s.id}`}><Trash2 className="h-4 w-4" /></button>
                   </span>
                 )}
               </div>
             ))}
           </div>
           {filteredStaff.length > STAFF_PAGE_SIZE && (
-            <div className="mt-3 flex items-center justify-between text-xs text-slate-500" data-testid="staff-pagination">
+            <div className="mt-3 flex items-center justify-between text-xs text-slate-400" data-testid="staff-pagination">
               <span>Page {staffPage} of {staffPageCount} · {filteredStaff.length} staff</span>
               <div className="flex gap-1">
                 <Button
@@ -258,8 +258,8 @@ export default function Staff() {
 
         {/* Assign duty */}
         {canEdit && (
-          <div className="rounded-lg border border-slate-800 bg-slate-900 p-4 lg:border-slate-200 lg:bg-white lg:p-5">
-            <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-white lg:text-slate-950"><ClipboardList className="h-4 w-4" /> Assign a Duty</h2>
+          <div className="rounded-lg border border-slate-800 bg-slate-900 p-4 sm:p-5">
+            <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-white"><ClipboardList className="h-4 w-4 text-coral" /> Assign a Duty</h2>
             <div className="mt-4 space-y-2">
               <Select value={assign.staff_id} onChange={(e) => setAssign((a) => ({ ...a, staff_id: e.target.value }))} data-testid="duty-staff-select">
                 <option value="">Staff member…</option>
@@ -291,19 +291,19 @@ export default function Staff() {
       </datalist>
 
       {/* Duty roster, floor-wise and room-wise */}
-      <div className="mt-6 rounded-lg border border-slate-800 bg-slate-900 p-4 lg:border-slate-200 lg:bg-white lg:p-5">
-        <h2 className="font-heading text-lg font-bold text-white lg:text-slate-950">Duty Roster — by Floor & Room</h2>
+      <div className="mt-6 rounded-lg border border-slate-800 bg-slate-900 p-4 sm:p-5">
+        <h2 className="font-heading text-lg font-bold text-white">Duty Roster — by Floor &amp; Room</h2>
         {duties.length === 0 ? (
           <div className="mt-4"><EmptyState title="No duties assigned yet" hint="Assign a staff member to a room above." /></div>
         ) : (
           <div className="mt-4 space-y-6">
             {grouped.map((g) => (
               <div key={`${g.building}-${g.floor}`}>
-                <p className="text-xs font-bold uppercase tracking-wide text-slate-400 lg:text-slate-500">{g.building} · {g.floor}</p>
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-400">{g.building} · {g.floor}</p>
                 <div className="grid gap-2 pt-2 lg:hidden">
                   {g.rows.map((d) => (
                     <div key={d.id} className="rounded-md border border-slate-800 bg-obsidian p-3" data-testid={`duty-card-${d.id}`}>
-                      <div className="flex items-start justify-between gap-3"><div><p className="font-bold text-white">{d.room_name || "—"}</p><p className="mt-1 text-xs text-slate-400">{d.staff_name || "—"} · {d.duty_type}</p></div>{canEdit && <Button variant="outline" size="sm" onClick={() => delDuty(d.id)} className="text-red-400">Remove</Button>}</div>
+                      <div className="flex items-start justify-between gap-3"><div><p className="font-bold text-white">{d.room_name || "—"}</p><p className="mt-1 text-xs text-slate-400">{d.staff_name || "—"} · {d.duty_type}</p></div>{canEdit && <Button variant="outline" size="sm" onClick={() => delDuty(d.id)} className="text-red-400 border-red-500/30">Remove</Button>}</div>
                       <p className="mt-2 text-xs text-slate-400">{d.start_time ? formatDate(d.start_time) : "No shift time"}{d.end_time ? ` → ${formatDate(d.end_time)}` : ""}</p>
                     </div>
                   ))}
@@ -318,11 +318,11 @@ export default function Staff() {
                     {g.rows.map((d) => (
                       <TR key={d.id} data-testid={`duty-row-${d.id}`}>
                         <TD className="text-slate-400">{dutySerials.get(d.id)}</TD>
-                        <TD className="font-semibold text-slate-900">{d.room_name || "—"}</TD>
+                        <TD className="font-semibold text-white">{d.room_name || "—"}</TD>
                         <TD><Badge tone="coral">{d.duty_type}</Badge></TD>
-                        <TD>{d.staff_name || "—"}</TD>
-                        <TD>{d.start_time ? formatDate(d.start_time) : "—"}{d.end_time ? ` → ${formatDate(d.end_time)}` : ""}</TD>
-                        <TD><div className="flex justify-end">{canEdit && <Button variant="ghost" size="icon" onClick={() => delDuty(d.id)} data-testid={`delete-duty-${d.id}`}><Trash2 className="h-4 w-4 text-red-500" /></Button>}</div></TD>
+                        <TD className="text-slate-300">{d.staff_name || "—"}</TD>
+                        <TD className="text-slate-300">{d.start_time ? formatDate(d.start_time) : "—"}{d.end_time ? ` → ${formatDate(d.end_time)}` : ""}</TD>
+                        <TD><div className="flex justify-end">{canEdit && <Button variant="ghost" size="icon" onClick={() => delDuty(d.id)} data-testid={`delete-duty-${d.id}`}><Trash2 className="h-4 w-4 text-red-400" /></Button>}</div></TD>
                       </TR>
                     ))}
                   </tbody>

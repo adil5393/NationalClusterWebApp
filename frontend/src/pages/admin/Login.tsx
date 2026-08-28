@@ -46,12 +46,12 @@ export default function Login() {
           </div>
         </div>
 
-        <form onSubmit={submit} className="mt-8 rounded-lg border border-white/10 bg-white p-6 shadow-xl">
-          <div className="flex items-center gap-2 text-slate-950">
-            <Lock className="h-4 w-4" />
+        <form onSubmit={submit} className="mt-8 rounded-lg border border-white/10 bg-slate-900 p-6 shadow-2xl">
+          <div className="flex items-center gap-2 text-white">
+            <Lock className="h-4 w-4 text-coral" />
             <h1 className="font-heading text-lg font-bold">Organizer Portal</h1>
           </div>
-          <p className="mt-1 text-sm text-slate-500">Log in with your organizer account.</p>
+          <p className="mt-1 text-sm text-slate-400">Log in with your organizer account.</p>
 
           <div className="mt-5">
             <Label>Username</Label>

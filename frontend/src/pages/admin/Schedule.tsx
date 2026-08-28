@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Trash2, CalendarDays } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -70,19 +70,19 @@ export default function Schedule() {
     <div data-testid="admin-schedule">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-black tracking-tight text-white lg:text-slate-950">Schedule</h1>
-          <p className="mt-1 text-sm text-slate-400 lg:text-slate-500">Fixtures & ceremonies. Team-linked events appear on that team's portal.</p>
+          <h1 className="font-heading text-2xl font-black tracking-tight text-white">Schedule</h1>
+          <p className="mt-1 text-sm text-slate-400">Fixtures &amp; ceremonies. Team-linked events appear on that team's portal.</p>
         </div>
         {canEdit && <Button onClick={() => { setForm(empty); setOpen(true); }} data-testid="add-event-btn"><Plus className="h-4 w-4" /> Add Event</Button>}
       </div>
 
-      <div className="mt-6 overflow-hidden rounded-lg border border-white/10 bg-white/5 lg:border-slate-200 lg:bg-white">
+      <div className="mt-6 overflow-hidden rounded-lg border border-slate-800 bg-slate-900">
         {loading ? (
           <Spinner />
         ) : events.length === 0 ? (
           <div className="p-6"><EmptyState title="No events yet" hint="Add fixtures and ceremonies." /></div>
         ) : (<>
-          <div className="grid gap-2 p-2 lg:hidden">{events.map((e, i) => <div key={e.id} data-testid={`event-card-${e.id}`} className="w-full min-w-0 rounded-lg border border-slate-800 bg-slate-900 p-3"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><div className="text-[10px] font-semibold text-slate-500">#{i + 1}</div><div className="break-words text-sm font-bold text-white">{e.title}</div><div className="truncate text-[11px] text-slate-400">{e.venue_name || "No venue"}</div></div>{canEdit && <Button variant="danger" size="sm" className="h-8 shrink-0 border-red-500/30 bg-red-500/10 px-2 text-red-400 hover:bg-red-500/20" onClick={() => remove(e.id)}><Trash2 className="h-3.5 w-3.5" /> Remove</Button>}</div><div className="mt-2 flex flex-wrap gap-1 border-t border-white/10 pt-2 text-[10px]">{e.team_name ? <Badge tone="coral">{e.team_name}</Badge> : <span className="rounded bg-white/5 px-1.5 py-0.5 font-bold text-slate-300">All teams</span>}<span className="rounded bg-white/5 px-1.5 py-0.5 text-slate-300">{e.start_time ? formatDate(e.start_time) : "No start time"}</span></div>{e.description && <p className="mt-2 line-clamp-2 text-[11px] text-slate-400">{e.description}</p>}</div>)}</div>
+          <div className="grid gap-2 p-2 lg:hidden">{events.map((e, i) => <div key={e.id} data-testid={`event-card-${e.id}`} className="w-full min-w-0 rounded-lg border border-slate-800 bg-obsidian p-3"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><div className="text-[10px] font-semibold text-slate-500">#{i + 1}</div><div className="break-words text-sm font-bold text-white">{e.title}</div><div className="truncate text-[11px] text-slate-400">{e.venue_name || "No venue"}</div></div>{canEdit && <Button variant="danger" size="sm" className="h-8 shrink-0 px-2 text-[11px]" onClick={() => remove(e.id)}><Trash2 className="h-3.5 w-3.5" /> Remove</Button>}</div><div className="mt-2 flex flex-wrap gap-1 border-t border-white/10 pt-2 text-[10px]">{e.team_name ? <Badge tone="coral">{e.team_name}</Badge> : <span className="rounded bg-white/5 px-1.5 py-0.5 font-bold text-slate-300">All teams</span>}<span className="rounded bg-white/5 px-1.5 py-0.5 text-slate-300">{e.start_time ? formatDate(e.start_time) : "No start time"}</span></div>{e.description && <p className="mt-2 line-clamp-2 text-[11px] text-slate-400">{e.description}</p>}</div>)}</div>
           <div className="hidden lg:block"><Table>
             <THead>
               <TR className="hover:bg-transparent">
@@ -93,12 +93,12 @@ export default function Schedule() {
               {events.map((e, i) => (
                 <TR key={e.id} data-testid={`event-row-${e.id}`}>
                   <TD className="text-slate-400">{i + 1}</TD>
-                  <TD className="font-bold text-slate-900">{e.title}{e.description && <div className="text-xs font-normal text-slate-500">{e.description}</div>}</TD>
+                  <TD className="font-bold text-white">{e.title}{e.description && <div className="text-xs font-normal text-slate-400">{e.description}</div>}</TD>
                   <TD>{e.team_name ? <Badge tone="coral">{e.team_name}</Badge> : <span className="text-slate-400">All teams</span>}</TD>
-                  <TD className="text-slate-600">{e.venue_name || "—"}</TD>
-                  <TD>{e.start_time ? formatDate(e.start_time) : "—"}</TD>
-                  <TD>{e.end_time ? formatDate(e.end_time) : "—"}</TD>
-                  <TD><div className="flex justify-end">{canEdit && <Button variant="ghost" size="icon" onClick={() => remove(e.id)} data-testid={`delete-event-${e.id}`}><Trash2 className="h-4 w-4 text-red-500" /></Button>}</div></TD>
+                  <TD className="text-slate-300">{e.venue_name || "—"}</TD>
+                  <TD className="text-slate-300">{e.start_time ? formatDate(e.start_time) : "—"}</TD>
+                  <TD className="text-slate-300">{e.end_time ? formatDate(e.end_time) : "—"}</TD>
+                  <TD><div className="flex justify-end">{canEdit && <Button variant="ghost" size="icon" onClick={() => remove(e.id)} data-testid={`delete-event-${e.id}`}><Trash2 className="h-4 w-4 text-red-400" /></Button>}</div></TD>
                 </TR>
               ))}
             </tbody>

@@ -21,10 +21,10 @@ export default function PublicAnnouncements() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-4xl px-5 md:px-8 py-16 md:py-20" data-testid="public-announcements">
-      <span className="text-xs font-bold uppercase tracking-widest text-coral-600">Stay Updated</span>
-      <h1 className="mt-3 font-heading text-4xl font-black tracking-tight text-slate-950 sm:text-5xl">Announcements</h1>
-      <p className="mt-3 max-w-2xl text-base text-slate-600">Live updates for participants, coaches and guests.</p>
+    <div className="mx-auto max-w-4xl px-5 md:px-8 py-16 md:py-20 text-slate-100" data-testid="public-announcements">
+      <span className="text-xs font-bold uppercase tracking-widest text-coral">Stay Updated</span>
+      <h1 className="mt-3 font-heading text-4xl font-black tracking-tight text-white sm:text-5xl">Announcements</h1>
+      <p className="mt-3 max-w-2xl text-base text-slate-400">Live updates for participants, coaches and guests.</p>
 
       {loading ? (
         <Spinner />
@@ -35,13 +35,13 @@ export default function PublicAnnouncements() {
       ) : (
         <div className="mt-10 space-y-4" data-testid="announcement-list">
           {items.map((a) => (
-            <div key={a.id} className="rounded-lg border border-slate-200 bg-white p-5">
+            <div key={a.id} className="rounded-lg border border-slate-800 bg-slate-900 p-5">
               <div className="flex items-start justify-between gap-3">
-                <h3 className="font-heading text-lg font-bold text-slate-950">{a.title}</h3>
+                <h3 className="font-heading text-lg font-bold text-white">{a.title}</h3>
                 <Badge tone={priorityTone(a.priority)}>{a.priority.toUpperCase()}</Badge>
               </div>
-              <p className="mt-2 text-sm leading-relaxed text-slate-700">{a.message}</p>
-              <p className="mt-3 text-xs font-semibold text-slate-400">{formatDate(a.published_at)}</p>
+              <p className="mt-2 text-sm leading-relaxed text-slate-300">{a.message}</p>
+              <p className="mt-3 text-xs font-semibold text-slate-500">{formatDate(a.published_at)}</p>
             </div>
           ))}
         </div>
