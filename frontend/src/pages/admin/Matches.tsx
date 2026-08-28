@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2, Pencil, Play, Pause, PlayCircle, Flag, Radio, Ban, Shuffle } from "lucide-react";
+import { Plus, Trash2, Pencil, Play, Pause, PlayCircle, Flag, Radio, Ban, Shuffle, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { connectLive, matchChannel } from "@/lib/live";
@@ -299,7 +299,7 @@ export default function Matches() {
   };
 
   return (
-    <div data-testid="admin-matches">
+    <div className="min-w-0 max-w-full" data-testid="admin-matches">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="font-heading text-2xl font-black tracking-tight text-white lg:text-slate-950">Matches & Fixtures</h1>
@@ -313,7 +313,7 @@ export default function Matches() {
       </div>
 
       {/* LIVE NOW */}
-      <div className="mt-6 rounded-lg border border-emerald-900 bg-emerald-950/40 p-4 lg:border-emerald-200 lg:bg-emerald-50/40">
+      <div className="mt-6 min-w-0 max-w-full rounded-lg border border-emerald-900 bg-emerald-950/40 p-4 lg:border-emerald-200 lg:bg-emerald-50/40">
         <div className="flex items-center gap-2">
           <Radio className="h-4 w-4 text-emerald-600" />
           <h2 className="font-heading text-sm font-bold text-white lg:text-slate-900">Ongoing Matches</h2>
@@ -332,17 +332,17 @@ export default function Matches() {
                       key={m.id}
                       onClick={() => setConsoleMatchId(m.id)}
                       data-testid={`live-match-${m.id}`}
-                    className="rounded-md border border-emerald-900 bg-obsidian p-3 text-left hover:border-emerald-500 hover:shadow-sm lg:border-slate-200 lg:bg-white lg:hover:border-emerald-300"
+                    className="w-full min-w-0 overflow-hidden rounded-md border border-emerald-900 bg-obsidian p-3 text-left hover:border-emerald-500 hover:shadow-sm lg:border-slate-200 lg:bg-white lg:hover:border-emerald-300"
                     >
-                      <div className="flex items-center justify-between">
+                      <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-2">
                         <Badge tone={STATUS_TONE[m.status]}>{m.status}</Badge>
                         <span className="truncate text-xs text-slate-400">{m.tournament_name ?? m.round_name}</span>
                       </div>
-                      <div className="mt-2 flex items-center justify-between text-sm font-bold text-white lg:text-slate-900">
-                        <span className="truncate">{m.team_a_name ?? "TBD"}</span><span>{m.team_a_score}</span>
+                      <div className="mt-2 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 text-sm font-bold text-white lg:text-slate-900">
+                        <span className="truncate">{m.team_a_name ?? "TBD"}</span><span className="shrink-0">{m.team_a_score}</span>
                       </div>
-                      <div className="mt-1 flex items-center justify-between text-sm font-bold text-white lg:text-slate-900">
-                        <span className="truncate">{m.team_b_name ?? "TBD"}</span><span>{m.team_b_score}</span>
+                      <div className="mt-1 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 text-sm font-bold text-white lg:text-slate-900">
+                        <span className="truncate">{m.team_b_name ?? "TBD"}</span><span className="shrink-0">{m.team_b_score}</span>
                       </div>
                     </button>
                   ))}
@@ -358,7 +358,7 @@ export default function Matches() {
           <EmptyState title="No tournaments yet" hint="Create one to start building fixtures." />
         </div>
       ) : (
-        <div className="mt-6 rounded-lg border border-slate-800 bg-slate-900 lg:border-slate-200 lg:bg-white">
+        <div className="mt-6 min-w-0 max-w-full overflow-hidden rounded-lg border border-slate-800 bg-slate-900 lg:border-slate-200 lg:bg-white">
           <div className="flex gap-1 overflow-x-auto border-b border-slate-800 px-2 pt-2 lg:border-slate-200" data-testid="tournament-tabs">
             {tournaments.map((t) => (
               <button
@@ -377,18 +377,18 @@ export default function Matches() {
               </button>
             ))}
           </div>
-          <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 p-3 lg:border-slate-200 lg:p-4">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-slate-800 p-3 lg:border-slate-200 lg:p-4">
             {detail && (
               <>
                 <Badge tone={detail.status === "active" ? "green" : detail.status === "completed" ? "slate" : "neutral"}>{detail.status}</Badge>
                 {detail.age_group && <Badge tone="coral">{detail.age_group}</Badge>}
                 {detail.sport && <span className="text-xs text-slate-500">{detail.sport}</span>}
                 {canEdit && (
-                  <div className="flex w-full flex-wrap gap-1 sm:ml-auto sm:w-auto">
-                    <Button variant="ghost" size="icon" onClick={() => { setTForm({ id: detail.id, name: detail.name, sport: detail.sport ?? "", age_group: detail.age_group ?? "", status: detail.status, notes: detail.notes ?? "" }); setTOpen(true); }}><Pencil className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" onClick={() => removeTournament(detail.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
-                    <Button variant="outline" size="sm" onClick={() => { setRForm({ name: "", sequence: String((detail.rounds?.length ?? 0) + 1) }); setROpen(true); }} data-testid="add-round-btn"><Plus className="h-4 w-4" /> Round</Button>
-                    <Button variant="outline" size="sm" onClick={openGenerateBracket} data-testid="generate-bracket-btn"><Shuffle className="h-4 w-4" /> Generate Bracket</Button>
+                  <div className="grid w-full min-w-0 grid-cols-[auto_auto_minmax(0,1fr)_minmax(0,1fr)] gap-1 sm:ml-auto sm:w-auto">
+                    <Button variant="ghost" size="icon" className="shrink-0" onClick={() => { setTForm({ id: detail.id, name: detail.name, sport: detail.sport ?? "", age_group: detail.age_group ?? "", status: detail.status, notes: detail.notes ?? "" }); setTOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="shrink-0" onClick={() => removeTournament(detail.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                    <Button variant="outline" size="sm" className="min-w-0 px-1 text-[11px]" onClick={() => { setRForm({ name: "", sequence: String((detail.rounds?.length ?? 0) + 1) }); setROpen(true); }} data-testid="add-round-btn"><Plus className="h-3.5 w-3.5" /> Round</Button>
+                    <Button variant="outline" size="sm" className="min-w-0 px-1 text-[11px]" onClick={openGenerateBracket} data-testid="generate-bracket-btn"><Shuffle className="h-3.5 w-3.5" /> Bracket</Button>
                   </div>
                 )}
               </>
@@ -418,11 +418,11 @@ export default function Matches() {
           )}
 
           {tab === "fixtures" && (
-          <div className="p-4">
+          <div className="p-3 sm:p-4">
             {!detail || (detail.rounds ?? []).length === 0 ? (
               <EmptyState title="No rounds yet" hint="Add a round (e.g. Round 1, Quarter Final) to start scheduling matches." />
             ) : (
-              <div className="space-y-6">
+              <div className="space-y-4">
                 {detail.rounds!.map((r) => (
                   <div key={r.id}>
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -438,13 +438,19 @@ export default function Matches() {
                       <p className="mt-2 text-sm text-slate-400">No matches in this round yet.</p>
                     ) : (
                       <>
-                      <div className="mt-2 grid gap-2 lg:hidden">
-                        {r.matches.map((m) => (
-                          <div key={m.id} className="rounded-md border border-slate-800 bg-obsidian p-3" data-testid={`match-card-${m.id}`}>
-                            <div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="break-words font-semibold text-white">{matchLabel(m)}</p>{m.winner_team_name && <p className="mt-1 text-xs text-emerald-400">Winner: {m.winner_team_name}</p>}</div><Badge tone={STATUS_TONE[m.status]}>{m.status}</Badge></div>
-                            <p className="mt-2 text-xs text-slate-400">{m.venue_name ?? "No venue"} · {m.scheduled_at ? formatDate(m.scheduled_at) : "Not scheduled"}</p>
-                            <p className="mt-1 text-sm text-slate-300">{m.status === "SCHEDULED" || m.status === "POSTPONED" ? "Score pending" : `${m.team_a_score} – ${m.team_b_score}`}</p>
-                            <div className="mt-3 grid grid-cols-2 gap-2">{canEdit && m.status === "SCHEDULED" && m.team_a_id && m.team_b_id && <Button size="sm" onClick={() => startMatch(m.id)}>Start</Button>}{(m.status === "ONGOING" || m.status === "PAUSED") && <Button size="sm" onClick={() => setConsoleMatchId(m.id)}>Live console</Button>}{canEdit && (m.status === "SCHEDULED" || m.status === "POSTPONED") && <Button variant="outline" size="sm" onClick={() => removeMatch(m.id)} className="text-red-400">Delete</Button>}</div>
+                      <div className="mt-1.5 grid gap-1.5 lg:hidden">
+                        {r.matches.map((m, i) => (
+                          <div key={m.id} className="w-full min-w-0 overflow-hidden rounded-lg border border-slate-800 bg-slate-900 p-3" data-testid={`match-card-${m.id}`}>
+                            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+                              <div className="min-w-0"><p className="text-[10px] font-semibold leading-tight text-slate-500">#{i + 1}</p><p className="break-words text-sm font-bold leading-tight text-white">{matchLabel(m)}</p></div>
+                              <div className="flex shrink-0 items-center gap-1"><Badge tone={STATUS_TONE[m.status]}>{m.status}</Badge>{canEdit && m.status === "SCHEDULED" && m.team_a_id && m.team_b_id && <Button variant="outline" size="icon" className="h-7 w-7 border-white/15 bg-white/5 text-emerald-400 hover:bg-white/10" onClick={() => startMatch(m.id)} title="Start match"><Play className="h-3.5 w-3.5" /></Button>}{(m.status === "ONGOING" || m.status === "PAUSED") && <Button variant="outline" size="icon" className="h-7 w-7 border-white/15 bg-white/5 text-emerald-400 hover:bg-white/10" onClick={() => setConsoleMatchId(m.id)} title="Open live console"><Radio className="h-3.5 w-3.5" /></Button>}{canEdit && (m.status === "SCHEDULED" || m.status === "POSTPONED") && <Button variant="danger" size="icon" className="h-7 w-7 border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20" onClick={() => removeMatch(m.id)} title="Delete fixture"><Trash2 className="h-3.5 w-3.5" /></Button>}</div>
+                            </div>
+                            <div className="mt-1.5 flex flex-wrap gap-1">
+                              <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{m.venue_name ?? "No venue"}</span>
+                              <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{m.scheduled_at ? formatDate(m.scheduled_at) : "Not scheduled"}</span>
+                              <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{m.status === "SCHEDULED" || m.status === "POSTPONED" ? "Score pending" : `${m.team_a_score} – ${m.team_b_score}`}</span>
+                            </div>
+                            {m.winner_team_name && <p className="mt-1.5 truncate text-[11px] text-emerald-400">Winner: {m.winner_team_name}</p>}
                           </div>
                         ))}
                       </div>
@@ -661,7 +667,12 @@ function LiveConsole({ matchId, canEdit, onClose, onChanged }: { matchId: number
 
   const score = async (team: "a" | "b", delta: number) => {
     try {
-      await api.post(`/matches/${matchId}/score`, { team, delta });
+      // Update from the API response immediately. The WebSocket is still used
+      // to keep every other open screen in sync, but it must not be the only
+      // way this console reflects its own successful scoring tap.
+      const response = await api.post<MatchT>(`/matches/${matchId}/score`, { team, delta });
+      setM(response.data);
+      onChanged();
     } catch (e: any) {
       toast.error(e?.response?.data?.detail ?? "Could not update score");
     }
@@ -697,12 +708,12 @@ function LiveConsole({ matchId, canEdit, onClose, onChanged }: { matchId: number
   }, [m?.team_a_score, m?.team_b_score]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <Dialog open onClose={onClose} title="Live Match Console" testId="live-console">
+    <Dialog open onClose={onClose} title="Live Match Console" className="border-slate-800 bg-slate-900 lg:border-slate-200 lg:bg-white [&>div:first-child]:border-slate-800 [&>div:first-child_button]:text-slate-300 [&>div:first-child_button:hover]:bg-white/10 [&>div:first-child_h3]:text-white lg:[&>div:first-child]:border-slate-100 lg:[&>div:first-child_button]:text-slate-700 lg:[&>div:first-child_h3]:text-slate-950" testId="live-console">
       {loading || !m ? <Spinner /> : (
         <div className="space-y-5">
           <div className="flex items-center justify-between">
             <Badge tone={STATUS_TONE[m.status]}>{m.status === "ONGOING" ? "● LIVE" : m.status}</Badge>
-            <span className="text-xs text-slate-500">{m.round_name}</span>
+            <span className="text-xs text-slate-400 lg:text-slate-500">{m.round_name}</span>
           </div>
 
           {(["a", "b"] as const).map((side) => {
@@ -710,17 +721,17 @@ function LiveConsole({ matchId, canEdit, onClose, onChanged }: { matchId: number
             const value = side === "a" ? m.team_a_score : m.team_b_score;
             const isLeader = leader === side;
             return (
-              <div key={side} className={`flex items-center justify-between rounded-md border p-3 transition-colors ${isLeader ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}>
+              <div key={side} className={`flex items-center justify-between rounded-md border p-3 transition-colors ${isLeader ? "border-emerald-800 bg-emerald-950/40 lg:border-emerald-300 lg:bg-emerald-50" : "border-slate-800 bg-obsidian lg:border-slate-200 lg:bg-slate-50"}`}>
                 <div className="flex items-center gap-2 truncate">
                   {isLeader && <Flag className="h-4 w-4 shrink-0 text-emerald-600" />}
-                  <span className="truncate font-bold text-slate-900">{name}</span>
+                  <span className="truncate font-bold text-white lg:text-slate-900">{name}</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span key={value} className="w-10 text-right font-heading text-2xl font-black tabular-nums text-slate-950" data-testid={`console-score-${side}`}>{value}</span>
+                  <span key={value} className="w-10 text-right font-heading text-2xl font-black tabular-nums text-white lg:text-slate-950" data-testid={`console-score-${side}`}>{value}</span>
                   {canEdit && m.status === "ONGOING" && (
                     <div className="flex gap-1">
                       {[1, 2, 3].map((n) => (
-                        <Button key={n} size="sm" variant="outline" onClick={() => score(side, n)} data-testid={`score-${side}-plus-${n}`}>+{n}</Button>
+                        <Button key={n} size="sm" variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 lg:border-slate-300 lg:bg-white lg:text-slate-900" onClick={() => score(side, n)} data-testid={`score-${side}-plus-${n}`}>+{n}</Button>
                       ))}
                     </div>
                   )}
@@ -730,10 +741,10 @@ function LiveConsole({ matchId, canEdit, onClose, onChanged }: { matchId: number
           })}
 
           {canEdit && (
-            <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 pt-4">
-              {m.status === "ONGOING" && <Button variant="outline" onClick={() => act("pause", "Match paused")}><Pause className="h-4 w-4" /> Pause</Button>}
-              {m.status === "PAUSED" && <Button variant="outline" onClick={() => act("resume", "Match resumed")}><PlayCircle className="h-4 w-4" /> Resume</Button>}
-              <Button variant="outline" onClick={() => act("cancel", "Match cancelled")}><Ban className="h-4 w-4" /> Cancel</Button>
+            <div className="flex flex-wrap justify-end gap-2 border-t border-slate-800 pt-4 lg:border-slate-200">
+              {m.status === "ONGOING" && <Button variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 lg:border-slate-300 lg:bg-white lg:text-slate-900" onClick={() => act("pause", "Match paused")}><Pause className="h-4 w-4" /> Pause</Button>}
+              {m.status === "PAUSED" && <Button variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 lg:border-slate-300 lg:bg-white lg:text-slate-900" onClick={() => act("resume", "Match resumed")}><PlayCircle className="h-4 w-4" /> Resume</Button>}
+              <Button variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 lg:border-slate-300 lg:bg-white lg:text-slate-900" onClick={() => act("cancel", "Match cancelled")}><Ban className="h-4 w-4" /> Cancel</Button>
               <Button onClick={complete} data-testid="end-match-btn"><Flag className="h-4 w-4" /> End Match</Button>
             </div>
           )}
@@ -858,7 +869,7 @@ function LeagueSetup({ tournamentId, rounds, teams, canEdit, onOpenConsole, onCh
   };
 
   return (
-    <div className="p-4" data-testid="league-setup">
+    <div className="p-3 sm:p-4" data-testid="league-setup">
       <div className="flex flex-wrap items-center gap-3">
         <Label>Round</Label>
         <Select value={roundId ?? ""} onChange={(e) => setRoundId(Number(e.target.value))} className="w-auto" data-testid="league-round-select">
@@ -872,51 +883,37 @@ function LeagueSetup({ tournamentId, rounds, teams, canEdit, onOpenConsole, onCh
         <div className="mt-4"><Spinner /></div>
       ) : (
         <>
-          <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm" data-testid="league-summary">
-            <span className="text-slate-600">Teams: <b className="text-slate-900">{summary.eligible_team_count}</b></span>
-            <span className="text-slate-600">Assigned: <b className="text-slate-900">{summary.assigned_team_count}</b></span>
-            <span className={summary.unassigned_teams.length > 0 ? "font-semibold text-amber-600" : "text-slate-600"}>
+          <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-1.5 rounded-md border border-slate-700 bg-slate-800/60 p-2.5 text-xs sm:flex sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-2 sm:border-slate-200 sm:bg-slate-50 sm:p-3 sm:text-sm" data-testid="league-summary">
+            <span className="text-slate-300 lg:text-slate-600">Teams: <b className="text-white lg:text-slate-900">{summary.eligible_team_count}</b></span>
+            <span className="text-slate-300 lg:text-slate-600">Assigned: <b className="text-white lg:text-slate-900">{summary.assigned_team_count}</b></span>
+            <span className={summary.unassigned_teams.length > 0 ? "font-semibold text-amber-400 lg:text-amber-600" : "text-slate-300 lg:text-slate-600"}>
               Unassigned: <b>{summary.unassigned_teams.length}</b>
             </span>
-            <span className="text-slate-600">Pools: <b className="text-slate-900">{summary.pool_count}</b></span>
-            <span className="ml-auto flex flex-wrap gap-3">
-              <span className={summary.all_teams_assigned ? "text-emerald-600" : "text-amber-600"}>{summary.all_teams_assigned ? "✓ All teams assigned" : `⚠ ${summary.unassigned_teams.length} unassigned`}</span>
-              <span className={summary.all_pools_valid ? "text-emerald-600" : "text-amber-600"}>{summary.all_pools_valid ? "✓ All pools valid" : "⚠ Some pools need ≥5 teams"}</span>
+            <span className="text-slate-300 lg:text-slate-600">Pools: <b className="text-white lg:text-slate-900">{summary.pool_count}</b></span>
+            <span className="col-span-2 flex flex-wrap gap-x-3 gap-y-1 sm:ml-auto">
+              <span className={summary.all_teams_assigned ? "text-emerald-400 lg:text-emerald-600" : "text-amber-400 lg:text-amber-600"}>{summary.all_teams_assigned ? "✓ All teams assigned" : `⚠ ${summary.unassigned_teams.length} unassigned`}</span>
+              <span className={summary.all_pools_valid ? "text-emerald-400 lg:text-emerald-600" : "text-amber-400 lg:text-amber-600"}>{summary.all_pools_valid ? "✓ All pools valid" : "⚠ Some pools need ≥5 teams"}</span>
               <span className={summary.fixtures_generated ? "text-emerald-600" : "text-slate-400"}>{summary.fixtures_generated ? "✓ Fixtures generated" : "Fixtures not finalized"}</span>
             </span>
           </div>
 
           {canEdit && (
-            <div className="mt-3 flex gap-2">
-              <Button onClick={openAutoPreview} data-testid="auto-create-pools-btn"><Shuffle className="h-4 w-4" /> Auto Create Pools</Button>
-              <Button variant="outline" onClick={() => setCreateOpen(true)} data-testid="create-pool-btn"><Plus className="h-4 w-4" /> Create Pool</Button>
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:flex">
+              <Button size="sm" onClick={openAutoPreview} data-testid="auto-create-pools-btn"><Shuffle className="h-3.5 w-3.5" /> Auto Create</Button>
+              <Button size="sm" variant="outline" onClick={() => setCreateOpen(true)} data-testid="create-pool-btn"><Plus className="h-3.5 w-3.5" /> Create Pool</Button>
             </div>
           )}
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {summary.pools.map((p) => (
-              <div key={p.id} className="rounded-md border border-slate-200 bg-white p-3" data-testid={`pool-card-${p.id}`}>
-                <div className="flex items-center justify-between">
-                  <h4 className="font-heading text-sm font-bold text-slate-900">{p.name}</h4>
-                  <Badge tone={p.status === "finalized" ? "green" : "neutral"}>{p.status}</Badge>
+              <div key={p.id} className="w-full min-w-0 overflow-hidden rounded-lg border border-slate-800 bg-slate-900 p-3 lg:border-slate-200 lg:bg-white" data-testid={`pool-card-${p.id}`}>
+                <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+                  <div className="min-w-0"><p className="text-[10px] font-semibold leading-tight text-slate-500">Pool</p><h4 className="truncate font-heading text-sm font-bold text-white lg:text-slate-900">{p.name}</h4></div>
+                  <div className="flex shrink-0 items-center gap-1"><Badge tone={p.status === "finalized" ? "green" : "neutral"}>{p.status}</Badge><Button size="icon" variant="outline" className="h-7 w-7 border-white/15 bg-white/5 text-slate-200 hover:bg-white/10" onClick={() => setDetailPoolId(p.id)} title="View pool"><Eye className="h-3.5 w-3.5" /></Button>{canEdit && p.is_valid && p.team_count > 0 && <Button size="icon" variant="outline" className="h-7 w-7 border-white/15 bg-white/5 text-emerald-400 hover:bg-white/10" onClick={() => finalizePool(p, p.status === "finalized")} title={p.status === "finalized" ? "Regenerate fixtures" : "Finalize pool"}>{p.status === "finalized" ? <Shuffle className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}</Button>}{canEdit && <Button size="icon" variant="danger" className="h-7 w-7 border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20" onClick={() => deletePool(p)} title="Delete pool"><Trash2 className="h-3.5 w-3.5" /></Button>}</div>
                 </div>
-                <ol className="mt-2 space-y-0.5 text-xs text-slate-600">
-                  {p.teams.map((t, i) => <li key={t.id} className="truncate">{i + 1}. {t.name}</li>)}
-                  {p.teams.length === 0 && <li className="text-slate-400">No teams yet</li>}
-                </ol>
-                <p className="mt-2 text-xs text-slate-500">
-                  {p.team_count} team{p.team_count === 1 ? "" : "s"} · {p.status === "finalized" ? `${p.match_count} matches` : `${p.expected_match_count} matches once finalized`}
-                </p>
+                <div className="mt-1.5 flex flex-wrap gap-1">{p.teams.slice(0, 2).map((t) => <span key={t.id} className="max-w-full truncate rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{t.name}</span>)}{p.teams.length > 2 && <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">+{p.teams.length - 2} more</span>}{p.teams.length === 0 && <span className="text-[10px] text-slate-400">No teams yet</span>}</div>
+                <div className="mt-1.5 flex flex-wrap gap-1"><span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{p.team_count} teams</span><span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{p.status === "finalized" ? `${p.match_count} matches` : `${p.expected_match_count} matches`}</span></div>
                 {!p.is_valid && <p className="mt-1 text-xs font-semibold text-amber-600">⚠ Needs at least 5 teams</p>}
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  <Button size="sm" variant="outline" onClick={() => setDetailPoolId(p.id)}>View</Button>
-                  {canEdit && p.is_valid && p.team_count > 0 && (
-                    <Button size="sm" variant="outline" onClick={() => finalizePool(p, p.status === "finalized")}>
-                      {p.status === "finalized" ? "Regenerate" : "Finalize"}
-                    </Button>
-                  )}
-                  {canEdit && <Button size="sm" variant="ghost" onClick={() => deletePool(p)}><Trash2 className="h-3.5 w-3.5 text-red-500" /></Button>}
-                </div>
               </div>
             ))}
             {summary.pools.length === 0 && (
@@ -924,15 +921,15 @@ function LeagueSetup({ tournamentId, rounds, teams, canEdit, onOpenConsole, onCh
             )}
           </div>
 
-          <div className="mt-4 rounded-md border border-slate-200 bg-white p-3">
-            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500">Unassigned Teams ({summary.unassigned_teams.length})</h4>
+          <div className="mt-3 rounded-md border border-slate-700 bg-slate-800/60 p-2.5 lg:border-slate-200 lg:bg-white lg:p-3">
+            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-400 lg:text-slate-500">Unassigned Teams ({summary.unassigned_teams.length})</h4>
             {summary.unassigned_teams.length === 0 ? (
               <p className="mt-1.5 text-sm text-slate-400">None — every eligible team is in a pool.</p>
             ) : (
-              <div className="mt-1.5 divide-y divide-slate-100">
+              <div className="mt-1 divide-y divide-slate-700 lg:divide-slate-100">
                 {summary.unassigned_teams.map((t) => (
                   <div key={t.id} className="flex items-center justify-between gap-3 py-1.5 text-sm">
-                    <span className="truncate text-slate-700">{t.name}</span>
+                    <span className="truncate text-slate-200 lg:text-slate-700">{t.name}</span>
                     {canEdit && summary.pools.length > 0 && (
                       <select
                         className="rounded-md border border-slate-300 px-2 py-1 text-xs"
@@ -1089,17 +1086,17 @@ function PoolDetailDialog({ poolId, canEdit, onClose, onOpenConsole, onChanged }
   };
 
   return (
-    <Dialog open onClose={onClose} title={pool ? pool.name : "Pool"} className="max-w-3xl" testId="pool-detail-dialog">
+    <Dialog open onClose={onClose} title={pool ? pool.name : "Pool"} className="max-w-md border-slate-800 bg-slate-900 lg:max-w-3xl lg:border-slate-200 lg:bg-white [&>div:first-child]:border-slate-800 [&>div:first-child_button]:text-slate-300 [&>div:first-child_button:hover]:bg-white/10 [&>div:first-child_h3]:text-white lg:[&>div:first-child]:border-slate-100 lg:[&>div:first-child_button]:text-slate-700 lg:[&>div:first-child_h3]:text-slate-950" testId="pool-detail-dialog">
       {loading || !pool ? <Spinner /> : (
-        <div className="space-y-5">
+        <div className="space-y-4">
           <div>
-            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500">Teams</h4>
+            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-400 lg:text-slate-500">Teams</h4>
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {pool.teams.map((t) => (
-                <span key={t.id} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs">
+                <span key={t.id} className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-200 lg:border-slate-200 lg:bg-slate-50 lg:text-slate-900">
                   {t.name}
                   {canEdit && pool.status !== "finalized" && (
-                    <button onClick={() => removeTeam(t.id)} className="text-slate-400 hover:text-red-500">×</button>
+                    <button onClick={() => removeTeam(t.id)} className="text-slate-400 hover:text-red-400 lg:hover:text-red-500">×</button>
                   )}
                 </span>
               ))}
@@ -1107,11 +1104,26 @@ function PoolDetailDialog({ poolId, canEdit, onClose, onOpenConsole, onChanged }
           </div>
 
           <div>
-            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500">Fixtures ({matches.length})</h4>
+            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-400 lg:text-slate-500">Fixtures ({matches.length})</h4>
             {matches.length === 0 ? (
               <p className="mt-1.5 text-sm text-slate-400">Not generated yet — finalize the pool first.</p>
-            ) : (
-              <Table className="mt-1.5">
+            ) : (<>
+              <div className="mt-1.5 grid gap-2 lg:hidden">
+                {matches.map((m, i) => (
+                  <div key={m.id} className="rounded-md border border-slate-800 bg-obsidian p-3 lg:border-slate-200 lg:bg-white">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="min-w-0 break-words text-sm font-semibold text-white lg:text-slate-800">{i + 1}. {m.team_a_name} <span className="text-slate-400">vs</span> {m.team_b_name}</p>
+                      <Badge tone={STATUS_TONE[m.status]}>{m.status}</Badge>
+                    </div>
+                    <p className="mt-1.5 text-xs text-slate-400 lg:text-slate-500">{m.status === "SCHEDULED" ? "Score pending" : `${m.team_a_score} – ${m.team_b_score}`}</p>
+                    <div className="mt-2 flex gap-2">
+                      {canEdit && m.status === "SCHEDULED" && <Button size="sm" variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 lg:border-slate-300 lg:bg-white lg:text-slate-900" onClick={() => startMatch(m.id)}>Start</Button>}
+                      {(m.status === "ONGOING" || m.status === "PAUSED") && <Button size="sm" variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 lg:border-slate-300 lg:bg-white lg:text-slate-900" onClick={() => onOpenConsole(m.id)}>Live</Button>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="hidden lg:block"><Table className="mt-1.5">
                 <THead><TR className="hover:bg-transparent"><TH>#</TH><TH>Fixture</TH><TH>Status</TH><TH>Score</TH><TH className="text-right">Actions</TH></TR></THead>
                 <tbody>
                   {matches.map((m, i) => (
@@ -1133,16 +1145,24 @@ function PoolDetailDialog({ poolId, canEdit, onClose, onOpenConsole, onChanged }
                     </TR>
                   ))}
                 </tbody>
-              </Table>
-            )}
+              </Table></div>
+            </>)}
           </div>
 
           <div>
-            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500">Standings</h4>
+            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-400 lg:text-slate-500">Standings</h4>
             {standings.every((s) => s.played === 0) ? (
               <p className="mt-1.5 text-sm text-slate-400">No completed matches yet.</p>
-            ) : (
-              <Table className="mt-1.5">
+            ) : (<>
+              <div className="mt-1.5 space-y-1.5 lg:hidden">
+                {standings.map((s) => (
+                  <div key={s.team_id} className="flex items-center justify-between gap-3 rounded-md border border-slate-800 bg-obsidian px-3 py-2 text-sm lg:border-slate-200 lg:bg-white">
+                    <span className="min-w-0 truncate font-semibold text-white lg:text-slate-800">{s.position}. {s.team_name}</span>
+                    <span className="shrink-0 text-xs text-slate-400 lg:text-slate-500">P {s.played} · W {s.won} · {s.points} pts</span>
+                  </div>
+                ))}
+              </div>
+              <div className="hidden lg:block"><Table className="mt-1.5">
                 <THead><TR className="hover:bg-transparent"><TH>#</TH><TH>Team</TH><TH className="text-right">P</TH><TH className="text-right">W</TH><TH className="text-right">L</TH><TH className="text-right">D</TH><TH className="text-right">PF</TH><TH className="text-right">PA</TH><TH className="text-right">Pts</TH></TR></THead>
                 <tbody>
                   {standings.map((s) => (
@@ -1159,8 +1179,8 @@ function PoolDetailDialog({ poolId, canEdit, onClose, onOpenConsole, onChanged }
                     </TR>
                   ))}
                 </tbody>
-              </Table>
-            )}
+              </Table></div>
+            </>)}
           </div>
         </div>
       )}

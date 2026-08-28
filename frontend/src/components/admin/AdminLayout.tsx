@@ -174,8 +174,8 @@ export function AdminLayout() {
       </aside>
 
       {/* MAIN */}
-      <div className="flex-1 lg:pl-60">
-        <header className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-white/10 bg-obsidian px-5 md:px-8 lg:border-slate-200 lg:bg-white">
+      <div className="min-w-0 flex-1 lg:pl-60">
+        <header className="fixed inset-x-0 top-0 z-20 flex h-16 items-center gap-4 border-b border-white/10 bg-obsidian px-5 md:px-8 lg:sticky lg:inset-x-auto lg:border-slate-200 lg:bg-white">
           <button
             className="grid h-10 w-10 shrink-0 place-items-center rounded-md border border-white/15 text-slate-300 lg:hidden"
             onClick={() => setMobileNavOpen(true)}
@@ -217,7 +217,7 @@ export function AdminLayout() {
           </div>
         </header>
 
-        <main className="min-w-0 p-3 sm:p-5 md:p-8">
+        <main className="min-w-0 p-3 pt-20 sm:p-5 sm:pt-24 md:p-8 lg:pt-8">
           <PermissionsContext.Provider value={me}>
             <Outlet />
           </PermissionsContext.Provider>
