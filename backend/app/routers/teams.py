@@ -143,12 +143,53 @@ def get_team(team_id: int, db: Session = Depends(get_db)):
     return team
 
 
+def _pool_teammates(db: Session, team_id: int) -> list[models.Team]:
+    """Every other team sharing at least one pool with this one."""
+    pool_ids = [row[0] for row in db.query(models.pool_teams.c.pool_id).filter(models.pool_teams.c.team_id == team_id).all()]
+    if not pool_ids:
+        return []
+    teammate_ids = {
+        row[0]
+        for row in db.query(models.pool_teams.c.team_id)
+        .filter(models.pool_teams.c.pool_id.in_(pool_ids), models.pool_teams.c.team_id != team_id)
+        .all()
+    }
+    if not teammate_ids:
+        return []
+    return db.query(models.Team).filter(models.Team.id.in_(teammate_ids)).all()
+
+
+def _assign_last_year_award(db: Session, team: models.Team, field: str, opposite_field: str, opposite_requested: bool) -> None:
+    """Only one team may hold `field` at a time (setting it here clears any
+    other team that had it), a team can't hold both awards, and the winner
+    and runner-up can never end up sharing a pool."""
+    if getattr(team, opposite_field) or opposite_requested:
+        raise HTTPException(400, "A team can't be both last year's winner and runner-up")
+
+    conflict = next((t for t in _pool_teammates(db, team.id) if getattr(t, opposite_field)), None)
+    if conflict:
+        raise HTTPException(
+            409,
+            f"{team.name} shares a pool with {conflict.name}, who already holds the other award — "
+            "last year's winner and runner-up can't be in the same pool",
+        )
+
+    db.query(models.Team).filter(models.Team.id != team.id, getattr(models.Team, field).is_(True)).update({field: False})
+
+
 @router.put("/{team_id}", response_model=schemas.TeamRead)
 def update_team(team_id: int, payload: schemas.TeamUpdate, db: Session = Depends(get_db)):
     team = db.get(models.Team, team_id)
     if not team:
         raise HTTPException(404, "Team not found")
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+
+    if data.get("last_year_winner") is True:
+        _assign_last_year_award(db, team, "last_year_winner", "last_year_runner", data.get("last_year_runner") is True)
+    if data.get("last_year_runner") is True:
+        _assign_last_year_award(db, team, "last_year_runner", "last_year_winner", data.get("last_year_winner") is True)
+
+    for key, value in data.items():
         setattr(team, key, value)
     db.commit()
     db.refresh(team)

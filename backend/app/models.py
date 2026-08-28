@@ -57,9 +57,12 @@ class Team(TimestampMixin, Base):
     contact_phone = Column(String(60))
     member_count = Column(Integer, default=0)
     notes = Column(Text)
-    # Simple flag, toggled directly from the Teams table (not the edit form) —
-    # there's no historical-results model to derive it from, so it's set by hand.
+    # Simple flags, toggled directly from the Teams table (not the edit form) —
+    # there's no historical-results model to derive them from, so they're set by
+    # hand. Enforced elsewhere (routers/teams.py) to be held by at most one team
+    # each, never both by the same team, and never by two teams sharing a pool.
     last_year_winner = Column(Boolean, nullable=False, default=False)
+    last_year_runner = Column(Boolean, nullable=False, default=False)
 
     participants = relationship("Participant", back_populates="team", cascade="all, delete-orphan")
     coaches = relationship("Coach", back_populates="team", cascade="all, delete-orphan")
@@ -407,12 +410,23 @@ class Tournament(TimestampMixin, Base):
 
 class Round(TimestampMixin, Base):
     """A stage within a Tournament (e.g. "Round 1", "Quarter Final"). Tournaments
-    don't all have the same rounds, so this is freeform, ordered by `sequence`."""
+    don't all have the same rounds, so this is freeform, ordered by `sequence`.
+
+    format/source_round_id/entrants exist to support the round-by-round
+    advance flow (routers/buckets.py): once a round finishes, its advancing
+    teams get pulled into a Bucket, which is later turned into a new round of
+    whichever format the organizer picks (create-round stamps the new
+    round's source_round_id back to the bucket's source round). Rounds
+    created the old way (plain POST /rounds, or generate_bracket's one-shot
+    full tree) leave format/source_round_id NULL and have no entrants row —
+    _eligible_teams falls back to the tournament-wide list for those."""
     __tablename__ = "rounds"
     id = Column(Integer, primary_key=True)
     tournament_id = Column(Integer, ForeignKey("tournaments.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(120), nullable=False)
     sequence = Column(Integer, nullable=False, default=0)  # display/bracket order, earliest first
+    format = Column(String(20))  # schemas.ROUND_FORMATS, or NULL for a round created the old way
+    source_round_id = Column(Integer, ForeignKey("rounds.id", ondelete="SET NULL"))
 
     tournament = relationship("Tournament", back_populates="rounds")
     matches = relationship(
@@ -420,6 +434,53 @@ class Round(TimestampMixin, Base):
         order_by="Match.id", foreign_keys="Match.round_id",
     )
     pools = relationship("Pool", back_populates="round", cascade="all, delete-orphan", order_by="Pool.name")
+    entrants = relationship("Team", secondary="round_entrants")
+
+
+round_entrants = Table(
+    "round_entrants",
+    Base.metadata,
+    Column("round_id", Integer, ForeignKey("rounds.id", ondelete="CASCADE"), primary_key=True),
+    Column("team_id", Integer, ForeignKey("teams.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+class Bucket(TimestampMixin, Base):
+    """A staging area between a finished round and its successor (routers/
+    buckets.py). Teams get pulled in — from a league round, pool by pool as
+    each finishes; from a knockout round, its match winners — and reviewed
+    before the organizer, in a separate action, turns the bucket into a new
+    round of whichever format (create-round). round_id is NULL while the
+    bucket is still open; set once it's been consumed into a round."""
+    __tablename__ = "buckets"
+    id = Column(Integer, primary_key=True)
+    tournament_id = Column(Integer, ForeignKey("tournaments.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(120), nullable=False)
+    # CASCADE (not SET NULL) — this column is NOT NULL, so if its source round
+    # is ever deleted the bucket goes with it rather than violating that.
+    source_round_id = Column(Integer, ForeignKey("rounds.id", ondelete="CASCADE"), nullable=False)
+    round_id = Column(Integer, ForeignKey("rounds.id", ondelete="SET NULL"))
+
+    tournament = relationship("Tournament")
+    source_round = relationship("Round", foreign_keys=[source_round_id])
+    round = relationship("Round", foreign_keys=[round_id])
+    entries = relationship("BucketTeam", cascade="all, delete-orphan")
+
+
+class BucketTeam(Base):
+    """One team pulled into a Bucket. source_pool_id/seed_rank are only set
+    for a team pulled from a league pool (NULL for a knockout winner) — they
+    drive cross-pool seeding when the bucket becomes a knockout round
+    (routers/buckets.py _seed_bucket_teams), so two teams that both came from
+    Pool A don't end up paired against each other in Round 1."""
+    __tablename__ = "bucket_teams"
+    bucket_id = Column(Integer, ForeignKey("buckets.id", ondelete="CASCADE"), primary_key=True)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), primary_key=True)
+    source_pool_id = Column(Integer, ForeignKey("pools.id", ondelete="SET NULL"))
+    seed_rank = Column(Integer)
+
+    team = relationship("Team")
+    source_pool = relationship("Pool")
 
 
 pool_teams = Table(

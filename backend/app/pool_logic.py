@@ -8,24 +8,29 @@ from itertools import combinations
 MIN_POOL_SIZE = 5
 
 
-def distribute_pool_sizes(team_count: int) -> list[int]:
+def distribute_pool_sizes(team_count: int, target_size: int = MIN_POOL_SIZE) -> list[int]:
     """How many teams each pool should get for a balanced pool stage.
 
-    Every pool has at least MIN_POOL_SIZE teams — a remainder never becomes
+    Every pool has at least `target_size` teams (the organizer's chosen
+    teams-per-pool, defaulting to MIN_POOL_SIZE) — a remainder never becomes
     its own undersized pool; instead it's spread one-by-one across the
-    *last* pools (so e.g. 21 teams -> [5, 5, 5, 6], 24 teams -> [6, 6, 6, 6]),
-    wrapping around if there are more extra teams than pools (e.g. 9 teams,
-    with only 1 possible pool, all land in that one pool: [9]).
+    *last* pools (so e.g. 21 teams at target_size=5 -> [5, 5, 5, 6], 24 teams
+    -> [6, 6, 6, 6]), wrapping around if there are more extra teams than
+    pools (e.g. 9 teams, with only 1 possible pool, all land in that one
+    pool: [9]).
 
-    Raises ValueError if there aren't enough teams to form even one pool.
+    Raises ValueError if target_size is below the system floor, or if there
+    aren't enough teams to form even one pool at that size.
     """
-    if team_count < MIN_POOL_SIZE:
-        raise ValueError(f"Need at least {MIN_POOL_SIZE} teams to form a pool (got {team_count})")
+    if target_size < MIN_POOL_SIZE:
+        raise ValueError(f"Teams per pool can't be below the minimum of {MIN_POOL_SIZE}")
+    if team_count < target_size:
+        raise ValueError(f"Need at least {target_size} teams to form a pool (got {team_count})")
 
-    base_pools = team_count // MIN_POOL_SIZE
-    remainder = team_count % MIN_POOL_SIZE
+    base_pools = team_count // target_size
+    remainder = team_count % target_size
 
-    sizes = [MIN_POOL_SIZE] * base_pools
+    sizes = [target_size] * base_pools
     for k in range(remainder):
         idx = base_pools - 1 - (k % base_pools)
         sizes[idx] += 1

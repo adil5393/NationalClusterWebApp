@@ -16,7 +16,10 @@ export default defineConfig({
     strictPort: true,
     allowedHosts: true,
     hmr: { clientPort: 443, protocol: "wss" },
-    watch: { ignored: ["**/node_modules/**", "**/.git/**"], usePolling: true, interval: 300 },
+    // android/** alone is 17k+ files (Gradle build output included) — polling
+    // all of it every 300ms over the Docker/Windows bind mount was starving
+    // the dev server's event loop until it stopped responding to requests.
+    watch: { ignored: ["**/node_modules/**", "**/.git/**", "**/android/**", "**/dist/**"], usePolling: true, interval: 300 },
   },
   preview: { host: true, port: 5173 },
 });

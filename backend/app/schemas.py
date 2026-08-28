@@ -57,8 +57,9 @@ class TeamUpdate(BaseModel):
     member_count: Optional[int] = None
     notes: Optional[str] = None
     # Toggled directly from the Teams table (see PUT /teams/{id}), never part
-    # of the main edit form.
+    # of the main edit form. Exclusivity/pool rules enforced in the router.
     last_year_winner: Optional[bool] = None
+    last_year_runner: Optional[bool] = None
 
 
 class AccommodationLocation(BaseModel):
@@ -76,6 +77,7 @@ class TeamRead(ORMModel, TeamBase):
     accommodation_locations: List[AccommodationLocation] = []
     age_group_counts: dict[str, int] = {}  # e.g. {"Under 14": 10, "Under 17": 8}
     last_year_winner: bool = False
+    last_year_runner: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -563,6 +565,30 @@ class RoundUpdate(BaseModel):
     sequence: Optional[int] = None
 
 
+# Round-by-round advance flow (routers/buckets.py): a finished round's
+# winners/qualifiers get pulled into a Bucket over time, which the organizer
+# later turns into a new round of either format.
+ROUND_FORMATS = ["KNOCKOUT", "LEAGUE"]
+
+
+class BucketPullRequest(BaseModel):
+    team_ids: List[int]
+    pool_id: Optional[int] = None  # required when pulling from a league round; omit for a knockout source
+
+
+class BucketCreateRoundRequest(BaseModel):
+    name: str
+    format: str
+    bye_team_ids: List[int] = []  # only meaningful when format == "KNOCKOUT"
+
+    @field_validator("format")
+    @classmethod
+    def valid_format(cls, v):
+        if v not in ROUND_FORMATS:
+            raise ValueError(f"format must be one of {ROUND_FORMATS}")
+        return v
+
+
 class MatchCreate(BaseModel):
     team_a_id: Optional[int] = None
     team_b_id: Optional[int] = None
@@ -611,6 +637,15 @@ class MatchCompleteRequest(BaseModel):
 class GenerateBracketRequest(BaseModel):
     team_ids: List[int]
     replace: bool = False  # required to be true if the tournament already has rounds
+    # Organizer's explicit choice of which team(s) get a Round 1 bye — required
+    # (and must be exactly bracket_size - len(team_ids) teams) whenever the team
+    # count isn't already a power of two. No automatic assignment.
+    bye_team_ids: List[int] = []
+    # True (default, existing behavior): auto-create every round through the
+    # Final with placeholder slots. False: create only Round 1 — later rounds
+    # get built one at a time via the bucket flow (routers/buckets.py) once
+    # each round finishes, same as a round created that way from the start.
+    whole_season: bool = True
 
 
 # --- League / pool stage (alongside knockout, within the same Tournament -> Round -> Match tree) ---
@@ -636,6 +671,10 @@ class AutoCreatePoolsRequest(BaseModel):
     # this is what powers the "Create 4 pools? Pool A - 6 teams..." confirm
     # step. True: actually create the pools/teams/matches.
     commit: bool = False
+    # Organizer's chosen teams-per-pool target — omit to fall back to
+    # pool_logic.MIN_POOL_SIZE. Must be >= MIN_POOL_SIZE (enforced in
+    # distribute_pool_sizes, not hardcoded here).
+    teams_per_pool: Optional[int] = None
 
 
 class FinalizePoolRequest(BaseModel):

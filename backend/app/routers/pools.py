@@ -20,10 +20,15 @@ router = APIRouter(tags=["pools"])
 
 
 # ---------- helpers ----------
-def _eligible_teams(db: Session, tournament: models.Tournament) -> list[models.Team]:
-    """Same eligibility rule as knockout (routers/matches.py _check_team_age_group):
-    any team with a registered participant in the tournament's age group, or
-    every team if the tournament isn't scoped to one."""
+def _eligible_teams(db: Session, tournament: models.Tournament, round_: models.Round | None = None) -> list[models.Team]:
+    """A round created via the round-by-round advance flow (routers/matches.py
+    generate_next_round) has an explicit entrants list — its bucket — and
+    pools for that round may only draw from it. A round with no entrants
+    (Round-1-style, or created the old way) falls back to the tournament-wide
+    rule: any team with a registered participant in the tournament's age
+    group, or every team if the tournament isn't scoped to one."""
+    if round_ is not None and round_.entrants:
+        return sorted(round_.entrants, key=lambda t: t.name)
     if not tournament.age_group:
         return db.query(models.Team).order_by(models.Team.name).all()
     team_ids = {
@@ -66,6 +71,18 @@ def _teams_already_in_round(db: Session, round_id: int, exclude_pool_id: int | N
     return result
 
 
+def _check_last_year_conflict(pool_teams: list[models.Team], team: models.Team) -> None:
+    """Last year's winner and runner-up can never share a pool."""
+    if team.last_year_winner:
+        conflict = next((t for t in pool_teams if t.id != team.id and t.last_year_runner), None)
+        if conflict:
+            raise HTTPException(409, f"{team.name} (last year's winner) can't share a pool with {conflict.name} (last year's runner-up)")
+    if team.last_year_runner:
+        conflict = next((t for t in pool_teams if t.id != team.id and t.last_year_winner), None)
+        if conflict:
+            raise HTTPException(409, f"{team.name} (last year's runner-up) can't share a pool with {conflict.name} (last year's winner)")
+
+
 def _get_round(db: Session, tournament_id: int, round_id: int) -> models.Round:
     r = db.get(models.Round, round_id)
     if not r or r.tournament_id != tournament_id:
@@ -100,7 +117,7 @@ def league_summary(tournament_id: int, round_id: int, db: Session = Depends(get_
         raise HTTPException(404, "Tournament not found")
     round_ = _get_round(db, tournament_id, round_id)
 
-    eligible = _eligible_teams(db, t)
+    eligible = _eligible_teams(db, t, round_)
     assigned_map = _teams_already_in_round(db, round_id)
     unassigned = [team for team in eligible if team.id not in assigned_map]
 
@@ -113,6 +130,7 @@ def league_summary(tournament_id: int, round_id: int, db: Session = Depends(get_
         "round_id": round_id,
         "round_name": round_.name,
         "eligible_team_count": len(eligible),
+        "eligible_teams": [{"id": team.id, "name": team.name} for team in eligible],
         "assigned_team_count": len(assigned_map),
         "unassigned_teams": [{"id": t.id, "name": t.name} for t in unassigned],
         "pool_count": len(pool_summaries),
@@ -185,6 +203,7 @@ def delete_pool(pool_id: int, db: Session = Depends(get_db)):
 # ---------- Team assignment ----------
 def _add_teams_to_pool(db: Session, tournament: models.Tournament, pool: models.Pool, team_ids: list[int]) -> None:
     already = _teams_already_in_round(db, pool.round_id, exclude_pool_id=pool.id)
+    entrant_ids = {t.id for t in pool.round.entrants} if pool.round.entrants else None
     current_ids = {t.id for t in pool.teams}
     for team_id in team_ids:
         if team_id in current_ids:
@@ -193,8 +212,11 @@ def _add_teams_to_pool(db: Session, tournament: models.Tournament, pool: models.
         if not team:
             raise HTTPException(404, f"Team {team_id} not found")
         _check_team_age_group(db, team_id, tournament.age_group)
+        if entrant_ids is not None and team_id not in entrant_ids:
+            raise HTTPException(400, f"{team.name} isn't part of this round's advancing teams")
         if team_id in already:
             raise HTTPException(409, f"{team.name} is already in another pool this round (pool #{already[team_id]})")
+        _check_last_year_conflict(pool.teams, team)
         pool.teams.append(team)
         current_ids.add(team_id)
 
@@ -260,14 +282,14 @@ def auto_create_pools(tournament_id: int, round_id: int, payload: schemas.AutoCr
     t = db.get(models.Tournament, tournament_id)
     if not t:
         raise HTTPException(404, "Tournament not found")
-    _get_round(db, tournament_id, round_id)
+    round_ = _get_round(db, tournament_id, round_id)
 
-    eligible = _eligible_teams(db, t)
+    eligible = _eligible_teams(db, t, round_)
     assigned = _teams_already_in_round(db, round_id)
     unassigned = [team for team in eligible if team.id not in assigned]
 
     try:
-        sizes = distribute_pool_sizes(len(unassigned))
+        sizes = distribute_pool_sizes(len(unassigned), payload.teams_per_pool or MIN_POOL_SIZE)
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -287,7 +309,9 @@ def auto_create_pools(tournament_id: int, round_id: int, payload: schemas.AutoCr
         db.add(pool)
         db.flush()
         for team_id in entry["team_ids"]:
-            pool.teams.append(db.get(models.Team, team_id))
+            team = db.get(models.Team, team_id)
+            _check_last_year_conflict(pool.teams, team)
+            pool.teams.append(team)
         db.flush()
         _generate_pool_matches(db, pool)
         pool.status = "finalized"

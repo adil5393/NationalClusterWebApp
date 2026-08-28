@@ -13,6 +13,7 @@ from .routers import (
     attachments,
     attendance,
     auth,
+    buckets,
     dashboard,
     exports,
     health,
@@ -116,6 +117,7 @@ for router_module, module_key in (
     (staff, "staff"),
     (matches, "matches"),
     (pools, "matches"),
+    (buckets, "matches"),
     (attendance, "attendance"),
 ):
     app.include_router(router_module.router, dependencies=[Depends(require_module(module_key))])

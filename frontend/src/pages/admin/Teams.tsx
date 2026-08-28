@@ -30,7 +30,10 @@ interface Team {
   accommodation_locations?: { room?: string | null; building?: string | null; whole_team: boolean; count: number }[];
   age_group_counts?: Record<string, number>;
   last_year_winner?: boolean;
+  last_year_runner?: boolean;
 }
+
+type LastYearField = "last_year_winner" | "last_year_runner";
 
 const MIN_SQUAD_SIZE = 12;
 
@@ -56,9 +59,22 @@ function AgeGroupCountsCell({ counts }: { counts?: Record<string, number> }) {
   );
 }
 
-function LastYearWinnerCell({ team, canEdit, onToggle, dark }: { team: Team; canEdit: boolean; onToggle: (team: Team) => void; dark?: boolean }) {
-  const isWinner = !!team.last_year_winner;
-  const badge = isWinner ? (
+const LAST_YEAR_FIELD_LABEL: Record<LastYearField, string> = {
+  last_year_winner: "last year's winner",
+  last_year_runner: "last year's runner-up",
+};
+
+function LastYearAwardCell({
+  team, field, canEdit, onToggle, dark,
+}: {
+  team: Team;
+  field: LastYearField;
+  canEdit: boolean;
+  onToggle: (team: Team, field: LastYearField) => void;
+  dark?: boolean;
+}) {
+  const isSet = !!team[field];
+  const badge = isSet ? (
     <span className={cn(
       "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-bold ring-1",
       dark ? "bg-amber-500/15 text-amber-400 ring-amber-500/30" : "bg-amber-50 text-amber-700 ring-amber-200",
@@ -74,8 +90,14 @@ function LastYearWinnerCell({ team, canEdit, onToggle, dark }: { team: Team; can
     </span>
   );
   if (!canEdit) return badge;
+  const label = LAST_YEAR_FIELD_LABEL[field];
   return (
-    <button onClick={() => onToggle(team)} data-testid={`last-year-winner-toggle-${team.id}`} className="inline-flex items-center" title={isWinner ? "Mark as not a winner" : "Mark as last year's winner"}>
+    <button
+      onClick={() => onToggle(team, field)}
+      data-testid={`${field === "last_year_winner" ? "last-year-winner" : "last-year-runner"}-toggle-${team.id}`}
+      className="inline-flex items-center"
+      title={isSet ? `Mark as not ${label}` : `Mark as ${label}`}
+    >
       {badge}
     </button>
   );
@@ -146,14 +168,18 @@ export default function AdminTeams() {
     load();
   };
 
-  const toggleLastYearWinner = async (t: Team) => {
-    const next = !t.last_year_winner;
-    setTeams((rows) => rows.map((r) => (r.id === t.id ? { ...r, last_year_winner: next } : r))); // optimistic
+  const toggleLastYearAward = async (t: Team, field: LastYearField) => {
+    const next = !t[field];
     try {
-      await api.put(`/teams/${t.id}`, { last_year_winner: next });
-    } catch {
-      toast.error("Could not update Last Year Winner status");
-      setTeams((rows) => rows.map((r) => (r.id === t.id ? { ...r, last_year_winner: t.last_year_winner } : r))); // revert
+      await api.put(`/teams/${t.id}`, { [field]: next });
+      // Setting yes can silently clear the flag on whichever other team held
+      // it (only one winner/runner is allowed at a time) — reload rather than
+      // patch locally so every row stays in sync.
+      load();
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail;
+      const msg = typeof detail === "string" ? detail : e?.message;
+      toast.error(msg || `Could not update ${LAST_YEAR_FIELD_LABEL[field]} status`);
     }
   };
 
@@ -214,7 +240,16 @@ export default function AdminTeams() {
                         <div className="break-words text-sm font-bold leading-tight text-white">{t.name}</div>
                         {t.school && <div className="truncate text-[11px] leading-tight text-slate-400">{t.school}</div>}
                       </div>
-                      <LastYearWinnerCell team={t} canEdit={canEdit} onToggle={toggleLastYearWinner} dark />
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] font-semibold leading-tight text-slate-500">Winner</span>
+                          <LastYearAwardCell team={t} field="last_year_winner" canEdit={canEdit} onToggle={toggleLastYearAward} dark />
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] font-semibold leading-tight text-slate-500">Runner</span>
+                          <LastYearAwardCell team={t} field="last_year_runner" canEdit={canEdit} onToggle={toggleLastYearAward} dark />
+                        </div>
+                      </div>
                     </div>
 
                     <div className="mt-1.5 flex flex-wrap items-center gap-1">
@@ -273,6 +308,7 @@ export default function AdminTeams() {
                     <TH>#</TH>
                     <TH>Team</TH>
                     <TH>Last Year Winner</TH>
+                    <TH>Last Year Runner-up</TH>
                     <TH>Region</TH>
                     <TH>Country</TH>
                     <TH className="text-right">Members</TH>
@@ -287,7 +323,8 @@ export default function AdminTeams() {
                     <TR key={t.id} data-testid={`team-row-${t.id}`}>
                       <TD className="text-slate-400">{i + 1}</TD>
                       <TD className="font-bold text-slate-900">{t.name}<div className="text-xs font-normal text-slate-500">{t.school}</div></TD>
-                      <TD><LastYearWinnerCell team={t} canEdit={canEdit} onToggle={toggleLastYearWinner} /></TD>
+                      <TD><LastYearAwardCell team={t} field="last_year_winner" canEdit={canEdit} onToggle={toggleLastYearAward} /></TD>
+                      <TD><LastYearAwardCell team={t} field="last_year_runner" canEdit={canEdit} onToggle={toggleLastYearAward} /></TD>
                       <TD>{t.region || "—"}</TD>
                       <TD><Badge tone={t.country === "India" ? "coral" : "blue"}>{t.country}</Badge></TD>
                       <TD className="text-right font-semibold">{t.member_count ?? 0}</TD>
