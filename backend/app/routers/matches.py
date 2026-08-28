@@ -262,22 +262,37 @@ def _place_byes(team_ids: list[int], bye_team_ids: list[int]) -> list[tuple[str,
     ]
 
 
-def _create_one_knockout_round(db: Session, tournament_id: int, round_id: int, team_ids: list[int], bye_team_ids: list[int]) -> None:
+def _create_one_knockout_round(db: Session, tournament_id: int, round_id: int, team_ids: list[int], bye_team_ids: list[int]) -> set[int]:
     """Pairs up team_ids into a single round of matches (no cascading further
-    rounds — see generate_next_round, which the caller uses to build the
-    round *after* this one once it's finished). Byes go by the same
-    power-of-two rule as generate_bracket (bracket_size - n): e.g. 31 teams
-    needs exactly 1 bye to make a clean field of 32, not just parity."""
-    slots = _place_byes(team_ids, bye_team_ids)
-    for (kind_a, val_a), (kind_b, val_b) in (slots[i:i + 2] for i in range(0, len(slots), 2)):
-        if kind_a == "bye":
-            _create_bye_match(db, tournament_id, round_id, val_b)
-            continue
-        if kind_b == "bye":
-            _create_bye_match(db, tournament_id, round_id, val_a)
-            continue
-        db.add(models.Match(tournament_id=tournament_id, round_id=round_id, team_a_id=val_a, team_b_id=val_b))
+    rounds — only used by the bucket flow, which builds one round at a time).
+    Unlike generate_bracket's Round 1 — which must land on a clean power of
+    two since it plans the whole tree upfront, so its byes are mandatory and
+    exact — a bucket-built round is decided fresh each time it's created, so
+    byes here are entirely optional: the organizer may pick any subset of
+    team_ids to advance without playing. Whatever's left pairs up two at a
+    time; if that leaves one team over (an odd remainder nobody picked a bye
+    for), it's simply left out of this round rather than forcing a bye on it
+    — the caller keeps it "pulled" in the bucket for a future create-round
+    call once another odd-one-out shows up to pair with it. Returns the set
+    of team_ids actually placed into a match this round, so the caller knows
+    which bucket entries to mark "pushed" (and which one, if any, to leave)."""
+    bye_ids = list(dict.fromkeys(bye_team_ids))
+    for bid in bye_ids:
+        if bid not in team_ids:
+            raise HTTPException(400, f"Bye team {bid} isn't in the selected team list")
+
+    bye_set = set(bye_ids)
+    remaining = [tid for tid in team_ids if tid not in bye_set]
+    if len(remaining) % 2 == 1:
+        remaining.pop()  # left out of this round entirely — stays pulled, not pushed
+
+    for bid in bye_ids:
+        _create_bye_match(db, tournament_id, round_id, bid)
+    for i in range(0, len(remaining), 2):
+        db.add(models.Match(tournament_id=tournament_id, round_id=round_id, team_a_id=remaining[i], team_b_id=remaining[i + 1]))
     db.flush()
+
+    return bye_set | set(remaining)
 
 
 def _bracket_round_name(match_count: int) -> str:

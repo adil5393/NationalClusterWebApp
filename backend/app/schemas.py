@@ -577,14 +577,21 @@ class BucketPullRequest(BaseModel):
 
 
 class BucketCreateRoundRequest(BaseModel):
-    name: str
-    format: str
-    bye_team_ids: List[int] = []  # only meaningful when format == "KNOCKOUT"
+    # Either start a brand new round (name + format required) or fold the
+    # currently-pulled teams into a round already built from this same
+    # bucket earlier (target_round_id set — e.g. pool A/B's winners already
+    # started Round 3, and pool C's are ready to join it too). Exactly one
+    # of the two modes; enforced in the router since it depends on which
+    # fields are present, not on either alone.
+    name: Optional[str] = None
+    format: Optional[str] = None
+    target_round_id: Optional[int] = None
+    bye_team_ids: List[int] = []  # only meaningful for a KNOCKOUT round
 
     @field_validator("format")
     @classmethod
     def valid_format(cls, v):
-        if v not in ROUND_FORMATS:
+        if v is not None and v not in ROUND_FORMATS:
             raise ValueError(f"format must be one of {ROUND_FORMATS}")
         return v
 

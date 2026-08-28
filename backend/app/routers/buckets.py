@@ -49,6 +49,18 @@ def _bucket_dict(db: Session, bucket: models.Bucket) -> dict:
     pulled_pool_ids = {e.source_pool_id for e in bucket.entries if e.source_pool_id is not None}
     pulled_team_ids = {e.team_id for e in bucket.entries}
 
+    # Every round already built from this bucket (usually just one) — so the
+    # dialog can offer "add these teams to Round 3" instead of always
+    # starting a brand new round when, say, pool A/B already pushed early
+    # and pool C is ready to join the same round.
+    pushed_rounds: dict[int, dict] = {}
+    for e in bucket.entries:
+        if e.pushed_round_id and e.pushed_round:
+            row = pushed_rounds.setdefault(e.pushed_round_id, {
+                "id": e.pushed_round_id, "name": e.pushed_round.name, "format": e.pushed_round.format, "team_count": 0,
+            })
+            row["team_count"] += 1
+
     pools_status = None
     knockout_status = None
     if advancing and advancing["format"] == "LEAGUE":
@@ -90,6 +102,7 @@ def _bucket_dict(db: Session, bucket: models.Bucket) -> dict:
         ],
         "pools": pools_status,
         "knockout": knockout_status,
+        "pushed_rounds": sorted(pushed_rounds.values(), key=lambda r: r["id"]),
     }
 
 
@@ -225,25 +238,43 @@ def _seed_bucket_teams(entries: list[models.BucketTeam]) -> list[int]:
 def create_round_from_bucket(bucket_id: int, payload: schemas.BucketCreateRoundRequest, db: Session = Depends(get_db)):
     bucket = _get_bucket(db, bucket_id)
     available = [e for e in bucket.entries if e.pushed_round_id is None]
-    if len(available) < 2:
-        raise HTTPException(400, "Pull at least 2 teams into the bucket first")
+
+    if payload.target_round_id is not None:
+        # Fold the currently-pulled teams into a round already built from
+        # this same bucket earlier — e.g. pool A/B's winners already started
+        # Round 3, and pool C's are ready to join it too. At least 1 pulled
+        # team is enough here (it can join as a bye), since the round it's
+        # joining already has real matches in it.
+        if not available:
+            raise HTTPException(400, "Pull at least 1 team into the bucket first")
+        round_ = db.get(models.Round, payload.target_round_id)
+        if not round_ or round_.tournament_id != bucket.tournament_id or round_.source_round_id != bucket.source_round_id:
+            raise HTTPException(404, "That round wasn't built from this bucket")
+        fmt = round_.format
+    else:
+        if len(available) < 2:
+            raise HTTPException(400, "Pull at least 2 teams into the bucket first")
+        if not payload.name or not payload.format:
+            raise HTTPException(400, "name and format are required to start a new round")
+        fmt = payload.format
+        round_ = models.Round(
+            tournament_id=bucket.tournament_id, name=payload.name, sequence=bucket.source_round.sequence + 1,
+            format=fmt, source_round_id=bucket.source_round_id,
+        )
+        db.add(round_)
+        db.flush()
 
     team_ids = _seed_bucket_teams(available)
 
-    round_ = models.Round(
-        tournament_id=bucket.tournament_id, name=payload.name, sequence=bucket.source_round.sequence + 1,
-        format=payload.format, source_round_id=bucket.source_round_id,
-    )
-    db.add(round_)
-    db.flush()
-
-    if payload.format == "KNOCKOUT":
-        _create_one_knockout_round(db, bucket.tournament_id, round_.id, team_ids, payload.bye_team_ids)
+    if fmt == "KNOCKOUT":
+        placed = _create_one_knockout_round(db, bucket.tournament_id, round_.id, team_ids, payload.bye_team_ids)
     else:
-        round_.entrants = [e.team for e in available]
+        round_.entrants = list(round_.entrants) + [e.team for e in available]
+        placed = {e.team_id for e in available}
 
     for e in available:
-        e.pushed_round_id = round_.id
+        if e.team_id in placed:
+            e.pushed_round_id = round_.id
 
     db.commit()
     db.refresh(round_)

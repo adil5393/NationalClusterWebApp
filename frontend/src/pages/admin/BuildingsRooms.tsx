@@ -77,7 +77,7 @@ export default function BuildingsRooms() {
       ) : (
         <div className="mt-6 space-y-3">
           {buildings.map((b) => {
-            const isOpen = expanded[b.id] ?? true;
+            const isOpen = expanded[b.id] ?? false;
             const totalRooms = b.floors.reduce((n, f) => n + f.rooms.length, 0);
             const totalCap = b.floors.reduce((n, f) => n + f.rooms.reduce((c, r) => c + (r.capacity || 0), 0), 0);
             return (

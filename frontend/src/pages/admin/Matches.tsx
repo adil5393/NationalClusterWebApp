@@ -50,12 +50,14 @@ interface BucketTeamT {
   id: number; name: string; source_pool_id?: number | null; source_pool_name?: string | null; seed_rank?: number | null;
   pushed_round_id?: number | null; pushed_round_name?: string | null;
 }
+interface BucketPushedRoundT { id: number; name: string; format: "KNOCKOUT" | "LEAGUE"; team_count: number }
 interface BucketT {
   id: number; tournament_id: number; name: string;
   source_round_id: number; source_round_name?: string | null; source_format?: "KNOCKOUT" | "LEAGUE" | null;
   teams: BucketTeamT[];
   pools: BucketPoolStatusT[] | null;
   knockout: BucketKnockoutStatusT | null;
+  pushed_rounds: BucketPushedRoundT[];
 }
 
 const STATUS_TONE: Record<string, "neutral" | "coral" | "green" | "blue" | "amber" | "red" | "slate"> = {
@@ -222,9 +224,9 @@ export default function Matches() {
 
   const [bucketRoundId, setBucketRoundId] = useState<number | null>(null);
 
-  const [collapsedRounds, setCollapsedRounds] = useState<Set<number>>(new Set());
+  const [expandedRounds, setExpandedRounds] = useState<Set<number>>(new Set());
   const toggleRoundCollapsed = (id: number) => {
-    setCollapsedRounds((prev) => {
+    setExpandedRounds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
@@ -233,9 +235,9 @@ export default function Matches() {
 
   const [roundSearch, setRoundSearch] = useState<Record<number, string>>({});
 
-  const [collapsedPoolGroups, setCollapsedPoolGroups] = useState<Set<string>>(new Set());
+  const [expandedPoolGroups, setExpandedPoolGroups] = useState<Set<string>>(new Set());
   const togglePoolGroupCollapsed = (key: string) => {
-    setCollapsedPoolGroups((prev) => {
+    setExpandedPoolGroups((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key); else next.add(key);
       return next;
@@ -595,7 +597,7 @@ export default function Matches() {
                       (m.source_match_b_id != null && thisRoundMatchIds.has(m.source_match_b_id))
                     )
                   );
-                  const collapsed = collapsedRounds.has(r.id);
+                  const collapsed = !expandedRounds.has(r.id);
                   const query = (roundSearch[r.id] ?? "").trim().toLowerCase();
                   const filteredMatches = query
                     ? r.matches.filter((m) => m.team_a_name?.toLowerCase().includes(query) || m.team_b_name?.toLowerCase().includes(query))
@@ -666,7 +668,7 @@ export default function Matches() {
                         <div className="mt-2 space-y-4">
                           {pools.map((p) => {
                             const groupKey = `${r.id}:${p.key}`;
-                            const poolCollapsed = collapsedPoolGroups.has(groupKey);
+                            const poolCollapsed = !expandedPoolGroups.has(groupKey);
                             return (
                               <div key={p.key || "none"}>
                                 <button
@@ -1036,6 +1038,11 @@ function BucketDialog({ tournamentId, roundId, onClose, onRoundCreated }: {
   const [name, setName] = useState("");
   const [byeTeamIds, setByeTeamIds] = useState<number[]>([]);
   const [creating, setCreating] = useState(false);
+  // "new" starts a fresh round; a round id instead folds the currently-
+  // pulled teams into a round already built from this bucket earlier (e.g.
+  // pool A/B already pushed into Round 3 and pool C is ready to join it).
+  const [targetRoundId, setTargetRoundId] = useState<number | "new">("new");
+  const [targetInitialized, setTargetInitialized] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -1044,6 +1051,17 @@ function BucketDialog({ tournamentId, roundId, onClose, onRoundCreated }: {
       .catch((e) => toast.error(e?.response?.data?.detail ?? "Could not load bucket"))
       .finally(() => setLoading(false));
   }, [tournamentId, roundId]);
+
+  // Default to the most recently pushed round the first time the bucket
+  // loads (if any exist) — the common case is joining that round, not
+  // starting a separate one. Only runs once per dialog open; the organizer
+  // can still switch to "Start a new round" explicitly afterward.
+  useEffect(() => {
+    if (!bucket || targetInitialized) return;
+    const latest = bucket.pushed_rounds[bucket.pushed_rounds.length - 1];
+    setTargetRoundId(latest ? latest.id : "new");
+    setTargetInitialized(true);
+  }, [bucket, targetInitialized]);
 
   const bucketId = bucket?.id;
   const refresh = () => {
@@ -1111,48 +1129,57 @@ function BucketDialog({ tournamentId, roundId, onClose, onRoundCreated }: {
   const pulledTeams = allTeams.filter((t) => t.pushed_round_id == null);
   const pushedTeams = allTeams.filter((t) => t.pushed_round_id != null);
   const bucketTeamCount = pulledTeams.length;
-  const numByes = bucketTeamCount >= 2 ? bracketSizeFor(bucketTeamCount) - bucketTeamCount : 0;
+  const targetRound = targetRoundId === "new" ? null : (bucket?.pushed_rounds.find((r) => r.id === targetRoundId) ?? null);
+  const effectiveFormat = targetRound ? targetRound.format : format;
+  // Only a suggestion for the pre-fill below — not a requirement. A
+  // bucket-built round is decided fresh each time, so byes are entirely
+  // optional here (unlike Round 1's Generate Bracket, which must reach a
+  // clean power of two upfront): whoever isn't paired and isn't picked for a
+  // bye just stays pulled in the bucket, waiting for a future round.
+  const suggestedByeCount = bucketTeamCount >= 2 ? bracketSizeFor(bucketTeamCount) - bucketTeamCount : 0;
   // How many sources (league pools, or the knockout-winners feed) haven't
-  // been pulled into this bucket yet — if there are any, the current byes
-  // count isn't final; waiting for the rest could land on a power of two
-  // with no byes needed at all.
+  // been pulled into this bucket yet — if there are any, waiting for the
+  // rest could land on a power of two with nobody needing to sit out at all.
   const pendingSourceCount = bucket
     ? bucket.pools
       ? bucket.pools.filter((p) => !p.pulled).length
       : bucket.knockout && (!bucket.knockout.ready || bucket.knockout.new_winners.length > 0) ? 1 : 0
     : 0;
   const toggleByeTeam = (id: number) => {
-    setByeTeamIds((ids) => {
-      if (ids.includes(id)) return ids.filter((x) => x !== id);
-      if (ids.length >= numByes) return ids;
-      return [...ids, id];
-    });
+    setByeTeamIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
   };
-  // Pre-fill the bye picks with however many are needed (rather than making
-  // the organizer check dozens of boxes by hand) — they can still swap any
-  // pick by unchecking one and checking another. Only tops up/trims when the
-  // bucket's own pulled-team list changes, never fights a manual toggle.
+  // Pre-fill the bye picks with the suggested count (rather than making the
+  // organizer check dozens of boxes by hand) — purely a convenience default,
+  // freely edited (including down to zero) since byes aren't required here.
+  // Only tops up/trims when the bucket's own pulled-team list changes, never
+  // fights a manual toggle.
   useEffect(() => {
     const pulledIds = pulledTeams.map((t) => t.id);
     setByeTeamIds((ids) => {
       const valid = ids.filter((id) => pulledIds.includes(id));
-      if (valid.length === numByes) return valid;
-      if (valid.length > numByes) return valid.slice(0, numByes);
+      if (valid.length === suggestedByeCount) return valid;
+      if (valid.length > suggestedByeCount) return valid.slice(0, suggestedByeCount);
       const remaining = pulledIds.filter((id) => !valid.includes(id));
-      return [...valid, ...remaining.slice(0, numByes - valid.length)];
+      return [...valid, ...remaining.slice(0, suggestedByeCount - valid.length)];
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bucket, numByes]);
+  }, [bucket, suggestedByeCount]);
 
   const createRound = async () => {
     if (!bucketId) return;
-    if (!name.trim()) return toast.error("Round name is required");
-    if (bucketTeamCount < 2) return toast.error("Pull at least 2 teams into the bucket first");
-    if (format === "KNOCKOUT" && byeTeamIds.length !== numByes) return toast.error(`Select exactly ${numByes} team(s) for the bye`);
+    if (targetRound) {
+      if (bucketTeamCount < 1) return toast.error("Pull at least 1 team into the bucket first");
+    } else {
+      if (!name.trim()) return toast.error("Round name is required");
+      if (bucketTeamCount < 2) return toast.error("Pull at least 2 teams into the bucket first");
+    }
     setCreating(true);
     try {
-      await api.post(`/buckets/${bucketId}/create-round`, { name, format, bye_team_ids: format === "KNOCKOUT" ? byeTeamIds : [] });
-      toast.success("Round created");
+      await api.post(`/buckets/${bucketId}/create-round`, {
+        ...(targetRound ? { target_round_id: targetRound.id } : { name, format }),
+        bye_team_ids: effectiveFormat === "KNOCKOUT" ? byeTeamIds : [],
+      });
+      toast.success(targetRound ? `Added to ${targetRound.name}` : "Round created");
       onRoundCreated();
     } catch (e: any) {
       toast.error(e?.response?.data?.detail ?? "Could not create the round");
@@ -1266,26 +1293,54 @@ function BucketDialog({ tournamentId, roundId, onClose, onRoundCreated }: {
             </div>
           )}
 
-          {bucketTeamCount >= 2 ? (
+          {bucketTeamCount >= (targetRound ? 1 : 2) ? (
             <div className="space-y-4 border-t border-white/10 pt-4">
-              <div><Label>New Round Name *</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Round 2, Semi Final…" data-testid="advance-round-name-input" /></div>
-              <div>
-                <Label>Format</Label>
-                <div className="mt-1 flex gap-2">
-                  <Button type="button" variant={format === "KNOCKOUT" ? "primary" : "outline"} size="sm" onClick={() => setFormat("KNOCKOUT")} data-testid="advance-format-knockout">Knockout</Button>
-                  <Button type="button" variant={format === "LEAGUE" ? "primary" : "outline"} size="sm" onClick={() => setFormat("LEAGUE")} data-testid="advance-format-league">League</Button>
-                </div>
-              </div>
-
-              {format === "KNOCKOUT" && numByes > 0 && (
+              {bucket.pushed_rounds.length > 0 && (
                 <div>
-                  <Label>Byes ({byeTeamIds.length} of {numByes} selected)</Label>
+                  <Label>Destination</Label>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {bucket.pushed_rounds.map((r) => (
+                      <Button
+                        key={r.id}
+                        type="button"
+                        variant={targetRoundId === r.id ? "primary" : "outline"}
+                        size="sm"
+                        onClick={() => setTargetRoundId(r.id)}
+                        data-testid={`advance-target-round-${r.id}`}
+                      >
+                        Add to {r.name} ({r.team_count} so far)
+                      </Button>
+                    ))}
+                    <Button type="button" variant={targetRoundId === "new" ? "primary" : "outline"} size="sm" onClick={() => setTargetRoundId("new")} data-testid="advance-target-new">
+                      Start a new round
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {!targetRound && (
+                <>
+                  <div><Label>New Round Name *</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Round 2, Semi Final…" data-testid="advance-round-name-input" /></div>
+                  <div>
+                    <Label>Format</Label>
+                    <div className="mt-1 flex gap-2">
+                      <Button type="button" variant={format === "KNOCKOUT" ? "primary" : "outline"} size="sm" onClick={() => setFormat("KNOCKOUT")} data-testid="advance-format-knockout">Knockout</Button>
+                      <Button type="button" variant={format === "LEAGUE" ? "primary" : "outline"} size="sm" onClick={() => setFormat("LEAGUE")} data-testid="advance-format-league">League</Button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {effectiveFormat === "KNOCKOUT" && suggestedByeCount > 0 && (
+                <div>
+                  <Label>Byes ({byeTeamIds.length} picked — optional)</Label>
                   <p className="mt-0.5 text-xs text-slate-400">
-                    {bucketTeamCount} teams isn't a power of two — pick exactly {numByes} team{numByes === 1 ? "" : "s"} to advance without playing.
+                    {bucketTeamCount} teams isn't a power of two. Optionally pick teams to advance without playing —
+                    anyone left over (not paired, not picked for a bye) simply stays in the bucket, waiting for a future round.
                   </p>
                   {pendingSourceCount > 0 && (
                     <p className="mt-1.5 rounded-md border border-amber-400/30 bg-amber-400/10 px-2.5 py-2 text-xs text-amber-300">
-                      {pendingSourceCount} more {bucket.pools ? "pool" : "source"}{pendingSourceCount === 1 ? " hasn't" : "s haven't"} been pulled into this bucket yet — waiting for {pendingSourceCount === 1 ? "it" : "them"} could land on a power of two with no byes needed. You can close this dialog and pull the rest in first, or continue now and pick byes below.
+                      {pendingSourceCount} more {bucket.pools ? "pool" : "source"}{pendingSourceCount === 1 ? " hasn't" : "s haven't"} been pulled into this bucket yet — waiting for {pendingSourceCount === 1 ? "it" : "them"} could land on a power of two with nobody needing to sit out.
                     </p>
                   )}
                   <div className="mt-1.5 max-h-40 overflow-y-auto rounded-md border border-white/10 bg-white/5 p-2" data-testid="advance-bye-team-list">
@@ -1294,7 +1349,6 @@ function BucketDialog({ tournamentId, roundId, onClose, onRoundCreated }: {
                         <input
                           type="checkbox"
                           checked={byeTeamIds.includes(t.id)}
-                          disabled={!byeTeamIds.includes(t.id) && byeTeamIds.length >= numByes}
                           onChange={() => toggleByeTeam(t.id)}
                         />
                         {t.name}
@@ -1308,10 +1362,10 @@ function BucketDialog({ tournamentId, roundId, onClose, onRoundCreated }: {
                 <Button variant="outline" onClick={onClose}>Close</Button>
                 <Button
                   onClick={createRound}
-                  disabled={creating || bucketTeamCount < 2 || (format === "KNOCKOUT" && byeTeamIds.length !== numByes)}
+                  disabled={creating || bucketTeamCount < (targetRound ? 1 : 2)}
                   data-testid="save-advance-round-btn"
                 >
-                  {creating ? "Creating…" : "Create Round"}
+                  {creating ? "Creating…" : targetRound ? `Add to ${targetRound.name}` : "Create Round"}
                 </Button>
               </div>
             </div>
