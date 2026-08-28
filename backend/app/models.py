@@ -448,10 +448,13 @@ round_entrants = Table(
 class Bucket(TimestampMixin, Base):
     """A staging area between a finished round and its successor (routers/
     buckets.py). Teams get pulled in — from a league round, pool by pool as
-    each finishes; from a knockout round, its match winners — and reviewed
-    before the organizer, in a separate action, turns the bucket into a new
-    round of whichever format (create-round). round_id is NULL while the
-    bucket is still open; set once it's been consumed into a round."""
+    each finishes; from a knockout round, its match winners — and stay in the
+    bucket for the whole life of its source round: the organizer can turn
+    just the currently-pulled entries into a round (create-round) as soon as
+    they're ready, then keep pulling more in later and do it again — e.g.
+    pool A/B's winners start playing while pool C/D are still finishing.
+    Each entry tracks its own pulled/pushed state (BucketTeam.pushed_round_id)
+    rather than the whole bucket closing after one round is built."""
     __tablename__ = "buckets"
     id = Column(Integer, primary_key=True)
     tournament_id = Column(Integer, ForeignKey("tournaments.id", ondelete="CASCADE"), nullable=False)
@@ -459,11 +462,9 @@ class Bucket(TimestampMixin, Base):
     # CASCADE (not SET NULL) — this column is NOT NULL, so if its source round
     # is ever deleted the bucket goes with it rather than violating that.
     source_round_id = Column(Integer, ForeignKey("rounds.id", ondelete="CASCADE"), nullable=False)
-    round_id = Column(Integer, ForeignKey("rounds.id", ondelete="SET NULL"))
 
     tournament = relationship("Tournament")
     source_round = relationship("Round", foreign_keys=[source_round_id])
-    round = relationship("Round", foreign_keys=[round_id])
     entries = relationship("BucketTeam", cascade="all, delete-orphan")
 
 
@@ -472,15 +473,25 @@ class BucketTeam(Base):
     for a team pulled from a league pool (NULL for a knockout winner) — they
     drive cross-pool seeding when the bucket becomes a knockout round
     (routers/buckets.py _seed_bucket_teams), so two teams that both came from
-    Pool A don't end up paired against each other in Round 1."""
+    Pool A don't end up paired against each other in Round 1.
+
+    pushed_round_id is NULL while the team is just sitting in the bucket
+    ("pulled") and set once create-round has placed it into an actual round
+    ("pushed") — SET NULL again automatically if that round is deleted, and
+    explicitly by the match cancel/delete endpoints if just that team's
+    knockout match is cancelled or removed (routers/matches.py
+    _free_pushed_bucket_entries), freeing the team for a future create-round
+    call from the same bucket."""
     __tablename__ = "bucket_teams"
     bucket_id = Column(Integer, ForeignKey("buckets.id", ondelete="CASCADE"), primary_key=True)
     team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), primary_key=True)
     source_pool_id = Column(Integer, ForeignKey("pools.id", ondelete="SET NULL"))
     seed_rank = Column(Integer)
+    pushed_round_id = Column(Integer, ForeignKey("rounds.id", ondelete="SET NULL"))
 
     team = relationship("Team")
     source_pool = relationship("Pool")
+    pushed_round = relationship("Round", foreign_keys=[pushed_round_id])
 
 
 pool_teams = Table(

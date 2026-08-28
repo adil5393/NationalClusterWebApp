@@ -3,9 +3,17 @@
 A round's advancing teams (knockout winners, or league pool qualifiers) get
 pulled into a Bucket over time — pool by pool as each finishes, for a league
 source — and reviewed before the organizer, in a separate action, turns the
-bucket into a new round of whichever format. This replaces the earlier
-one-shot "advance" endpoint, which forced resolving every pool and picking a
-format in the same request.
+*currently pulled* entries into a new round of whichever format (create-
+round). The bucket itself never closes: it stays open for the whole life of
+its source round, so the organizer can push an early subset (e.g. pool A/B's
+winners, while pool C/D are still finishing) into a round and keep playing,
+then later pull the rest in and push a second round from the same bucket.
+Each entry tracks its own state via BucketTeam.pushed_round_id — NULL means
+"pulled" (sitting in the bucket, available), set means "pushed" (already
+placed into that round, excluded from the next create-round call and from
+its team count/byes). Cancelling or deleting a pushed knockout match frees
+the team back to "pulled" (see routers/matches.py _free_pushed_bucket_entries);
+deleting the round it was pushed into does the same automatically (SET NULL).
 
 Reuses routers/matches.py's _compute_advancing_teams (the shared readiness/
 tie computation — knockout winners or per-pool league standings) and
@@ -28,46 +36,6 @@ def _get_bucket(db: Session, bucket_id: int) -> models.Bucket:
     if not b:
         raise HTTPException(404, "Bucket not found")
     return b
-
-
-def _team_still_committed(round_result: models.Round, team_id: int) -> bool:
-    """Whether a team pulled into some other bucket that became `round_result`
-    is still tied up there. For a knockout round every entrant is guaranteed
-    a match at creation time, so an absent or fully-cancelled match means it
-    was cancelled/deleted and the team is free again. A league round's
-    entrants aren't guaranteed pool matches yet (pools are built by hand
-    afterward), so a team there stays committed for as long as the round
-    itself exists — freeing it up means deleting that round, which already
-    reopens the bucket automatically (round_id reverts to NULL)."""
-    if round_result.format == "LEAGUE":
-        return True
-    team_matches = [m for m in round_result.matches if m.team_a_id == team_id or m.team_b_id == team_id]
-    return any(m.status != "CANCELLED" for m in team_matches)
-
-
-def _teams_committed_elsewhere(db: Session, bucket: models.Bucket) -> set[int]:
-    """Every team already tied up in another bucket sourced from the same
-    round as `bucket`, whose placement there is still active. Prevents the
-    same round's teams from being pulled into two different next-rounds at
-    once — a team frees up again once its match from that placement is
-    cancelled/deleted, or that whole round gets deleted."""
-    others = (
-        db.query(models.Bucket)
-        .filter(
-            models.Bucket.source_round_id == bucket.source_round_id,
-            models.Bucket.id != bucket.id,
-            models.Bucket.round_id.isnot(None),
-        )
-        .all()
-    )
-    committed: set[int] = set()
-    for other in others:
-        if not other.round:
-            continue
-        for e in other.entries:
-            if _team_still_committed(other.round, e.team_id):
-                committed.add(e.team_id)
-    return committed
 
 
 def _bucket_dict(db: Session, bucket: models.Bucket) -> dict:
@@ -108,7 +76,6 @@ def _bucket_dict(db: Session, bucket: models.Bucket) -> dict:
         "source_round_id": bucket.source_round_id,
         "source_round_name": bucket.source_round.name if bucket.source_round else None,
         "source_format": advancing["format"] if advancing else None,
-        "round_id": bucket.round_id,
         "teams": [
             {
                 "id": e.team_id,
@@ -116,6 +83,8 @@ def _bucket_dict(db: Session, bucket: models.Bucket) -> dict:
                 "source_pool_id": e.source_pool_id,
                 "source_pool_name": e.source_pool.name if e.source_pool else None,
                 "seed_rank": e.seed_rank,
+                "pushed_round_id": e.pushed_round_id,
+                "pushed_round_name": e.pushed_round.name if e.pushed_round else None,
             }
             for e in bucket.entries
         ],
@@ -134,11 +103,8 @@ def get_or_create_bucket(tournament_id: int, round_id: int, db: Session = Depend
     if not r or r.tournament_id != tournament_id:
         raise HTTPException(404, "Round not found for this tournament")
 
-    existing = (
-        db.query(models.Bucket)
-        .filter(models.Bucket.source_round_id == round_id, models.Bucket.round_id.is_(None))
-        .first()
-    )
+    # One bucket per source round, for its whole life — never re-created.
+    existing = db.query(models.Bucket).filter(models.Bucket.source_round_id == round_id).first()
     if existing:
         return _bucket_dict(db, existing)
 
@@ -158,19 +124,10 @@ def get_bucket(bucket_id: int, db: Session = Depends(get_db)):
 @router.post("/buckets/{bucket_id}/pull", status_code=201)
 def pull_into_bucket(bucket_id: int, payload: schemas.BucketPullRequest, db: Session = Depends(get_db)):
     bucket = _get_bucket(db, bucket_id)
-    if bucket.round_id is not None:
-        raise HTTPException(409, "This bucket has already been turned into a round")
 
     team_ids = list(dict.fromkeys(payload.team_ids))
     if not team_ids:
         raise HTTPException(400, "Pick at least one team to pull")
-
-    committed = _teams_committed_elsewhere(db, bucket)
-    conflicting = [tid for tid in team_ids if tid in committed]
-    if conflicting:
-        names = sorted(t.name for t in db.query(models.Team).filter(models.Team.id.in_(conflicting)).all())
-        verb = "has" if len(names) == 1 else "have"
-        raise HTTPException(409, f"{', '.join(names)} already {verb} an active match from this round in another bucket — cancel or delete it first")
 
     advancing = _compute_advancing_teams(db, bucket.source_round)
 
@@ -212,25 +169,26 @@ def pull_into_bucket(bucket_id: int, payload: schemas.BucketPullRequest, db: Ses
 
 @router.delete("/buckets/{bucket_id}/teams/{team_id}", status_code=204)
 def remove_bucket_team(bucket_id: int, team_id: int, db: Session = Depends(get_db)):
-    bucket = _get_bucket(db, bucket_id)
-    if bucket.round_id is not None:
-        raise HTTPException(409, "This bucket has already been turned into a round")
+    _get_bucket(db, bucket_id)  # 404 if the bucket itself doesn't exist
     entry = db.get(models.BucketTeam, (bucket_id, team_id))
-    if entry:
-        db.delete(entry)
-        db.commit()
+    if not entry:
+        return
+    if entry.pushed_round_id is not None:
+        raise HTTPException(409, "This team has already been placed into a round — cancel or delete that match first")
+    db.delete(entry)
+    db.commit()
 
 
 @router.delete("/buckets/{bucket_id}", status_code=204)
 def delete_bucket(bucket_id: int, db: Session = Depends(get_db)):
     bucket = _get_bucket(db, bucket_id)
-    if bucket.round_id is not None:
-        raise HTTPException(409, "This bucket has already been turned into a round — delete the round instead")
+    if any(e.pushed_round_id is not None for e in bucket.entries):
+        raise HTTPException(409, "This bucket has teams already placed into a round — remove those first")
     db.delete(bucket)
     db.commit()
 
 
-# ---------- Turning a bucket into a round ----------
+# ---------- Turning (currently pulled) bucket entries into a round ----------
 def _seed_bucket_teams(entries: list[models.BucketTeam]) -> list[int]:
     """All pools' rank-1 qualifiers first (in the order pools were pulled),
     then all rank-2s, etc. — so adjacent Round 1 pairing slots are never from
@@ -266,12 +224,11 @@ def _seed_bucket_teams(entries: list[models.BucketTeam]) -> list[int]:
 @router.post("/buckets/{bucket_id}/create-round", status_code=201)
 def create_round_from_bucket(bucket_id: int, payload: schemas.BucketCreateRoundRequest, db: Session = Depends(get_db)):
     bucket = _get_bucket(db, bucket_id)
-    if bucket.round_id is not None:
-        raise HTTPException(409, "This bucket has already been turned into a round")
-    if len(bucket.entries) < 2:
+    available = [e for e in bucket.entries if e.pushed_round_id is None]
+    if len(available) < 2:
         raise HTTPException(400, "Pull at least 2 teams into the bucket first")
 
-    team_ids = _seed_bucket_teams(bucket.entries)
+    team_ids = _seed_bucket_teams(available)
 
     round_ = models.Round(
         tournament_id=bucket.tournament_id, name=payload.name, sequence=bucket.source_round.sequence + 1,
@@ -283,9 +240,11 @@ def create_round_from_bucket(bucket_id: int, payload: schemas.BucketCreateRoundR
     if payload.format == "KNOCKOUT":
         _create_one_knockout_round(db, bucket.tournament_id, round_.id, team_ids, payload.bye_team_ids)
     else:
-        round_.entrants = [e.team for e in bucket.entries]
+        round_.entrants = [e.team for e in available]
 
-    bucket.round_id = round_.id
+    for e in available:
+        e.pushed_round_id = round_.id
+
     db.commit()
     db.refresh(round_)
     return _round_dict(round_, db)

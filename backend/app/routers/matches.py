@@ -265,7 +265,9 @@ def _place_byes(team_ids: list[int], bye_team_ids: list[int]) -> list[tuple[str,
 def _create_one_knockout_round(db: Session, tournament_id: int, round_id: int, team_ids: list[int], bye_team_ids: list[int]) -> None:
     """Pairs up team_ids into a single round of matches (no cascading further
     rounds — see generate_next_round, which the caller uses to build the
-    round *after* this one once it's finished)."""
+    round *after* this one once it's finished). Byes go by the same
+    power-of-two rule as generate_bracket (bracket_size - n): e.g. 31 teams
+    needs exactly 1 bye to make a clean field of 32, not just parity."""
     slots = _place_byes(team_ids, bye_team_ids)
     for (kind_a, val_a), (kind_b, val_b) in (slots[i:i + 2] for i in range(0, len(slots), 2)):
         if kind_a == "bye":
@@ -597,12 +599,31 @@ def update_match(match_id: int, payload: schemas.MatchUpdate, db: Session = Depe
     return _match_dict(m, db)
 
 
+def _free_pushed_bucket_entries(db: Session, round_id: int | None, team_ids: list[int | None]) -> None:
+    """A knockout round's bucket entries are marked "pushed" the moment
+    create-round places them into a real match. If that match is later
+    cancelled or deleted, the team is free again — pulled, not pushed —
+    so it's eligible for a future create-round call from the same bucket.
+    (A league round's entrants aren't tied to one match this way; they stay
+    pushed until the round itself is deleted, which already frees them via
+    ON DELETE SET NULL on pushed_round_id.)"""
+    ids = [t for t in team_ids if t]
+    if not ids or round_id is None:
+        return
+    db.query(models.BucketTeam).filter(
+        models.BucketTeam.pushed_round_id == round_id,
+        models.BucketTeam.team_id.in_(ids),
+    ).update({"pushed_round_id": None}, synchronize_session=False)
+
+
 @router.delete("/api/matches/{match_id}", status_code=204)
 def delete_match(match_id: int, db: Session = Depends(get_db)):
     m = db.get(models.Match, match_id)
     if not m:
         raise HTTPException(404, "Match not found")
+    round_id, team_ids = m.round_id, [m.team_a_id, m.team_b_id]
     db.delete(m)
+    _free_pushed_bucket_entries(db, round_id, team_ids)
     db.commit()
 
 
@@ -734,6 +755,7 @@ def cancel_match(match_id: int, db: Session = Depends(get_db), current: models.O
         raise HTTPException(409, "A completed match can't be cancelled")
     m.status = "CANCELLED"
     _log_event(db, m, "CANCEL", current)
+    _free_pushed_bucket_entries(db, m.round_id, [m.team_a_id, m.team_b_id])
     db.commit()
     db.refresh(m)
     broadcast_match_event_sync(m, "match_cancelled")
