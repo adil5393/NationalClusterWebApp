@@ -2,14 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Map as MapIcon, LocateFixed, ZoomIn, ZoomOut, Maximize2, MapPin } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/feedback";
 import { cn } from "@/lib/utils";
 import { MAP_VIEWBOX, findHotspot, type RoomHotspot } from "@/lib/campusMap";
 
 type Mode = "view" | "find";
 
-interface Team { id: number; name: string; school?: string }
+interface Team { id: number; name: string; school?: string; school_code?: string | null }
 interface AccommodationRow { room?: string; floor?: string; building?: string; notes?: string }
 interface TeamDetail { id: number; name: string; accommodation: AccommodationRow[] }
 
@@ -200,6 +200,20 @@ export default function Campus() {
     }
   };
 
+  const [codeInput, setCodeInput] = useState("");
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const lookupByCode = () => {
+    const code = codeInput.trim();
+    if (!code) return;
+    const match = teams.find((t) => t.school_code && t.school_code.toLowerCase() === code.toLowerCase());
+    if (!match) {
+      setCodeError(`No team found with school code "${code}"`);
+      return;
+    }
+    setCodeError(null);
+    selectTeam(String(match.id));
+  };
+
   const jumpTo = (idx: number) => {
     setActiveIdx(idx);
     const h = resolved[idx]?.hotspot;
@@ -208,6 +222,7 @@ export default function Campus() {
 
   const resolvedHits = useMemo(() => resolved.filter((r) => r.hotspot), [resolved]);
   const unresolved = useMemo(() => resolved.filter((r) => !r.hotspot), [resolved]);
+  const selectedTeamName = useMemo(() => teams.find((t) => String(t.id) === teamId)?.name, [teams, teamId]);
 
   return (
     <div className="mx-auto max-w-7xl px-5 md:px-8 py-14 md:py-16 text-slate-100" data-testid="public-campus">
@@ -237,19 +252,35 @@ export default function Campus() {
       {mode === "find" && (
         <div className="mt-4 rounded-lg border border-slate-800 bg-slate-900 p-4">
           <div className="flex flex-wrap items-center gap-3">
-            <Select value={teamId} onChange={(e) => selectTeam(e.target.value)} className="max-w-xs" data-testid="campus-team-select">
-              <option value="">Select your team…</option>
-              {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </Select>
+            <form
+              className="flex items-center gap-2"
+              onSubmit={(e) => { e.preventDefault(); lookupByCode(); }}
+            >
+              <Input
+                value={codeInput}
+                onChange={(e) => setCodeInput(e.target.value)}
+                placeholder="Enter your school code…"
+                className="w-48"
+                data-testid="campus-school-code-input"
+              />
+              <Button type="submit" variant="outline" size="sm" data-testid="campus-school-code-submit">Find</Button>
+            </form>
             {loadingTeam && <Spinner label="Looking up your room…" />}
           </div>
+          {codeError && <p className="mt-2 text-sm text-red-400">{codeError}</p>}
+
+          {!loadingTeam && teamId && selectedTeamName && (
+            <p className="mt-3 text-sm text-slate-400">
+              School: <span className="font-semibold text-white">{selectedTeamName}</span>
+            </p>
+          )}
 
           {!loadingTeam && teamId && resolved.length === 0 && (
-            <p className="mt-3 text-sm text-slate-400">This team hasn't been assigned a room yet.</p>
+            <p className="mt-1 text-sm text-slate-400">This team hasn't been assigned a room yet.</p>
           )}
 
           {!loadingTeam && resolvedHits.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-1.5 flex flex-wrap gap-2">
               {resolved.map((r, i) => r.hotspot ? (
                 <button
                   key={i}

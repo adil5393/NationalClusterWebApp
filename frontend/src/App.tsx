@@ -27,6 +27,7 @@ import Procurement from "@/pages/admin/Procurement";
 import AdminAnnouncements from "@/pages/admin/Announcements";
 import Staff from "@/pages/admin/Staff";
 import Matches from "@/pages/admin/Matches";
+import Reports from "@/pages/admin/Reports";
 import Accounts from "@/pages/admin/Accounts";
 import Login from "@/pages/admin/Login";
 
@@ -76,6 +77,7 @@ export default function App() {
         <Route path="/admin/venues" element={<Venues />} />
         <Route path="/admin/schedule" element={<Schedule />} />
         <Route path="/admin/matches" element={<Matches />} />
+        <Route path="/admin/reports" element={<Reports />} />
         <Route path="/admin/tasks" element={<ComingSoon title="Tasks" />} />
         <Route path="/admin/documents" element={<ComingSoon title="Documents" />} />
         <Route path="/admin/contacts" element={<ComingSoon title="Contacts" />} />

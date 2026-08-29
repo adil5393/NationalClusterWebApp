@@ -13,7 +13,7 @@ import { formatDate } from "@/lib/meta";
 import { useModuleAccess } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
-interface Team { id: number; name: string }
+interface Team { id: number; name: string; is_active?: boolean; present_counts?: Record<string, number> }
 interface Venue { id: number; name: string }
 interface ParticipantT { team_id: number; age_group?: string | null; is_present?: boolean }
 interface MatchT {
@@ -37,6 +37,7 @@ interface RoundT {
 }
 interface TournamentT {
   id: number; name: string; sport?: string | null; age_group?: string | null; status: string; notes?: string | null;
+  min_present_players?: number;
   round_count: number; match_count: number; rounds?: RoundT[];
 }
 
@@ -172,6 +173,19 @@ function bracketRoundName(matchCount: number) {
 }
 // Same inference the backend falls back to for a legacy round with no
 // explicit format: look at what its own matches are.
+// Mirrors the backend's routers/matches.py _team_unplayable_reason — never
+// used to filter a team out of a list (organizer should always see it), only
+// to highlight it and disable actually selecting it.
+function teamUnplayableReason(t: Team, tournament: TournamentT | null | undefined): string | null {
+  if (t.is_active === false) return "Inactive";
+  if (!tournament?.age_group) return null;
+  const threshold = tournament.min_present_players ?? 10;
+  if (threshold <= 0) return null;
+  const present = t.present_counts?.[tournament.age_group] ?? 0;
+  if (present < threshold) return `${present} of ${threshold} present`;
+  return null;
+}
+
 function roundFormat(r: RoundT): "KNOCKOUT" | "LEAGUE" | null {
   if (r.format) return r.format;
   return (r.matches[0]?.match_type as "KNOCKOUT" | "LEAGUE" | undefined) ?? null;
@@ -206,7 +220,7 @@ export default function Matches() {
   const [loading, setLoading] = useState(true);
 
   const [tOpen, setTOpen] = useState(false);
-  const [tForm, setTForm] = useState<{ id?: number; name: string; sport: string; age_group: string; status: string; notes: string }>({ name: "", sport: "", age_group: "", status: "draft", notes: "" });
+  const [tForm, setTForm] = useState<{ id?: number; name: string; sport: string; age_group: string; status: string; notes: string; min_present_players: string }>({ name: "", sport: "", age_group: "", status: "draft", notes: "", min_present_players: "10" });
 
   const [rOpen, setROpen] = useState(false);
   const [rForm, setRForm] = useState({ name: "", sequence: "0" });
@@ -317,7 +331,10 @@ export default function Matches() {
   const saveTournament = async () => {
     if (!tForm.name.trim()) return toast.error("Tournament name is required");
     try {
-      const payload = { name: tForm.name, sport: tForm.sport || null, age_group: tForm.age_group || null, status: tForm.status, notes: tForm.notes || null };
+      const payload = {
+        name: tForm.name, sport: tForm.sport || null, age_group: tForm.age_group || null, status: tForm.status, notes: tForm.notes || null,
+        min_present_players: Number(tForm.min_present_players) || 0,
+      };
       if (tForm.id) await api.put(`/tournaments/${tForm.id}`, payload);
       else {
         const r = await api.post<TournamentT>("/tournaments", payload);
@@ -325,7 +342,10 @@ export default function Matches() {
       }
       toast.success(tForm.id ? "Tournament updated" : "Tournament created");
       setTOpen(false);
-      loadBase();
+      refreshAll(); // loadBase() alone doesn't refresh `detail` — the effect that
+      // does only fires when selectedId *changes*, not when the currently
+      // selected tournament's own fields are edited, so a saved change (e.g.
+      // min_present_players) wouldn't show up until you switched tabs and back.
     } catch (e: any) {
       toast.error(e?.response?.data?.detail ?? "Could not save tournament");
     }
@@ -360,7 +380,7 @@ export default function Matches() {
 
   // --- Generate bracket ---
   const openGenerateBracket = () => {
-    setBgTeamIds(eligibleTeams.map((t) => t.id));
+    setBgTeamIds(eligibleTeams.filter((t) => !teamUnplayableReason(t, detail)).map((t) => t.id));
     setBgByeTeamIds([]);
     setBgShuffle(true);
     setBgWholeSeason(true);
@@ -485,7 +505,7 @@ export default function Matches() {
           <p className="mt-1 text-sm text-slate-400">Tournaments, rounds, brackets, and live scoring.</p>
         </div>
         {canEdit && (
-          <Button onClick={() => { setTForm({ name: "", sport: "", age_group: "", status: "draft", notes: "" }); setTOpen(true); }} data-testid="add-tournament-btn">
+          <Button onClick={() => { setTForm({ name: "", sport: "", age_group: "", status: "draft", notes: "", min_present_players: "10" }); setTOpen(true); }} data-testid="add-tournament-btn">
             <Plus className="h-4 w-4" /> New Tournament
           </Button>
         )}
@@ -564,7 +584,7 @@ export default function Matches() {
                 {detail.sport && <span className="text-xs text-slate-400">{detail.sport}</span>}
                 {canEdit && (
                   <div className="grid w-full min-w-0 grid-cols-[auto_auto_minmax(0,1fr)_minmax(0,1fr)] gap-1 sm:ml-auto sm:w-auto">
-                    <Button variant="ghost" size="icon" className="shrink-0" onClick={() => { setTForm({ id: detail.id, name: detail.name, sport: detail.sport ?? "", age_group: detail.age_group ?? "", status: detail.status, notes: detail.notes ?? "" }); setTOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="shrink-0" onClick={() => { setTForm({ id: detail.id, name: detail.name, sport: detail.sport ?? "", age_group: detail.age_group ?? "", status: detail.status, notes: detail.notes ?? "", min_present_players: String(detail.min_present_players ?? 10) }); setTOpen(true); }}><Pencil className="h-4 w-4" /></Button>
                     <Button variant="ghost" size="icon" className="shrink-0" onClick={() => removeTournament(detail.id)}><Trash2 className="h-4 w-4 text-red-400" /></Button>
                     <Button variant="outline" size="sm" className="min-w-0 px-1 text-[11px]" onClick={() => { setRForm({ name: "", sequence: String((detail.rounds?.length ?? 0) + 1) }); setROpen(true); }} data-testid="add-round-btn"><Plus className="h-3.5 w-3.5" /> Round</Button>
                     <Button variant="outline" size="sm" className="min-w-0 px-1 text-[11px]" onClick={openGenerateBracket} data-testid="generate-bracket-btn"><Shuffle className="h-3.5 w-3.5" /> Bracket</Button>
@@ -590,6 +610,7 @@ export default function Matches() {
               tournamentId={detail.id}
               rounds={detail.rounds ?? []}
               teams={eligibleTeams}
+              tournament={detail}
               canEdit={canEdit}
               onOpenConsole={setConsoleMatchId}
               onChanged={refreshRoundAndLive}
@@ -749,6 +770,19 @@ export default function Matches() {
             )}
             <p className="mt-1 text-xs text-slate-400">Only teams with players registered in this age group can be added to this tournament's matches.</p>
           </div>
+          <div>
+            <Label>Minimum Players Present</Label>
+            <Input
+              type="number"
+              min={0}
+              value={tForm.min_present_players}
+              onChange={(e) => setTForm((f) => ({ ...f, min_present_players: e.target.value }))}
+              data-testid="tournament-min-present-input"
+            />
+            <p className="mt-1 text-xs text-slate-400">
+              A team needs this many checked-in players in this age group to be eligible for a match or pool. 0 disables the check.
+            </p>
+          </div>
           <div><Label>Notes</Label><Textarea value={tForm.notes} onChange={(e) => setTForm((f) => ({ ...f, notes: e.target.value }))} /></div>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={() => setTOpen(false)}>Cancel</Button>
@@ -783,7 +817,10 @@ export default function Matches() {
               <Label>Team A</Label>
               <Select value={mForm.team_a_id} onChange={(e) => setMForm((f) => ({ ...f, team_a_id: e.target.value }))} data-testid="match-team-a-select">
                 <option value="">TBD</option>
-                {eligibleTeams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                {eligibleTeams.map((t) => {
+                  const reason = teamUnplayableReason(t, detail);
+                  return <option key={t.id} value={t.id} disabled={!!reason}>{reason ? `⚠ ${t.name} — ${reason}` : t.name}</option>;
+                })}
               </Select>
               <PresentCount counts={presentCounts} teamId={mForm.team_a_id} />
             </div>
@@ -791,7 +828,10 @@ export default function Matches() {
               <Label>Team B</Label>
               <Select value={mForm.team_b_id} onChange={(e) => setMForm((f) => ({ ...f, team_b_id: e.target.value }))} data-testid="match-team-b-select">
                 <option value="">TBD</option>
-                {eligibleTeams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                {eligibleTeams.map((t) => {
+                  const reason = teamUnplayableReason(t, detail);
+                  return <option key={t.id} value={t.id} disabled={!!reason}>{reason ? `⚠ ${t.name} — ${reason}` : t.name}</option>;
+                })}
               </Select>
               <PresentCount counts={presentCounts} teamId={mForm.team_b_id} />
             </div>
@@ -877,17 +917,21 @@ export default function Matches() {
           <div className="flex items-center justify-between">
             <Label>Teams ({bgTeamIds.length} selected)</Label>
             <div className="flex gap-2 text-xs">
-              <button className="font-semibold text-coral" onClick={() => setBgTeamIds(eligibleTeams.map((t) => t.id))}>Select all</button>
+              <button className="font-semibold text-coral" onClick={() => setBgTeamIds(eligibleTeams.filter((t) => !teamUnplayableReason(t, detail)).map((t) => t.id))}>Select all</button>
               <button className="font-semibold text-slate-400 hover:text-white" onClick={() => setBgTeamIds([])}>Clear</button>
             </div>
           </div>
           <div className="max-h-56 overflow-y-auto rounded-md border border-white/10 bg-white/5 p-2" data-testid="bracket-team-list">
-            {eligibleTeams.map((t) => (
-              <label key={t.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm text-slate-200 hover:bg-white/10">
-                <input type="checkbox" checked={bgTeamIds.includes(t.id)} onChange={() => toggleBgTeam(t.id)} />
-                {t.name}
-              </label>
-            ))}
+            {eligibleTeams.map((t) => {
+              const reason = teamUnplayableReason(t, detail);
+              return (
+                <label key={t.id} className={cn("flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-white/10", reason ? "text-amber-400" : "text-slate-200")}>
+                  <input type="checkbox" checked={bgTeamIds.includes(t.id)} disabled={!!reason} onChange={() => toggleBgTeam(t.id)} />
+                  {t.name}
+                  {reason && <span className="text-xs text-amber-500">— {reason}</span>}
+                </label>
+              );
+            })}
             {eligibleTeams.length === 0 && <p className="p-2 text-sm text-slate-400">No eligible teams found.</p>}
           </div>
 
@@ -1491,8 +1535,8 @@ interface AutoPreviewT {
   pools: { name: string; team_count: number; team_ids: number[]; teams: { id: number; name: string }[] }[];
 }
 
-function LeagueSetup({ tournamentId, rounds, teams, canEdit, onOpenConsole, onChanged }: {
-  tournamentId: number; rounds: RoundT[]; teams: Team[]; canEdit: boolean;
+function LeagueSetup({ tournamentId, rounds, teams, tournament, canEdit, onOpenConsole, onChanged }: {
+  tournamentId: number; rounds: RoundT[]; teams: Team[]; tournament: TournamentT; canEdit: boolean;
   onOpenConsole: (id: number) => void; onChanged: () => void;
 }) {
   // A knockout round never has pools — only offer rounds that are League (or
@@ -1661,22 +1705,30 @@ function LeagueSetup({ tournamentId, rounds, teams, canEdit, onOpenConsole, onCh
               <p className="mt-1.5 text-sm text-slate-400">None — every eligible team is in a pool.</p>
             ) : (
               <div className="mt-1 divide-y divide-slate-800">
-                {summary.unassigned_teams.map((t) => (
-                  <div key={t.id} className="flex items-center justify-between gap-3 py-1.5 text-sm">
-                    <span className="truncate text-slate-200">{t.name}</span>
-                    {canEdit && summary.pools.length > 0 && (
-                      <select
-                        className="rounded-md border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
-                        defaultValue=""
-                        onChange={(e) => { if (e.target.value) assignTeam(t.id, Number(e.target.value)); e.target.value = ""; }}
-                        data-testid={`assign-team-${t.id}`}
-                      >
-                        <option value="">Assign to pool…</option>
-                        {summary.pools.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                      </select>
-                    )}
-                  </div>
-                ))}
+                {summary.unassigned_teams.map((t) => {
+                  const full = teams.find((x) => x.id === t.id);
+                  const reason = full ? teamUnplayableReason(full, tournament) : null;
+                  return (
+                    <div key={t.id} className="flex items-center justify-between gap-3 py-1.5 text-sm">
+                      <span className={cn("truncate", reason ? "text-amber-400" : "text-slate-200")}>
+                        {t.name}
+                        {reason && <span className="ml-1.5 text-xs text-amber-500">— {reason}</span>}
+                      </span>
+                      {canEdit && summary.pools.length > 0 && (
+                        <select
+                          className="rounded-md border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white disabled:opacity-50"
+                          defaultValue=""
+                          disabled={!!reason}
+                          onChange={(e) => { if (e.target.value) assignTeam(t.id, Number(e.target.value)); e.target.value = ""; }}
+                          data-testid={`assign-team-${t.id}`}
+                        >
+                          <option value="">Assign to pool…</option>
+                          {summary.pools.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1688,6 +1740,8 @@ function LeagueSetup({ tournamentId, rounds, teams, canEdit, onOpenConsole, onCh
           tournamentId={tournamentId}
           roundId={roundId}
           teams={summary?.eligible_teams ?? teams}
+          fullTeams={teams}
+          tournament={tournament}
           onClose={() => setCreateOpen(false)}
           onCreated={() => { setCreateOpen(false); refresh(); }}
         />
@@ -1726,8 +1780,8 @@ function LeagueSetup({ tournamentId, rounds, teams, canEdit, onOpenConsole, onCh
   );
 }
 
-function CreatePoolDialog({ tournamentId, roundId, teams, onClose, onCreated }: {
-  tournamentId: number; roundId: number; teams: Team[]; onClose: () => void; onCreated: () => void;
+function CreatePoolDialog({ tournamentId, roundId, teams, fullTeams, tournament, onClose, onCreated }: {
+  tournamentId: number; roundId: number; teams: Team[]; fullTeams: Team[]; tournament: TournamentT; onClose: () => void; onCreated: () => void;
 }) {
   const [name, setName] = useState("");
   const [teamIds, setTeamIds] = useState<number[]>([]);
@@ -1757,12 +1811,17 @@ function CreatePoolDialog({ tournamentId, roundId, teams, onClose, onCreated }: 
           <Label>Select Teams ({teamIds.length})</Label>
           <p className="mt-0.5 text-xs text-slate-400">A pool can exist empty while you're setting it up — teams need at least 2 total before it can be finalized.</p>
           <div className="mt-1.5 max-h-56 overflow-y-auto rounded-md border border-white/10 bg-white/5 p-2">
-            {teams.map((t) => (
-              <label key={t.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm text-slate-200 hover:bg-white/10">
-                <input type="checkbox" checked={teamIds.includes(t.id)} onChange={() => toggle(t.id)} />
-                {t.name}
-              </label>
-            ))}
+            {teams.map((t) => {
+              const full = fullTeams.find((x) => x.id === t.id) ?? t;
+              const reason = teamUnplayableReason(full, tournament);
+              return (
+                <label key={t.id} className={cn("flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-white/10", reason ? "text-amber-400" : "text-slate-200")}>
+                  <input type="checkbox" checked={teamIds.includes(t.id)} disabled={!!reason} onChange={() => toggle(t.id)} />
+                  {t.name}
+                  {reason && <span className="text-xs text-amber-500">— {reason}</span>}
+                </label>
+              );
+            })}
           </div>
         </div>
         <div className="flex justify-end gap-2 pt-2">

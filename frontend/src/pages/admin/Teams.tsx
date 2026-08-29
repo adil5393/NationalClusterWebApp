@@ -14,6 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { useModuleAccess } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
+interface LastYearAward { age_group: string; award: "winner" | "runner" }
+
 interface Team {
   id: number;
   name: string;
@@ -29,11 +31,10 @@ interface Team {
   accommodation_status?: "none" | "partial" | "full";
   accommodation_locations?: { room?: string | null; building?: string | null; whole_team: boolean; count: number }[];
   age_group_counts?: Record<string, number>;
-  last_year_winner?: boolean;
-  last_year_runner?: boolean;
+  present_counts?: Record<string, number>;
+  is_active?: boolean;
+  last_year_awards?: LastYearAward[];
 }
-
-type LastYearField = "last_year_winner" | "last_year_runner";
 
 const MIN_SQUAD_SIZE = 12;
 
@@ -57,40 +58,107 @@ function AgeGroupCountsCell({ counts }: { counts?: Record<string, number> }) {
   );
 }
 
-const LAST_YEAR_FIELD_LABEL: Record<LastYearField, string> = {
-  last_year_winner: "last year's winner",
-  last_year_runner: "last year's runner-up",
-};
-
-function LastYearAwardCell({
-  team, field, canEdit, onToggle,
-}: {
-  team: Team;
-  field: LastYearField;
-  canEdit: boolean;
-  onToggle: (team: Team, field: LastYearField) => void;
-}) {
-  const isSet = !!team[field];
-  const badge = isSet ? (
-    <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-bold ring-1 bg-amber-500/15 text-amber-400 ring-amber-500/30">
-      <Trophy className="h-3.5 w-3.5 shrink-0" /> Yes
+function LastYearAwardsCell({ team, canEdit, onEdit }: { team: Team; canEdit: boolean; onEdit: () => void }) {
+  const awards = team.last_year_awards ?? [];
+  const content = awards.length === 0 ? (
+    <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-bold ring-1 bg-white/5 text-slate-400 ring-white/10">
+      <X className="h-3.5 w-3.5 shrink-0" /> None
     </span>
   ) : (
-    <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-bold ring-1 bg-white/5 text-slate-400 ring-white/10">
-      <X className="h-3.5 w-3.5 shrink-0" /> No
-    </span>
+    <div className="flex flex-wrap gap-1">
+      {awards.map((a) => (
+        <span
+          key={a.age_group}
+          className={cn(
+            "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-bold ring-1",
+            a.award === "winner" ? "bg-amber-500/15 text-amber-400 ring-amber-500/30" : "bg-blue-500/15 text-blue-300 ring-blue-500/30",
+          )}
+        >
+          <Trophy className="h-3 w-3 shrink-0" /> {a.award === "winner" ? "Winner" : "Runner-up"} · {a.age_group}
+        </span>
+      ))}
+    </div>
   );
-  if (!canEdit) return badge;
-  const label = LAST_YEAR_FIELD_LABEL[field];
+  if (!canEdit) return content;
   return (
-    <button
-      onClick={() => onToggle(team, field)}
-      data-testid={`${field === "last_year_winner" ? "last-year-winner" : "last-year-runner"}-toggle-${team.id}`}
-      className="inline-flex items-center"
-      title={isSet ? `Mark as not ${label}` : `Mark as ${label}`}
-    >
+    <button onClick={onEdit} data-testid={`edit-awards-${team.id}`} className="text-left" title="Edit last year's awards">
+      {content}
+    </button>
+  );
+}
+
+function ActiveCell({ team, canEdit, onToggle }: { team: Team; canEdit: boolean; onToggle: (team: Team) => void }) {
+  const active = team.is_active !== false;
+  const badge = <Badge tone={active ? "green" : "red"}>{active ? "Active" : "Inactive"}</Badge>;
+  if (!canEdit) return badge;
+  return (
+    <button onClick={() => onToggle(team)} data-testid={`active-toggle-${team.id}`} title={active ? "Mark inactive" : "Mark active"}>
       {badge}
     </button>
+  );
+}
+
+function AwardsDialog({ team, onClose, onSaved }: { team: Team; onClose: () => void; onSaved: () => void }) {
+  const groups = Object.keys(team.age_group_counts ?? {}).sort((a, b) => ageGroupRank(a) - ageGroupRank(b) || a.localeCompare(b));
+  const initial: Record<string, "" | "winner" | "runner"> = {};
+  for (const g of groups) {
+    initial[g] = (team.last_year_awards ?? []).find((a) => a.age_group === g)?.award ?? "";
+  }
+  const [picks, setPicks] = useState(initial);
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    const last_year_awards = Object.entries(picks)
+      .filter(([, award]) => award)
+      .map(([age_group, award]) => ({ age_group, award }));
+    setSaving(true);
+    try {
+      await api.put(`/teams/${team.id}`, { last_year_awards });
+      toast.success("Awards updated");
+      onSaved();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not update awards");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open onClose={onClose} title={`Last Year's Awards — ${team.name}`} testId="awards-dialog">
+      <div className="space-y-4">
+        {groups.length === 0 ? (
+          <p className="text-sm text-slate-400">This team has no registered players in any age group yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {groups.map((g) => (
+              <div key={g} className="flex items-center justify-between gap-2">
+                <span className="text-sm font-semibold text-slate-200">{g}</span>
+                <div className="flex gap-1">
+                  {(["", "winner", "runner"] as const).map((opt) => (
+                    <button
+                      key={opt || "none"}
+                      type="button"
+                      onClick={() => setPicks((p) => ({ ...p, [g]: opt }))}
+                      className={cn(
+                        "rounded px-2 py-1 text-xs font-bold transition-colors",
+                        picks[g] === opt ? "bg-coral text-white" : "bg-white/5 text-slate-400 hover:bg-white/10",
+                      )}
+                      data-testid={`award-pick-${g}-${opt || "none"}`}
+                    >
+                      {opt === "" ? "None" : opt === "winner" ? "Winner" : "Runner-up"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={save} disabled={saving || groups.length === 0} data-testid="save-awards-btn">{saving ? "Saving…" : "Save"}</Button>
+        </div>
+      </div>
+    </Dialog>
   );
 }
 
@@ -159,15 +227,14 @@ export default function AdminTeams() {
     load();
   };
 
-  const toggleLastYearAward = async (t: Team, field: LastYearField) => {
-    const next = !t[field];
+  const [awardsTeam, setAwardsTeam] = useState<Team | null>(null);
+
+  const toggleActive = async (t: Team) => {
     try {
-      await api.put(`/teams/${t.id}`, { [field]: next });
+      await api.put(`/teams/${t.id}`, { is_active: t.is_active === false });
       load();
     } catch (e: any) {
-      const detail = e?.response?.data?.detail;
-      const msg = typeof detail === "string" ? detail : e?.message;
-      toast.error(msg || `Could not update ${LAST_YEAR_FIELD_LABEL[field]} status`);
+      toast.error(e?.response?.data?.detail ?? "Could not update active status");
     }
   };
 
@@ -229,14 +296,10 @@ export default function AdminTeams() {
                         {t.school && <div className="truncate text-[11px] leading-tight text-slate-400">{t.school}</div>}
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1">
-                        <div className="flex items-center gap-1">
-                          <span className="text-[10px] font-semibold leading-tight text-slate-400">Winner</span>
-                          <LastYearAwardCell team={t} field="last_year_winner" canEdit={canEdit} onToggle={toggleLastYearAward} />
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <span className="text-[10px] font-semibold leading-tight text-slate-400">Runner</span>
-                          <LastYearAwardCell team={t} field="last_year_runner" canEdit={canEdit} onToggle={toggleLastYearAward} />
-                        </div>
+                        <ActiveCell team={t} canEdit={canEdit} onToggle={toggleActive} />
+                        <button onClick={() => canEdit && setAwardsTeam(t)} data-testid={`edit-awards-mobile-${t.id}`}>
+                          <LastYearAwardsCell team={t} canEdit={false} onEdit={() => {}} />
+                        </button>
                       </div>
                     </div>
 
@@ -295,8 +358,8 @@ export default function AdminTeams() {
                   <TR className="hover:bg-transparent">
                     <TH>#</TH>
                     <TH>Team</TH>
-                    <TH>Last Year Winner</TH>
-                    <TH>Last Year Runner-up</TH>
+                    <TH>Active</TH>
+                    <TH>Last Year</TH>
                     <TH>Region</TH>
                     <TH>Country</TH>
                     <TH className="text-right">Members</TH>
@@ -311,8 +374,8 @@ export default function AdminTeams() {
                     <TR key={t.id} data-testid={`team-row-${t.id}`}>
                       <TD className="text-slate-400">{i + 1}</TD>
                       <TD className="font-bold text-white">{t.name}<div className="text-xs font-normal text-slate-400">{t.school}</div></TD>
-                      <TD><LastYearAwardCell team={t} field="last_year_winner" canEdit={canEdit} onToggle={toggleLastYearAward} /></TD>
-                      <TD><LastYearAwardCell team={t} field="last_year_runner" canEdit={canEdit} onToggle={toggleLastYearAward} /></TD>
+                      <TD><ActiveCell team={t} canEdit={canEdit} onToggle={toggleActive} /></TD>
+                      <TD><LastYearAwardsCell team={t} canEdit={canEdit} onEdit={() => setAwardsTeam(t)} /></TD>
                       <TD className="text-slate-300">{t.region || "—"}</TD>
                       <TD><Badge tone={t.country === "India" ? "coral" : "blue"}>{t.country}</Badge></TD>
                       <TD className="text-right font-semibold text-white">{t.member_count ?? 0}</TD>
@@ -377,6 +440,13 @@ export default function AdminTeams() {
 
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} type="teams" onDone={load} />
       <AttendanceImportDialog open={attendanceImportOpen} onClose={() => setAttendanceImportOpen(false)} onDone={load} />
+      {awardsTeam && (
+        <AwardsDialog
+          team={awardsTeam}
+          onClose={() => setAwardsTeam(null)}
+          onSaved={() => { setAwardsTeam(null); load(); }}
+        />
+      )}
     </div>
   );
 }
