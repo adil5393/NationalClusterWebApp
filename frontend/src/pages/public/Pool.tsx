@@ -37,6 +37,10 @@ export default function Pool() {
   }, [pool?.tournament_id]);
 
   const hasResults = standings.some((s) => s.played > 0);
+  // A cancelled match needs no result to count as resolved — a pool with one
+  // cancelled match and the rest completed is done, not stuck "in progress".
+  const pendingCount = pool?.matches.filter((m) => m.status !== "COMPLETED" && m.status !== "CANCELLED").length ?? 0;
+  const isDone = !!pool && pool.status === "finalized" && pool.matches.length > 0 && pendingCount === 0;
 
   return (
     <div className="mx-auto max-w-5xl px-5 py-10 md:px-8 text-slate-100">
@@ -50,8 +54,8 @@ export default function Pool() {
         <>
           <div className="mt-3 flex items-center gap-2">
             <h1 className="font-heading text-2xl font-black tracking-tight text-white">{pool.name}</h1>
-            <span className={`rounded-md px-2 py-0.5 text-xs font-bold ${pool.status === "finalized" ? "bg-emerald-500/15 border border-emerald-500/30 text-emerald-400" : "bg-white/5 border border-white/10 text-slate-400"}`}>
-              {pool.status === "finalized" ? "Fixtures Ready" : "Draft"}
+            <span className={`rounded-md px-2 py-0.5 text-xs font-bold ${pool.status !== "finalized" ? "bg-white/5 border border-white/10 text-slate-400" : isDone ? "bg-emerald-500/15 border border-emerald-500/30 text-emerald-400" : "bg-amber-500/15 border border-amber-500/30 text-amber-400"}`}>
+              {pool.status !== "finalized" ? "Draft" : isDone ? "Done" : "Fixtures Ready"}
             </span>
           </div>
           <p className="mt-1 text-sm text-slate-400">{pool.team_count} teams · {pool.match_count} matches</p>

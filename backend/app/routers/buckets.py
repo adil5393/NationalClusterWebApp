@@ -62,6 +62,7 @@ def _bucket_dict(db: Session, bucket: models.Bucket) -> dict:
             row["team_count"] += 1
 
     pools_status = None
+    byes_status = None
     knockout_status = None
     if advancing and advancing["format"] == "LEAGUE":
         pools_status = [
@@ -77,6 +78,12 @@ def _bucket_dict(db: Session, bucket: models.Bucket) -> dict:
             }
             for p in advancing["pools"]
         ]
+        # Teams that skipped this round's pools entirely (Round 1's Generate
+        # Bracket, or a later League round's own bye picks) — always ready,
+        # independent of pool progress/ties.
+        new_byes = [t for t in advancing.get("bye_teams", []) if t["id"] not in pulled_team_ids]
+        if advancing.get("bye_teams"):
+            byes_status = {"new_byes": new_byes}
     elif advancing and advancing["format"] == "KNOCKOUT":
         new_winners = [t for t in (advancing["teams"] or []) if t["id"] not in pulled_team_ids]
         knockout_status = {"ready": advancing["ready"], "blocking": advancing["blocking"], "new_winners": new_winners}
@@ -101,6 +108,7 @@ def _bucket_dict(db: Session, bucket: models.Bucket) -> dict:
             for e in bucket.entries
         ],
         "pools": pools_status,
+        "byes": byes_status,
         "knockout": knockout_status,
         "pushed_rounds": sorted(pushed_rounds.values(), key=lambda r: r["id"]),
     }
@@ -117,7 +125,11 @@ def get_or_create_bucket(tournament_id: int, round_id: int, db: Session = Depend
         raise HTTPException(404, "Round not found for this tournament")
 
     # One bucket per source round, for its whole life — never re-created.
-    existing = db.query(models.Bucket).filter(models.Bucket.source_round_id == round_id).first()
+    # Ordered by id so this is deterministic even if a duplicate ever exists
+    # (e.g. from a race on the very first "Advance to Bucket" click) — always
+    # resolves to the original, not whichever row Postgres happens to scan
+    # first.
+    existing = db.query(models.Bucket).filter(models.Bucket.source_round_id == round_id).order_by(models.Bucket.id).first()
     if existing:
         return _bucket_dict(db, existing)
 
@@ -144,9 +156,19 @@ def pull_into_bucket(bucket_id: int, payload: schemas.BucketPullRequest, db: Ses
 
     advancing = _compute_advancing_teams(db, bucket.source_round)
 
-    if advancing["format"] == "LEAGUE":
-        if payload.pool_id is None:
+    if advancing["format"] == "LEAGUE" and payload.pool_id is None:
+        # Pulling teams that skipped this round's pools entirely (byes) —
+        # always allowed once they exist, independent of pool progress.
+        bye_ids = {t["id"] for t in advancing.get("bye_teams", [])}
+        if not bye_ids:
             raise HTTPException(400, "pool_id is required to pull from a league round")
+        if any(tid not in bye_ids for tid in team_ids):
+            raise HTTPException(400, "team_ids must be this round's bye teams")
+        already = {e.team_id for e in bucket.entries}
+        for tid in team_ids:
+            if tid not in already:  # idempotent
+                db.add(models.BucketTeam(bucket_id=bucket.id, team_id=tid, source_pool_id=None, seed_rank=None))
+    elif advancing["format"] == "LEAGUE":
         pool = next((p for p in advancing["pools"] if p["pool_id"] == payload.pool_id), None)
         if not pool:
             raise HTTPException(404, "Pool not found in this round")

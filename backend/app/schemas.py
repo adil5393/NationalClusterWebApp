@@ -644,15 +644,30 @@ class MatchCompleteRequest(BaseModel):
 class GenerateBracketRequest(BaseModel):
     team_ids: List[int]
     replace: bool = False  # required to be true if the tournament already has rounds
-    # Organizer's explicit choice of which team(s) get a Round 1 bye — required
-    # (and must be exactly bracket_size - len(team_ids) teams) whenever the team
-    # count isn't already a power of two. No automatic assignment.
+    # Organizer's explicit choice of which team(s) skip Round 1 — for
+    # format == "KNOCKOUT", required to be exactly bracket_size - len(team_ids)
+    # teams (Round 1 must land on a clean power of two, since whole_season
+    # plans every later round upfront). For format == "LEAGUE", entirely
+    # optional and any count: those teams don't play Round 1's pools at all,
+    # they're immediately pullable into a bucket for Round 2 (see
+    # routers/matches.py _compute_advancing_teams's bye_teams). No automatic
+    # assignment either way.
     bye_team_ids: List[int] = []
     # True (default, existing behavior): auto-create every round through the
     # Final with placeholder slots. False: create only Round 1 — later rounds
     # get built one at a time via the bucket flow (routers/buckets.py) once
     # each round finishes, same as a round created that way from the start.
+    # Ignored (treated as False) when format == "LEAGUE": a pool stage can't
+    # plan its later rounds upfront the way a knockout tree can.
     whole_season: bool = True
+    format: str = "KNOCKOUT"
+
+    @field_validator("format")
+    @classmethod
+    def valid_format(cls, v):
+        if v not in ROUND_FORMATS:
+            raise ValueError(f"format must be one of {ROUND_FORMATS}")
+        return v
 
 
 # --- League / pool stage (alongside knockout, within the same Tournament -> Round -> Match tree) ---

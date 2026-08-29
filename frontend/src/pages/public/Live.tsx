@@ -30,7 +30,7 @@ export interface MatchT {
   winner_team_id?: number | null; winner_team_name?: string | null;
   notes?: string | null;
 }
-interface PoolSummaryT { id: number; name: string; status: "draft" | "finalized"; team_count: number; match_count: number; teams: { id: number; name: string }[] }
+interface PoolSummaryT { id: number; name: string; status: "draft" | "finalized"; team_count: number; match_count: number; pending_count: number; teams: { id: number; name: string }[] }
 interface RoundT {
   id: number; name: string; sequence: number;
   format?: "KNOCKOUT" | "LEAGUE" | null; source_round_id?: number | null;
@@ -338,6 +338,17 @@ type RoundSegment =
   | { type: "bracket"; rounds: RoundT[] }
   | { type: "pools"; round: RoundT };
 
+// A round counts as a pools stage if it's explicitly LEAGUE, or (for a
+// legacy/untyped round with format left null — e.g. one created via the
+// plain "Add Round" button and built up with pools by hand, never through
+// Generate Bracket or the bucket flow) if it simply has pools. Matching
+// format alone missed that case entirely: an untyped round with real pools
+// fell into the bracket bucket instead, rendering as an empty knockout
+// segment on this page.
+function isPoolsRound(r: RoundT): boolean {
+  return r.format === "LEAGUE" || (r.pools?.length ?? 0) > 0;
+}
+
 function segmentRounds(rounds: RoundT[]): RoundSegment[] {
   const sorted = [...rounds].sort((a, b) => a.sequence - b.sequence);
   const segments: RoundSegment[] = [];
@@ -351,7 +362,7 @@ function segmentRounds(rounds: RoundT[]): RoundSegment[] {
   };
 
   for (const r of sorted) {
-    if (r.format === "LEAGUE") {
+    if (isPoolsRound(r)) {
       flushBracket();
       segments.push({ type: "pools", round: r });
     } else {
@@ -370,7 +381,7 @@ function segmentLastRound(seg: RoundSegment): RoundT {
 }
 
 function roundTeamIds(r: RoundT): number[] {
-  if (r.format === "LEAGUE") {
+  if (isPoolsRound(r)) {
     return (r.pools ?? []).flatMap((p) => p.teams.map((t) => t.id));
   }
   const ids: number[] = [];
@@ -382,7 +393,7 @@ function roundTeamIds(r: RoundT): number[] {
 }
 
 function boundaryColor(sourceRound: RoundT, teamId: number): string {
-  if (sourceRound.format === "LEAGUE") return ADVANCE;
+  if (isPoolsRound(sourceRound)) return ADVANCE;
   const match = sourceRound.matches.find((m) => m.team_a_id === teamId || m.team_b_id === teamId);
   if (!match) return NEUTRAL;
   if (match.notes === "Bye") return RED;
@@ -452,8 +463,8 @@ function PoolsSegment({ round, registerAnchor }: { round: RoundT; registerAnchor
             >
               <div className="flex items-center justify-between">
                 <h4 className="truncate font-heading text-sm font-bold text-white">{p.name}</h4>
-                <span className={`shrink-0 text-xs font-semibold ${p.status === "finalized" ? "text-emerald-400" : "text-slate-400"}`}>
-                  {p.status === "finalized" ? "Ready" : "Draft"}
+                <span className={`shrink-0 text-xs font-semibold ${p.status !== "finalized" ? "text-slate-400" : p.match_count > 0 && p.pending_count === 0 ? "text-emerald-400" : "text-amber-400"}`}>
+                  {p.status !== "finalized" ? "Draft" : p.match_count > 0 && p.pending_count === 0 ? "Done" : "In Progress"}
                 </span>
               </div>
               <ol className="mt-2 space-y-0.5 text-xs text-slate-300">

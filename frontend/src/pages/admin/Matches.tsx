@@ -46,6 +46,7 @@ interface BucketPoolStatusT {
   qualifiers: TeamBrief[]; needs_tiebreak: boolean; tie_candidates: TeamBrief[]; tie_need: number;
 }
 interface BucketKnockoutStatusT { ready: boolean; blocking?: string | null; new_winners: TeamBrief[] }
+interface BucketByesStatusT { new_byes: TeamBrief[] }
 interface BucketTeamT {
   id: number; name: string; source_pool_id?: number | null; source_pool_name?: string | null; seed_rank?: number | null;
   pushed_round_id?: number | null; pushed_round_name?: string | null;
@@ -56,6 +57,7 @@ interface BucketT {
   source_round_id: number; source_round_name?: string | null; source_format?: "KNOCKOUT" | "LEAGUE" | null;
   teams: BucketTeamT[];
   pools: BucketPoolStatusT[] | null;
+  byes: BucketByesStatusT | null;
   knockout: BucketKnockoutStatusT | null;
   pushed_rounds: BucketPushedRoundT[];
 }
@@ -220,6 +222,7 @@ export default function Matches() {
   const [bgByeTeamIds, setBgByeTeamIds] = useState<number[]>([]);
   const [bgShuffle, setBgShuffle] = useState(true);
   const [bgWholeSeason, setBgWholeSeason] = useState(true);
+  const [bgFormat, setBgFormat] = useState<"KNOCKOUT" | "LEAGUE">("KNOCKOUT");
   const [bgSaving, setBgSaving] = useState(false);
 
   const [bucketRoundId, setBucketRoundId] = useState<number | null>(null);
@@ -358,21 +361,32 @@ export default function Matches() {
   // --- Generate bracket ---
   const openGenerateBracket = () => {
     setBgTeamIds(eligibleTeams.map((t) => t.id));
+    setBgByeTeamIds([]);
     setBgShuffle(true);
     setBgWholeSeason(true);
+    setBgFormat("KNOCKOUT");
     setBgOpen(true);
   };
   const toggleBgTeam = (id: number) => {
     setBgTeamIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
     setBgByeTeamIds((ids) => ids.filter((x) => x !== id)); // dropping a team clears any stale bye pick for it
   };
-  const bgNumByes = bgTeamIds.length >= 2 ? bracketSizeFor(bgTeamIds.length) - bgTeamIds.length : 0;
+  // KNOCKOUT must land Round 1 on a clean power of two upfront (whole_season
+  // plans every later round from it), so byes there are mandatory and exact.
+  // LEAGUE has no such constraint — picked teams simply skip Round 1's pools
+  // entirely and sit ready to pull into Round 2's bucket immediately, so
+  // byes there are optional, any count (as long as at least 2 teams stay to
+  // play Round 1's pools).
+  const bgNumByes = bgFormat === "KNOCKOUT" && bgTeamIds.length >= 2 ? bracketSizeFor(bgTeamIds.length) - bgTeamIds.length : 0;
+  const bgMaxByes = bgFormat === "LEAGUE" ? Math.max(0, bgTeamIds.length - 2) : bgNumByes;
   // Pre-fill the bye picks with however many are needed (rather than making
   // the organizer check dozens of boxes by hand, e.g. 31 of 33 teams) — they
   // can still swap any pick by unchecking one and checking another. Only
   // tops up/trims when the team list itself changes, never fights a manual
-  // toggle.
+  // toggle. Only applies to KNOCKOUT's mandatory count — LEAGUE's byes stay
+  // exactly whatever the organizer picked (default: none).
   useEffect(() => {
+    if (bgFormat !== "KNOCKOUT") return;
     setBgByeTeamIds((ids) => {
       const valid = ids.filter((id) => bgTeamIds.includes(id));
       if (valid.length === bgNumByes) return valid;
@@ -380,23 +394,24 @@ export default function Matches() {
       const remaining = bgTeamIds.filter((id) => !valid.includes(id));
       return [...valid, ...remaining.slice(0, bgNumByes - valid.length)];
     });
-  }, [bgTeamIds, bgNumByes]);
+  }, [bgTeamIds, bgNumByes, bgFormat]);
   const toggleBgByeTeam = (id: number) => {
     setBgByeTeamIds((ids) => {
       if (ids.includes(id)) return ids.filter((x) => x !== id);
-      if (ids.length >= bgNumByes) return ids; // can't select more byes than the bracket needs
+      if (ids.length >= bgMaxByes) return ids;
       return [...ids, id];
     });
   };
   const saveGenerateBracket = async (replace = false) => {
     if (!selectedId) return;
     if (bgTeamIds.length < 2) return toast.error("Pick at least 2 teams");
-    if (bgByeTeamIds.length !== bgNumByes) return toast.error(`Select exactly ${bgNumByes} team(s) for the Round 1 bye`);
+    if (bgFormat === "KNOCKOUT" && bgByeTeamIds.length !== bgNumByes) return toast.error(`Select exactly ${bgNumByes} team(s) for the Round 1 bye`);
+    if (bgFormat === "LEAGUE" && bgTeamIds.length - bgByeTeamIds.length < 2) return toast.error("At least 2 teams must play Round 1 — pick fewer byes");
     const order = bgShuffle ? [...bgTeamIds].sort(() => Math.random() - 0.5) : bgTeamIds;
     setBgSaving(true);
     try {
-      await api.post(`/tournaments/${selectedId}/generate-bracket`, { team_ids: order, replace, bye_team_ids: bgByeTeamIds, whole_season: bgWholeSeason });
-      toast.success(bgWholeSeason ? "Bracket generated" : "Round 1 generated");
+      await api.post(`/tournaments/${selectedId}/generate-bracket`, { team_ids: order, replace, bye_team_ids: bgByeTeamIds, whole_season: bgWholeSeason, format: bgFormat });
+      toast.success(bgFormat === "LEAGUE" ? "Round 1 generated" : bgWholeSeason ? "Bracket generated" : "Round 1 generated");
       setBgOpen(false);
       refreshAll();
     } catch (e: any) {
@@ -436,18 +451,26 @@ export default function Matches() {
       toast.error(e?.response?.data?.detail ?? "Could not add match");
     }
   };
+  // Match-lifecycle actions (start/delete/etc.) only need the current round's
+  // matches and the live ticker refreshed — never the full page (tournament
+  // tabs, team/venue/participant lists via refreshAll's loadBase). loadDetail
+  // doesn't toggle the page-wide `loading` flag, so the round list the
+  // organizer is scrolled into stays mounted instead of collapsing to a
+  // spinner and losing their scroll position on every single action.
+  const refreshRoundAndLive = () => { refreshLive(); if (selectedId) loadDetail(selectedId); };
+
   const removeMatch = async (id: number) => {
     if (!confirm("Delete this fixture?")) return;
     await api.delete(`/matches/${id}`);
     toast.success("Deleted");
-    refreshAll();
+    refreshRoundAndLive();
   };
 
   const startMatch = async (id: number) => {
     try {
       await api.post(`/matches/${id}/start`);
       toast.success("Match started");
-      refreshAll();
+      refreshRoundAndLive();
       setConsoleMatchId(id);
     } catch (e: any) {
       toast.error(e?.response?.data?.detail ?? "Could not start match");
@@ -569,7 +592,7 @@ export default function Matches() {
               teams={eligibleTeams}
               canEdit={canEdit}
               onOpenConsole={setConsoleMatchId}
-              onChanged={refreshAll}
+              onChanged={refreshRoundAndLive}
             />
           )}
 
@@ -793,8 +816,9 @@ export default function Matches() {
       <Dialog open={bgOpen} onClose={() => setBgOpen(false)} title="Generate Bracket" testId="generate-bracket-dialog">
         <div className="space-y-4">
           <p className="text-xs text-slate-500">
-            Round 1 pairs up the selected teams right away. If the team count doesn't divide evenly, you choose
-            which team(s) get a bye straight into round 2.
+            {bgFormat === "KNOCKOUT"
+              ? "Round 1 pairs up the selected teams right away. If the team count doesn't divide evenly, you choose which team(s) get a bye straight into round 2."
+              : "Round 1 is built as a pool/league stage for the selected teams. Optionally pick teams to skip Round 1 entirely — they're immediately ready to pull into Round 2's bucket, same as any pool's qualifiers once it finishes."}
           </p>
           {detail?.age_group && (
             <p className="rounded-md bg-orange-50 px-3 py-2 text-xs font-semibold text-coral-600 ring-1 ring-orange-200">
@@ -803,34 +827,52 @@ export default function Matches() {
           )}
 
           <div>
-            <Label>Bracket Scope</Label>
-            <div className="mt-1 grid gap-2 sm:grid-cols-2">
-              <button
+            <Label>Round 1 Format</Label>
+            <div className="mt-1 flex gap-2">
+              <Button type="button" variant={bgFormat === "KNOCKOUT" ? "primary" : "outline"} size="sm" onClick={() => setBgFormat("KNOCKOUT")} data-testid="bracket-format-knockout">Knockout</Button>
+              <Button
                 type="button"
-                onClick={() => setBgWholeSeason(true)}
-                data-testid="bracket-scope-whole"
-                className={cn(
-                  "rounded-md border p-2.5 text-left text-xs transition-colors",
-                  bgWholeSeason ? "border-coral bg-coral/15 ring-1 ring-coral" : "border-white/10 bg-white/5 hover:bg-white/10",
-                )}
+                variant={bgFormat === "LEAGUE" ? "primary" : "outline"}
+                size="sm"
+                onClick={() => { setBgFormat("LEAGUE"); setBgByeTeamIds([]); }}
+                data-testid="bracket-format-league"
               >
-                <p className="font-bold text-white">Whole season</p>
-                <p className="mt-0.5 text-slate-400">Auto-create every round through the Final now, wired to fill in winners as matches complete.</p>
-              </button>
-              <button
-                type="button"
-                onClick={() => setBgWholeSeason(false)}
-                data-testid="bracket-scope-first-round"
-                className={cn(
-                  "rounded-md border p-2.5 text-left text-xs transition-colors",
-                  !bgWholeSeason ? "border-coral bg-coral/15 ring-1 ring-coral" : "border-white/10 bg-white/5 hover:bg-white/10",
-                )}
-              >
-                <p className="font-bold text-white">Round 1 only</p>
-                <p className="mt-0.5 text-slate-400">Just build Round 1 — you'll pick each later round's format (Knockout or League) once it finishes.</p>
-              </button>
+                League
+              </Button>
             </div>
           </div>
+
+          {bgFormat === "KNOCKOUT" && (
+            <div>
+              <Label>Bracket Scope</Label>
+              <div className="mt-1 grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setBgWholeSeason(true)}
+                  data-testid="bracket-scope-whole"
+                  className={cn(
+                    "rounded-md border p-2.5 text-left text-xs transition-colors",
+                    bgWholeSeason ? "border-coral bg-coral/15 ring-1 ring-coral" : "border-white/10 bg-white/5 hover:bg-white/10",
+                  )}
+                >
+                  <p className="font-bold text-white">Whole season</p>
+                  <p className="mt-0.5 text-slate-400">Auto-create every round through the Final now, wired to fill in winners as matches complete.</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBgWholeSeason(false)}
+                  data-testid="bracket-scope-first-round"
+                  className={cn(
+                    "rounded-md border p-2.5 text-left text-xs transition-colors",
+                    !bgWholeSeason ? "border-coral bg-coral/15 ring-1 ring-coral" : "border-white/10 bg-white/5 hover:bg-white/10",
+                  )}
+                >
+                  <p className="font-bold text-white">Round 1 only</p>
+                  <p className="mt-0.5 text-slate-400">Just build Round 1 — you'll pick each later round's format (Knockout or League) once it finishes.</p>
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="flex items-center justify-between">
             <Label>Teams ({bgTeamIds.length} selected)</Label>
@@ -854,13 +896,15 @@ export default function Matches() {
             Shuffle team order (random draw)
           </label>
 
-          {bgNumByes > 0 && (
+          {(bgFormat === "KNOCKOUT" ? bgNumByes > 0 : bgTeamIds.length >= 2) && (
             <div>
               <Label>
-                Round 1 Byes ({bgByeTeamIds.length} of {bgNumByes} selected)
+                {bgFormat === "KNOCKOUT" ? `Round 1 Byes (${bgByeTeamIds.length} of ${bgNumByes} selected)` : `Skip Round 1 (${bgByeTeamIds.length} picked — optional)`}
               </Label>
               <p className="mt-0.5 text-xs text-slate-400">
-                {bgTeamIds.length} teams isn't a power of two — pick exactly {bgNumByes} team{bgNumByes === 1 ? "" : "s"} to advance straight to round 2 without playing in Round 1.
+                {bgFormat === "KNOCKOUT"
+                  ? `${bgTeamIds.length} teams isn't a power of two — pick exactly ${bgNumByes} team${bgNumByes === 1 ? "" : "s"} to advance straight to round 2 without playing in Round 1.`
+                  : "Optionally pick teams to skip Round 1's pools entirely — they'll be immediately ready to pull into Round 2's bucket, before any pool even finishes."}
               </p>
               <div className="mt-1.5 max-h-40 overflow-y-auto rounded-md border border-white/10 bg-white/5 p-2" data-testid="bracket-bye-team-list">
                 {eligibleTeams.filter((t) => bgTeamIds.includes(t.id)).map((t) => (
@@ -868,7 +912,7 @@ export default function Matches() {
                     <input
                       type="checkbox"
                       checked={bgByeTeamIds.includes(t.id)}
-                      disabled={!bgByeTeamIds.includes(t.id) && bgByeTeamIds.length >= bgNumByes}
+                      disabled={!bgByeTeamIds.includes(t.id) && bgByeTeamIds.length >= bgMaxByes}
                       onChange={() => toggleBgByeTeam(t.id)}
                     />
                     {t.name}
@@ -878,7 +922,7 @@ export default function Matches() {
             </div>
           )}
 
-          {bgTeamIds.length >= 2 && (
+          {bgFormat === "KNOCKOUT" && bgTeamIds.length >= 2 && (
             <div className="rounded-md bg-white/5 border border-white/10 p-3 text-xs text-slate-300">
               <span className="font-bold text-white">Preview:</span>{" "}
               {previewBracketRounds(bgTeamIds.length).map((r) => `${r.name} (${r.matches})`).join(" → ")}
@@ -887,7 +931,11 @@ export default function Matches() {
 
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={() => setBgOpen(false)}>Cancel</Button>
-            <Button onClick={() => saveGenerateBracket(false)} disabled={bgSaving || bgTeamIds.length < 2 || bgByeTeamIds.length !== bgNumByes} data-testid="save-generate-bracket-btn">
+            <Button
+              onClick={() => saveGenerateBracket(false)}
+              disabled={bgSaving || bgTeamIds.length < 2 || (bgFormat === "KNOCKOUT" ? bgByeTeamIds.length !== bgNumByes : bgTeamIds.length - bgByeTeamIds.length < 2)}
+              data-testid="save-generate-bracket-btn"
+            >
               {bgSaving ? "Generating…" : "Generate Bracket"}
             </Button>
           </div>
@@ -1033,6 +1081,7 @@ function BucketDialog({ tournamentId, roundId, onClose, onRoundCreated }: {
   const [tiePicks, setTiePicks] = useState<Record<number, number[]>>({});
   const [pullingPoolId, setPullingPoolId] = useState<number | null>(null);
   const [pullingKnockout, setPullingKnockout] = useState(false);
+  const [pullingByes, setPullingByes] = useState(false);
 
   const [format, setFormat] = useState<"KNOCKOUT" | "LEAGUE">("KNOCKOUT");
   const [name, setName] = useState("");
@@ -1107,6 +1156,21 @@ function BucketDialog({ tournamentId, roundId, onClose, onRoundCreated }: {
       toast.error(e?.response?.data?.detail ?? "Could not pull winners");
     } finally {
       setPullingKnockout(false);
+    }
+  };
+
+  const pullByes = async () => {
+    if (!bucketId || !bucket?.byes?.new_byes.length) return;
+    setPullingByes(true);
+    try {
+      const team_ids = bucket.byes.new_byes.map((t) => t.id);
+      const r = await api.post<BucketT>(`/buckets/${bucketId}/pull`, { team_ids });
+      setBucket(r.data);
+      toast.success("Pulled byes into the bucket");
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not pull byes");
+    } finally {
+      setPullingByes(false);
     }
   };
 
@@ -1269,6 +1333,29 @@ function BucketDialog({ tournamentId, roundId, onClose, onRoundCreated }: {
             </div>
           )}
 
+          {bucket.byes && (
+            <div>
+              <Label>Byes — Skipped {bucket.source_round_name ?? "This Round"}</Label>
+              {bucket.byes.new_byes.length === 0 ? (
+                <p className="mt-1 text-xs text-slate-400">All bye teams are already in the bucket.</p>
+              ) : (
+                <div className="mt-1.5">
+                  <p className="mt-0.5 text-xs text-slate-400">These teams skipped {bucket.source_round_name ?? "this round"} entirely — ready any time, no need to wait on the pools.</p>
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {bucket.byes.new_byes.map((t) => (
+                      <span key={t.id} className="rounded bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-400">{t.name}</span>
+                    ))}
+                  </div>
+                  <div className="mt-2 flex justify-end">
+                    <Button size="sm" onClick={pullByes} disabled={pullingByes} data-testid="pull-byes">
+                      {pullingByes ? "Pulling…" : "Pull into Bucket"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {bucket.knockout && (
             <div>
               <Label>Knockout Winners</Label>
@@ -1293,7 +1380,7 @@ function BucketDialog({ tournamentId, roundId, onClose, onRoundCreated }: {
             </div>
           )}
 
-          {bucketTeamCount >= (targetRound ? 1 : 2) ? (
+          {bucketTeamCount >= (targetRound ? 1 : 2) || bucket.pushed_rounds.length > 0 ? (
             <div className="space-y-4 border-t border-white/10 pt-4">
               {bucket.pushed_rounds.length > 0 && (
                 <div>
@@ -1425,16 +1512,20 @@ function LeagueSetup({ tournamentId, rounds, teams, canEdit, onOpenConsole, onCh
     if (!roundId && leagueRounds.length > 0) setRoundId(leagueRounds[0].id);
   }, [leagueRounds]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const load = () => {
+  // `silent` skips the loading-flag toggle — used after an in-place action
+  // (e.g. starting a match inside a pool's fixture list) so the pool-cards
+  // grid doesn't collapse to a spinner and lose scroll position; only the
+  // initial mount/round-switch shows the spinner.
+  const load = (silent = false) => {
     if (!roundId) { setSummary(null); return; }
-    setLoading(true);
+    if (!silent) setLoading(true);
     api.get<LeagueSummaryT>(`/tournaments/${tournamentId}/rounds/${roundId}/league-summary`)
       .then((r) => setSummary(r.data))
       .finally(() => setLoading(false));
   };
-  useEffect(load, [roundId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => load(), [roundId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const refresh = () => { load(); onChanged(); };
+  const refresh = () => { load(true); onChanged(); };
 
   const openAutoPreview = async () => {
     if (!roundId) return;
@@ -1696,20 +1787,23 @@ function PoolDetailDialog({ poolId, canEdit, onClose, onOpenConsole, onChanged }
   const [standings, setStandings] = useState<StandingRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const load = () => {
-    setLoading(true);
+  // `silent` skips the loading-flag toggle — used after starting/removing a
+  // team in place so the fixtures list doesn't collapse to a spinner and
+  // lose scroll position; only the initial mount shows the spinner.
+  const load = (silent = false) => {
+    if (!silent) setLoading(true);
     Promise.all([
       api.get<PoolT>(`/pools/${poolId}`),
       api.get<MatchT[]>(`/pools/${poolId}/matches`),
       api.get<StandingRow[]>(`/pools/${poolId}/standings`),
     ]).then(([p, m, s]) => { setPool(p.data); setMatches(m.data); setStandings(s.data); }).finally(() => setLoading(false));
   };
-  useEffect(load, [poolId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => load(), [poolId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startMatch = async (id: number) => {
     try {
       await api.post(`/matches/${id}/start`);
-      load();
+      load(true);
       onChanged();
       onOpenConsole(id);
     } catch (e: any) {
@@ -1721,7 +1815,7 @@ function PoolDetailDialog({ poolId, canEdit, onClose, onOpenConsole, onChanged }
     if (!confirm("Remove this team from the pool?")) return;
     try {
       await api.delete(`/pools/${poolId}/teams/${teamId}`);
-      load();
+      load(true);
       onChanged();
     } catch (e: any) {
       toast.error(e?.response?.data?.detail ?? "Could not remove team");

@@ -73,12 +73,18 @@ def public_tournaments(db: Session = Depends(get_db)):
 
 
 def _public_pool_dict(p: models.Pool) -> dict:
+    # A cancelled match needs no result to count as resolved (same rule as
+    # the organizer-side readiness check in routers/matches.py
+    # _compute_advancing_teams) — so a pool with one cancelled match and the
+    # rest completed is done, not stuck "in progress" forever.
+    pending_count = sum(1 for m in p.matches if m.status not in ("COMPLETED", "CANCELLED"))
     return {
         "id": p.id,
         "name": p.name,
         "status": p.status,
         "team_count": len(p.teams),
         "match_count": len(p.matches),
+        "pending_count": pending_count,
         "teams": [{"id": t.id, "name": t.name} for t in p.teams],
     }
 

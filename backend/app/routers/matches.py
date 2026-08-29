@@ -307,17 +307,24 @@ def _bracket_round_name(match_count: int) -> str:
 
 @router.post("/api/tournaments/{tournament_id}/generate-bracket", status_code=201)
 def generate_bracket(tournament_id: int, payload: schemas.GenerateBracketRequest, db: Session = Depends(get_db)):
-    """Builds a single-elimination bracket from a flat team list. Round 1
-    always pairs the teams up right away. If `whole_season` (default True),
-    every later round is auto-created too, with placeholder slots
+    """Builds Round 1 from a flat team list. format == "KNOCKOUT" (default):
+    Round 1 always pairs the teams up right away. If `whole_season` (default
+    True), every later round is auto-created too, with placeholder slots
     (source_match_a/b_id) wired to the two matches that feed it, all the way
     down to a 1-match Final — so completing a match later fills the next
     round's slot automatically (see _propagate_winner). If False, only Round 1
-    is created; later rounds get built one at a time via the round-by-round
-    advance flow (POST /tournaments/{id}/rounds/advance) once each round
-    finishes. If the team count isn't a power of two, `bye_team_ids` must name
-    exactly the teams that get a Round 1 bye — the organizer's call, not an
-    automatic pick — spread out so no two byes land on the same pairing."""
+    is created; later rounds get built one at a time via the bucket flow
+    once each round finishes. If the team count isn't a power of two,
+    `bye_team_ids` must name exactly the teams that get a Round 1 bye — the
+    organizer's call, not an automatic pick — spread out so no two byes land
+    on the same pairing.
+
+    format == "LEAGUE": Round 1 is created with the non-bye teams as its
+    entrant roster (pools built afterward by hand, same as any League round);
+    `bye_team_ids` here is entirely optional and any count — those teams skip
+    Round 1's pools altogether and are immediately pullable into a bucket for
+    Round 2 via _compute_advancing_teams's bye_teams. whole_season doesn't
+    apply — a pool stage can't plan its later rounds upfront."""
     t = db.get(models.Tournament, tournament_id)
     if not t:
         raise HTTPException(404, "Tournament not found")
@@ -336,6 +343,24 @@ def generate_bracket(tournament_id: int, payload: schemas.GenerateBracketRequest
     if existing_rounds > 0:
         db.query(models.Round).filter(models.Round.tournament_id == tournament_id).delete()
         db.flush()
+
+    if payload.format == "LEAGUE":
+        bye_ids = list(dict.fromkeys(payload.bye_team_ids))
+        for bid in bye_ids:
+            if bid not in team_ids:
+                raise HTTPException(400, f"Bye team {bid} isn't in the selected team list")
+        playing_ids = [tid for tid in team_ids if tid not in set(bye_ids)]
+        if len(playing_ids) < 2:
+            raise HTTPException(400, "At least 2 teams must play Round 1 — pick fewer byes")
+
+        round_ = models.Round(tournament_id=tournament_id, name="Round 1", sequence=1, format="LEAGUE")
+        db.add(round_)
+        db.flush()
+        round_.entrants = [db.get(models.Team, tid) for tid in playing_ids]
+        for bid in bye_ids:
+            _create_bye_match(db, tournament_id, round_.id, bid)
+        db.commit()
+        return _tournament_dict(t, db, with_rounds=True)
 
     current: list[tuple[str, int | None]] = _place_byes(team_ids, payload.bye_team_ids)
 
@@ -445,12 +470,23 @@ def _compute_advancing_teams(db: Session, round_: models.Round) -> dict:
     if fmt == "LEAGUE":
         from .pools import compute_standings  # local import: avoids a hard import-order dependency between routers
 
+        # Bye teams (organizer-designated — e.g. at Round 1's Generate
+        # Bracket, or any later League round built via the bucket flow) skip
+        # this round's pools entirely and are always immediately ready —
+        # surfaced separately from per-pool qualifiers, the League-side
+        # equivalent of a Knockout source's winners list.
+        bye_teams = [
+            {"id": m.team_a_id, "name": m.team_a.name}
+            for m in round_.matches
+            if m.pool_id is None and m.notes == "Bye" and m.status == "COMPLETED" and m.team_a_id
+        ]
+
         pools = round_.pools
-        if not pools:
+        if not pools and not bye_teams:
             raise HTTPException(400, "This round has no pools yet")
 
         pool_results = []
-        teams: list[dict] = []
+        teams: list[dict] = list(bye_teams)
         has_unresolved_ties = False
         pools_ready = 0
         pools_pending = 0
@@ -458,7 +494,7 @@ def _compute_advancing_teams(db: Session, round_: models.Round) -> dict:
             # Per-pool readiness — a pool that's finished doesn't have to
             # wait on its slower siblings; its qualifiers join the bucket as
             # soon as it's finalized and every one of its matches completes.
-            pool_ready = p.status == "finalized" and bool(p.matches) and all(m.status == "COMPLETED" for m in p.matches)
+            pool_ready = p.status == "finalized" and bool(p.matches) and all(m.status in ("COMPLETED", "CANCELLED") for m in p.matches)
             standings = compute_standings(p) if pool_ready else []
             need = min(2, len(p.teams))
             qualifiers: list[dict] = []
@@ -500,7 +536,7 @@ def _compute_advancing_teams(db: Session, round_: models.Round) -> dict:
                 "tie_need": tie_need,
             })
 
-        ready = pools_ready > 0  # at least one finished pool is enough to advance — no need to wait on the rest
+        ready = pools_ready > 0 or len(bye_teams) > 0  # a finished pool, or any bye team, is enough to advance
         return {
             "round_id": round_.id,
             "format": "LEAGUE",
@@ -508,6 +544,7 @@ def _compute_advancing_teams(db: Session, round_: models.Round) -> dict:
             "blocking": None if ready else f"{pools_pending} pool(s) still in progress",
             "has_unresolved_ties": has_unresolved_ties,
             "pools": pool_results,
+            "bye_teams": bye_teams,
             "teams": teams if ready and not has_unresolved_ties else None,
         }
 
@@ -515,7 +552,7 @@ def _compute_advancing_teams(db: Session, round_: models.Round) -> dict:
     matches = round_.matches
     if not matches:
         raise HTTPException(400, "This round has no matches yet")
-    incomplete = [m for m in matches if m.status != "COMPLETED"]
+    incomplete = [m for m in matches if m.status not in ("COMPLETED", "CANCELLED")]
     ready = not incomplete
     teams = []
     if ready:
