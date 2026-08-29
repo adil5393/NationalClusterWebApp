@@ -12,10 +12,12 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     JSON,
+    LargeBinary,
     Numeric,
     String,
     Table,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import relationship
@@ -57,17 +59,39 @@ class Team(TimestampMixin, Base):
     contact_phone = Column(String(60))
     member_count = Column(Integer, default=0)
     notes = Column(Text)
-    # Simple flags, toggled directly from the Teams table (not the edit form) —
-    # there's no historical-results model to derive them from, so they're set by
-    # hand. Enforced elsewhere (routers/teams.py) to be held by at most one team
-    # each, never both by the same team, and never by two teams sharing a pool.
-    last_year_winner = Column(Boolean, nullable=False, default=False)
-    last_year_runner = Column(Boolean, nullable=False, default=False)
+    # Manual organizer bench (e.g. a school withdrew) — enforced in
+    # routers/matches.py _check_team_playable, alongside the automatic
+    # attendance-based check (Tournament.min_present_players). Both keep the
+    # team visible everywhere (never filtered out of a select list), just
+    # blocked from being placed into a match/pool and visually flagged.
+    is_active = Column(Boolean, nullable=False, default=True)
 
     participants = relationship("Participant", back_populates="team", cascade="all, delete-orphan")
     coaches = relationship("Coach", back_populates="team", cascade="all, delete-orphan")
     accommodation = relationship("AccommodationAssignment", back_populates="team")
     transport = relationship("TransportAssignment", back_populates="team")
+    last_year_awards = relationship("TeamLastYearAward", back_populates="team", cascade="all, delete-orphan")
+
+
+class TeamLastYearAward(Base):
+    """A team's last-year result, scoped to one age group — a school can have
+    won one age group and been runner-up in another, so this isn't a single
+    tournament-wide flag. Enforced in routers/teams.py: at most one team per
+    (age_group, award) — the DB-level unique constraint backs that up — and a
+    team never holds both awards in the same age group (unique on team_id +
+    age_group). Winner/runner in the same age group are also never allowed to
+    share a pool (routers/pools.py _check_last_year_conflict)."""
+    __tablename__ = "team_last_year_awards"
+    __table_args__ = (
+        UniqueConstraint("team_id", "age_group", name="uq_team_last_year_award_team_group"),
+        UniqueConstraint("age_group", "award", name="uq_team_last_year_award_group_award"),
+    )
+    id = Column(Integer, primary_key=True)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    age_group = Column(String(40), nullable=False)
+    award = Column(String(10), nullable=False)  # "winner" | "runner"
+
+    team = relationship("Team", back_populates="last_year_awards")
 
 
 class Participant(TimestampMixin, Base):
@@ -402,6 +426,10 @@ class Tournament(TimestampMixin, Base):
     age_group = Column(String(40))
     status = Column(String(20), nullable=False, default="draft")  # schemas.TOURNAMENT_STATUSES
     notes = Column(Text)
+    # Minimum checked-in (Participant.is_present) players, in this tournament's
+    # age group, a team needs before it's eligible to be placed into a match or
+    # pool (routers/matches.py _check_team_playable) — 0 disables the check.
+    min_present_players = Column(Integer, nullable=False, default=10)
 
     rounds = relationship(
         "Round", back_populates="tournament", cascade="all, delete-orphan", order_by="Round.sequence"
@@ -454,8 +482,13 @@ class Bucket(TimestampMixin, Base):
     they're ready, then keep pulling more in later and do it again — e.g.
     pool A/B's winners start playing while pool C/D are still finishing.
     Each entry tracks its own pulled/pushed state (BucketTeam.pushed_round_id)
-    rather than the whole bucket closing after one round is built."""
+    rather than the whole bucket closing after one round is built. Unique on
+    source_round_id — exactly one bucket per source round, ever — so a race
+    between two get_or_create_bucket calls (e.g. React StrictMode's double
+    effect-fire) can't leave a stray duplicate that a later request might
+    resolve to instead of the one with real pull/push history."""
     __tablename__ = "buckets"
+    __table_args__ = (UniqueConstraint("source_round_id", name="uq_buckets_source_round_id"),)
     id = Column(Integer, primary_key=True)
     tournament_id = Column(Integer, ForeignKey("tournaments.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(120), nullable=False)
@@ -592,3 +625,29 @@ class MatchEvent(TimestampMixin, Base):
     match = relationship("Match", back_populates="events")
     team = relationship("Team")
     created_by = relationship("OrganizerUser")
+
+
+class Report(TimestampMixin, Base):
+    """A generated, persisted per-round match report (routers/reports.py) — the
+    organizer's explicit "Generate Report" action snapshots that round's data
+    into file_data right now, rather than this being a live/recomputed
+    download. round_id is SET NULL (not CASCADE) if the round is later
+    deleted, specifically so the report survives that and keeps meaning what
+    it meant when generated — round_name/round_sequence/format are captured
+    here at generation time for exactly that reason; round_id is None is the
+    whole "belongs to a deleted round" signal, nothing else needed for it.
+    The full-tournament report (all rounds, one workbook) is a separate, live,
+    unpersisted download — it isn't tied to one round the way this is, so
+    there's nothing here to snapshot for it."""
+    __tablename__ = "reports"
+    id = Column(Integer, primary_key=True)
+    tournament_id = Column(Integer, ForeignKey("tournaments.id", ondelete="CASCADE"), nullable=False)
+    round_id = Column(Integer, ForeignKey("rounds.id", ondelete="SET NULL"))
+    round_name = Column(String(120), nullable=False)
+    round_sequence = Column(Integer, nullable=False)
+    format = Column(String(20), nullable=False)  # schemas.ROUND_FORMATS, snapshotted
+    file_data = Column(LargeBinary, nullable=False)
+    generated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    tournament = relationship("Tournament")
+    round = relationship("Round")

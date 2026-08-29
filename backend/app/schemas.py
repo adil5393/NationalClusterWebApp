@@ -1,7 +1,7 @@
 """Pydantic schemas + controlled vocabularies shared by public and admin APIs."""
 from datetime import datetime
 from decimal import Decimal
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -46,6 +46,11 @@ class TeamCreate(TeamBase):
     pass
 
 
+class LastYearAwardEntry(ORMModel):
+    age_group: str
+    award: Literal["winner", "runner"]
+
+
 class TeamUpdate(BaseModel):
     name: Optional[str] = None
     school: Optional[str] = None
@@ -57,9 +62,12 @@ class TeamUpdate(BaseModel):
     member_count: Optional[int] = None
     notes: Optional[str] = None
     # Toggled directly from the Teams table (see PUT /teams/{id}), never part
-    # of the main edit form. Exclusivity/pool rules enforced in the router.
-    last_year_winner: Optional[bool] = None
-    last_year_runner: Optional[bool] = None
+    # of the main edit form.
+    is_active: Optional[bool] = None
+    # When present, REPLACES this team's whole set of last-year awards (one
+    # entry per age group it holds an award in). Exclusivity/pool-conflict
+    # rules enforced in the router.
+    last_year_awards: Optional[List[LastYearAwardEntry]] = None
 
 
 class AccommodationLocation(BaseModel):
@@ -76,8 +84,9 @@ class TeamRead(ORMModel, TeamBase):
     accommodation_status: Optional[str] = None  # "none" | "partial" | "full"
     accommodation_locations: List[AccommodationLocation] = []
     age_group_counts: dict[str, int] = {}  # e.g. {"Under 14": 10, "Under 17": 8}
-    last_year_winner: bool = False
-    last_year_runner: bool = False
+    present_counts: dict[str, int] = {}  # same keys, count of is_present participants
+    is_active: bool = True
+    last_year_awards: List[LastYearAwardEntry] = []
     created_at: datetime
     updated_at: datetime
 
@@ -86,6 +95,7 @@ class TeamPublic(ORMModel):
     id: int
     name: str
     school: Optional[str] = None
+    school_code: Optional[str] = None
     region: Optional[str] = None
     country: Optional[str] = None
     member_count: Optional[int] = None
@@ -531,6 +541,9 @@ class TournamentCreate(BaseModel):
     age_group: Optional[str] = None
     status: str = "draft"
     notes: Optional[str] = None
+    # Minimum checked-in players (in this tournament's age group) a team needs
+    # to be eligible for a match/pool — 0 disables the check.
+    min_present_players: int = 10
 
     @field_validator("status")
     @classmethod
@@ -546,6 +559,7 @@ class TournamentUpdate(BaseModel):
     age_group: Optional[str] = None
     status: Optional[str] = None
     notes: Optional[str] = None
+    min_present_players: Optional[int] = None
 
     @field_validator("status")
     @classmethod

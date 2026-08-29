@@ -80,6 +80,7 @@ def _tournament_dict(t: models.Tournament, db: Session, with_rounds: bool = Fals
         "age_group": t.age_group,
         "status": t.status,
         "notes": t.notes,
+        "min_present_players": t.min_present_players,
         "round_count": len(t.rounds),
         "match_count": sum(len(r.matches) for r in t.rounds),
     }
@@ -117,6 +118,42 @@ def _check_team_age_group(db: Session, team_id: int, age_group: str | None) -> N
         team = db.get(models.Team, team_id)
         team_name = team.name if team else f"Team {team_id}"
         raise HTTPException(400, f"{team_name} has no registered players in age group '{age_group}' — can't schedule them into this tournament")
+
+
+def _team_unplayable_reason(db: Session, team: models.Team, tournament: models.Tournament) -> str | None:
+    """None if the team can be placed into a match/pool in this tournament,
+    otherwise the reason it can't — either benched manually (Team.is_active)
+    or automatically, because too few of its players in this tournament's age
+    group have checked in (Tournament.min_present_players; 0 disables this
+    half of the check)."""
+    if not team.is_active:
+        return f"{team.name} is marked inactive"
+    if tournament.min_present_players > 0 and tournament.age_group:
+        present = (
+            db.query(models.Participant.id)
+            .filter(
+                models.Participant.team_id == team.id,
+                models.Participant.age_group == tournament.age_group,
+                models.Participant.is_present.is_(True),
+            )
+            .count()
+        )
+        if present < tournament.min_present_players:
+            return f"{team.name} only has {present} of {tournament.min_present_players} required players present"
+    return None
+
+
+def _check_team_playable(db: Session, team_id: int, tournament: models.Tournament) -> None:
+    """Guards against placing a team into a match/pool while it's unplayable
+    (see _team_unplayable_reason). Never filters a team out of a selection
+    list (see Matches.tsx/Teams.tsx) — only blocks the actual placement, with
+    a clear reason."""
+    team = db.get(models.Team, team_id)
+    if not team:
+        return  # caller already 404s on a missing team; nothing to check here
+    reason = _team_unplayable_reason(db, team, tournament)
+    if reason:
+        raise HTTPException(400, f"{reason} — can't be scheduled")
 
 
 def _propagate_winner(db: Session, match: models.Match) -> None:
@@ -336,6 +373,7 @@ def generate_bracket(tournament_id: int, payload: schemas.GenerateBracketRequest
         if not db.get(models.Team, team_id):
             raise HTTPException(404, f"Team {team_id} not found")
         _check_team_age_group(db, team_id, t.age_group)
+        _check_team_playable(db, team_id, t)
 
     existing_rounds = db.query(models.Round).filter(models.Round.tournament_id == tournament_id).count()
     if existing_rounds > 0 and not payload.replace:
@@ -590,6 +628,7 @@ def create_match(round_id: int, payload: schemas.MatchCreate, db: Session = Depe
             raise HTTPException(404, f"Team {team_id} not found")
         if team_id:
             _check_team_age_group(db, team_id, round_.tournament.age_group)
+            _check_team_playable(db, team_id, round_.tournament)
     for source_id in (payload.source_match_a_id, payload.source_match_b_id):
         if source_id and not db.get(models.Match, source_id):
             raise HTTPException(404, f"Source match {source_id} not found")
@@ -642,6 +681,7 @@ def update_match(match_id: int, payload: schemas.MatchUpdate, db: Session = Depe
             raise HTTPException(404, f"Team {team_id} not found")
         if team_id:
             _check_team_age_group(db, team_id, m.tournament.age_group)
+            _check_team_playable(db, team_id, m.tournament)
     for k, v in data.items():
         setattr(m, k, v)
     if m.status == "POSTPONED" and "scheduled_at" in data:

@@ -22,6 +22,7 @@ duplicating either. Organizer-only, gated the same as matches.py/pools.py
 (require_module("matches") — buckets are part of "Matches & Fixtures").
 """
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
@@ -125,17 +126,25 @@ def get_or_create_bucket(tournament_id: int, round_id: int, db: Session = Depend
         raise HTTPException(404, "Round not found for this tournament")
 
     # One bucket per source round, for its whole life — never re-created.
-    # Ordered by id so this is deterministic even if a duplicate ever exists
-    # (e.g. from a race on the very first "Advance to Bucket" click) — always
-    # resolves to the original, not whichever row Postgres happens to scan
-    # first.
-    existing = db.query(models.Bucket).filter(models.Bucket.source_round_id == round_id).order_by(models.Bucket.id).first()
+    # A unique DB constraint on source_round_id backs this up, so a race
+    # between two near-simultaneous calls (e.g. React StrictMode's double
+    # effect-fire on the dialog's mount) can insert at most one; the loser
+    # catches the IntegrityError below and falls back to the winner's row
+    # instead of erroring or creating a stray duplicate.
+    existing = db.query(models.Bucket).filter(models.Bucket.source_round_id == round_id).first()
     if existing:
         return _bucket_dict(db, existing)
 
     bucket = models.Bucket(tournament_id=tournament_id, name=f"Bucket from {r.name}", source_round_id=round_id)
     db.add(bucket)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = db.query(models.Bucket).filter(models.Bucket.source_round_id == round_id).first()
+        if not existing:
+            raise
+        return _bucket_dict(db, existing)
     db.refresh(bucket)
     return _bucket_dict(db, bucket)
 

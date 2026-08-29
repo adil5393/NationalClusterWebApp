@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..database import get_db
 from ..pool_logic import MIN_POOL_SIZE, distribute_pool_sizes, round_robin_pairs
-from .matches import _check_team_age_group, _match_dict
+from .matches import _check_team_age_group, _check_team_playable, _match_dict, _team_unplayable_reason
 
 router = APIRouter(tags=["pools"])
 
@@ -71,16 +71,83 @@ def _teams_already_in_round(db: Session, round_id: int, exclude_pool_id: int | N
     return result
 
 
+_AWARD_LABEL = {"winner": "winner", "runner": "runner-up"}
+
+
 def _check_last_year_conflict(pool_teams: list[models.Team], team: models.Team) -> None:
-    """Last year's winner and runner-up can never share a pool."""
-    if team.last_year_winner:
-        conflict = next((t for t in pool_teams if t.id != team.id and t.last_year_runner), None)
+    """Last year's winner and runner-up, in the SAME age group, can never
+    share a pool — a team holding an award in one age group doesn't conflict
+    with a pool teammate's award in a different one."""
+    opposite = {"winner": "runner", "runner": "winner"}
+    for award in team.last_year_awards:
+        conflict = next(
+            (
+                t for t in pool_teams
+                if t.id != team.id
+                and any(a.age_group == award.age_group and a.award == opposite[award.award] for a in t.last_year_awards)
+            ),
+            None,
+        )
         if conflict:
-            raise HTTPException(409, f"{team.name} (last year's winner) can't share a pool with {conflict.name} (last year's runner-up)")
-    if team.last_year_runner:
-        conflict = next((t for t in pool_teams if t.id != team.id and t.last_year_winner), None)
-        if conflict:
-            raise HTTPException(409, f"{team.name} (last year's runner-up) can't share a pool with {conflict.name} (last year's winner)")
+            raise HTTPException(
+                409,
+                f"{team.name} (last year's {_AWARD_LABEL[award.award]} in {award.age_group}) can't share a pool "
+                f"with {conflict.name}, who holds the other award in the same age group",
+            )
+
+
+def _awards_conflict(a: models.Team, b: models.Team) -> bool:
+    opposite = {"winner": "runner", "runner": "winner"}
+    return any(
+        x.age_group == y.age_group and y.award == opposite[x.award]
+        for x in a.last_year_awards for y in b.last_year_awards
+    )
+
+
+def _repair_last_year_conflicts(breakdown: list[dict], teams_by_id: dict[int, models.Team]) -> None:
+    """Unlike a manual add-to-pool (which just blocks so the organizer can pick
+    someone else), auto-create chunks unassigned teams by size/order alone with
+    no awareness of the winner/runner-up rule — so a conflict here would only
+    ever surface as a confusing 409 mid-commit, after the organizer already
+    approved the preview. A team can hold at most one award per age group and
+    an age group has at most one winner and one runner-up (unique constraints
+    on TeamLastYearAward), and a tournament is itself scoped to one age group,
+    so there's at most a single conflicting pair to fix per call — swap one of
+    them into whichever other pool can take it without recreating the
+    conflict there."""
+    for pool in breakdown:
+        ids = pool["team_ids"]
+        pair = next(
+            (
+                (x, y) for i, x in enumerate(ids) for y in ids[i + 1:]
+                if _awards_conflict(teams_by_id[x], teams_by_id[y])
+            ),
+            None,
+        )
+        if not pair:
+            continue
+        _, b_id = pair
+        for other in breakdown:
+            if other is pool:
+                continue
+            other_ids = other["team_ids"]
+            swap_target = next(
+                (
+                    c_id for c_id in other_ids
+                    if all(not _awards_conflict(teams_by_id[c_id], teams_by_id[t]) for t in ids if t != b_id)
+                    and all(not _awards_conflict(teams_by_id[b_id], teams_by_id[t]) for t in other_ids if t != c_id)
+                ),
+                None,
+            )
+            if swap_target is not None:
+                ids[ids.index(b_id)] = swap_target
+                other_ids[other_ids.index(swap_target)] = b_id
+                for entry in (pool, other):
+                    entry["teams"] = [{"id": t, "name": teams_by_id[t].name} for t in entry["team_ids"]]
+                break
+        # If no safe swap exists anywhere (e.g. only one pool total), leave it —
+        # the commit-time _check_last_year_conflict call still catches it and
+        # raises a clear error instead of silently creating an invalid pool.
 
 
 def _get_round(db: Session, tournament_id: int, round_id: int) -> models.Round:
@@ -212,6 +279,7 @@ def _add_teams_to_pool(db: Session, tournament: models.Tournament, pool: models.
         if not team:
             raise HTTPException(404, f"Team {team_id} not found")
         _check_team_age_group(db, team_id, tournament.age_group)
+        _check_team_playable(db, team_id, tournament)
         if entrant_ids is not None and team_id not in entrant_ids:
             raise HTTPException(400, f"{team.name} isn't part of this round's advancing teams")
         if team_id in already:
@@ -286,7 +354,10 @@ def auto_create_pools(tournament_id: int, round_id: int, payload: schemas.AutoCr
 
     eligible = _eligible_teams(db, t, round_)
     assigned = _teams_already_in_round(db, round_id)
-    unassigned = [team for team in eligible if team.id not in assigned]
+    # Auto-distribution is a bulk action with no per-team confirmation step —
+    # silently skip unplayable teams (inactive, or below the present-players
+    # bar) rather than erroring the whole batch on one of them.
+    unassigned = [team for team in eligible if team.id not in assigned and not _team_unplayable_reason(db, team, t)]
 
     try:
         sizes = distribute_pool_sizes(len(unassigned), payload.teams_per_pool or MIN_POOL_SIZE)
@@ -299,6 +370,8 @@ def auto_create_pools(tournament_id: int, round_id: int, payload: schemas.AutoCr
         chunk = unassigned[cursor:cursor + size]
         cursor += size
         breakdown.append({"name": f"Pool {chr(65 + i)}", "team_count": size, "team_ids": [x.id for x in chunk], "teams": [{"id": x.id, "name": x.name} for x in chunk]})
+
+    _repair_last_year_conflicts(breakdown, {team.id: team for team in unassigned})
 
     if not payload.commit:
         return {"preview": True, "pool_count": len(breakdown), "pools": breakdown}

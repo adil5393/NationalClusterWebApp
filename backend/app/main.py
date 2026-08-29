@@ -26,6 +26,7 @@ from .routers import (
     pools,
     procurement,
     public,
+    reports,
     schedule,
     search,
     staff,
@@ -118,6 +119,7 @@ for router_module, module_key in (
     (matches, "matches"),
     (pools, "matches"),
     (buckets, "matches"),
+    (reports, "matches"),
     (attendance, "attendance"),
 ):
     app.include_router(router_module.router, dependencies=[Depends(require_module(module_key))])

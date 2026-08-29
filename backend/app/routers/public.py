@@ -169,8 +169,20 @@ def public_match_detail(match_id: int, db: Session = Depends(get_db)):
         }
         for e in m.events[-30:]  # recent history only — this isn't a full audit export
     ]
-    d["team_a_roster"] = [{"full_name": p.full_name, "role": p.role} for p in m.team_a.participants] if m.team_a else []
-    d["team_b_roster"] = [{"full_name": p.full_name, "role": p.role} for p in m.team_b.participants] if m.team_b else []
+    # A school can field squads across several age groups — only list the
+    # players actually in this match's tournament's age group, not the
+    # team's whole roster (same "no age_group = open to everyone" convention
+    # as routers/matches.py _check_team_age_group).
+    age_group = m.tournament.age_group if m.tournament else None
+
+    def _roster(team: "models.Team | None") -> list[dict]:
+        if not team:
+            return []
+        participants = team.participants if not age_group else [p for p in team.participants if p.age_group == age_group]
+        return [{"full_name": p.full_name, "role": p.role} for p in participants]
+
+    d["team_a_roster"] = _roster(m.team_a)
+    d["team_b_roster"] = _roster(m.team_b)
     return d
 
 
