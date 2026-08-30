@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { UploadCloud } from "lucide-react";
+import { UploadCloud, FileSpreadsheet, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Dialog } from "@/components/ui/dialog";
@@ -33,7 +33,11 @@ export function AttendanceImportDialog({
     try {
       const r = await api.post("/import/attendance-list", fd, { headers: { "Content-Type": undefined } as any });
       setResult(r.data);
-      toast.success(`Imported ${r.data.teams.created + r.data.teams.updated} teams, ${r.data.participants.created + r.data.participants.updated} participants`);
+      toast.success(
+        `Imported ${r.data.teams.created + r.data.teams.updated} teams, ${
+          r.data.participants.created + r.data.participants.updated
+        } participants`,
+      );
       onDone();
     } catch (e: any) {
       toast.error(e?.response?.data?.detail ?? "Import failed");
@@ -43,50 +47,74 @@ export function AttendanceImportDialog({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title="Import Attendance List" testId="attendance-import-dialog">
+    <Dialog open={open} onClose={onClose} title="Import CBSE Attendance Workbook" testId="attendance-import-dialog">
       <div className="space-y-4">
-        <div className="rounded-md bg-white/5 p-3 text-xs text-slate-300 border border-white/5">
-          <p className="font-bold text-white">Upload the raw attendance list export</p>
-          <p className="mt-1 text-slate-300">
-            The same file you already export. Only its tab literally named <strong>"Sheet"</strong> is read
-            (one row per student) — the file must contain a tab with that exact name, any other tabs are
-            ignored. Teams are derived automatically by grouping students by school code, so there's no
-            need to prepare separate files.
+        <div className="rounded-xl border border-white/10 bg-obsidian-950 p-3.5 text-xs text-slate-300 space-y-2">
+          <p className="font-heading font-bold text-white flex items-center gap-2">
+            <FileSpreadsheet className="h-4 w-4 text-gold" /> Raw Attendance List Export Format
           </p>
-          <p className="mt-2 text-slate-400">
-            Schools are matched by school code, students by registration number, so re-uploading a newer
-            export — a new team, or more players added to an existing one — only adds what's new instead
-            of duplicating existing records. Only male students are imported.
+          <p className="text-slate-300 text-[11px] leading-relaxed">
+            The tab named <strong className="text-gold font-mono">"Sheet"</strong> is read with one row per student. Teams are derived automatically by grouping students by school code.
+          </p>
+          <p className="text-slate-400 text-[11px] leading-relaxed border-t border-white/5 pt-1.5">
+            Schools match on school code, students match on registration number — re-uploading safe for updates.
           </p>
         </div>
-        <label className="flex h-24 cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed border-white/15 bg-white/5 text-sm text-slate-400 hover:border-coral hover:text-white">
-          <UploadCloud className="h-6 w-6 text-coral" />
-          {file ? file.name : "Click to choose the attendance list…"}
-          <input type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} data-testid="attendance-import-file-input" />
+
+        <label className="flex h-28 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-white/15 bg-obsidian-950 p-4 text-xs text-slate-400 hover:border-gold hover:text-white transition-all">
+          <UploadCloud className="h-7 w-7 text-gold" />
+          <span className="font-semibold text-center truncate max-w-full">
+            {file ? file.name : "Click or drag attendance workbook (.xlsx) to upload"}
+          </span>
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            data-testid="attendance-import-file-input"
+          />
         </label>
 
         {result && (
-          <div className="rounded-md border border-white/10 bg-white/5 p-3 text-sm text-slate-200" data-testid="attendance-import-result">
-            <p>
-              Teams: <strong className="text-emerald-400">{result.teams.created}</strong> created ·{" "}
-              <strong className="text-slate-400">{result.teams.updated}</strong> updated
+          <div
+            className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3.5 text-xs text-slate-200 space-y-1.5"
+            data-testid="attendance-import-result"
+          >
+            <div className="flex items-center gap-2 font-heading font-bold text-emerald-400">
+              <CheckCircle2 className="h-4 w-4" /> Attendance Synchronization Complete
+            </div>
+            <p className="font-mono">
+              Teams: <strong className="text-white">{result.teams.created}</strong> created ·{" "}
+              <strong className="text-slate-300">{result.teams.updated}</strong> updated
             </p>
-            <p className="mt-1">
-              Participants: <strong className="text-emerald-400">{result.participants.created}</strong> created ·{" "}
-              <strong className="text-slate-400">{result.participants.updated}</strong> updated ·{" "}
-              <strong className="text-slate-400">{result.participants.skipped_female}</strong> female skipped
+            <p className="font-mono">
+              Athletes: <strong className="text-white">{result.participants.created}</strong> created ·{" "}
+              <strong className="text-slate-300">{result.participants.updated}</strong> updated ·{" "}
+              <strong className="text-slate-400">{result.participants.skipped_female}</strong> skipped
             </p>
             {result.errors.length > 0 && (
-              <ul className="mt-2 max-h-32 list-disc space-y-0.5 overflow-y-auto pl-5 text-xs text-red-400">
-                {result.errors.map((er, i) => <li key={i}>{er}</li>)}
+              <ul className="mt-2 max-h-32 list-disc space-y-0.5 overflow-y-auto pl-5 text-[11px] text-red-400">
+                {result.errors.map((er, i) => (
+                  <li key={i}>{er}</li>
+                ))}
               </ul>
             )}
           </div>
         )}
 
-        <div className="flex justify-end gap-2 pt-1">
-          <Button variant="outline" onClick={onClose}>Close</Button>
-          <Button onClick={upload} disabled={busy} data-testid="run-attendance-import-btn">{busy ? "Importing…" : "Import"}</Button>
+        <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+          <Button variant="outline" size="sm" onClick={onClose}>
+            Close
+          </Button>
+          <Button
+            variant="gold"
+            size="sm"
+            onClick={upload}
+            disabled={busy || !file}
+            data-testid="run-attendance-import-btn"
+          >
+            {busy ? "Synchronizing…" : "Start Synchronization"}
+          </Button>
         </div>
       </div>
     </Dialog>

@@ -1,16 +1,22 @@
 import { useEffect, useState } from "react";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, MapPin, Trophy, Users } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
-import { Table, THead, TH, TR, TD } from "@/components/ui/table";
+import { Table, THead, TH, TR, TD, TBody } from "@/components/ui/table";
 import { Dialog } from "@/components/ui/dialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
+import { Badge } from "@/components/ui/badge";
 import { useModuleAccess } from "@/lib/permissions";
 
 interface Venue {
-  id: number; name: string; venue_type?: string; capacity?: number; location?: string; description?: string;
+  id: number;
+  name: string;
+  venue_type?: string;
+  capacity?: number;
+  location?: string;
+  description?: string;
 }
 const empty: Partial<Venue> = { name: "", venue_type: "", location: "" };
 
@@ -23,7 +29,10 @@ export default function Venues() {
 
   const load = () => {
     setLoading(true);
-    api.get<Venue[]>("/venues").then((r) => setVenues(r.data)).finally(() => setLoading(false));
+    api
+      .get<Venue[]>("/venues")
+      .then((r) => setVenues(r.data))
+      .finally(() => setLoading(false));
   };
   useEffect(load, []);
 
@@ -40,86 +49,256 @@ export default function Venues() {
       toast.error("Could not save venue");
     }
   };
+
   const remove = async (id: number) => {
     if (!confirm("Delete this venue?")) return;
     await api.delete(`/venues/${id}`);
     toast.success("Deleted");
     load();
   };
+
   const set = (k: keyof Venue, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   return (
-    <div data-testid="admin-venues">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div data-testid="admin-venues" className="space-y-6">
+      {/* PAGE HEADER */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between border-b border-white/10 pb-5">
         <div>
-          <h1 className="font-heading text-2xl font-black tracking-tight text-white">Venues</h1>
-          <p className="mt-1 text-sm text-slate-400">{venues.length} venues · used by schedule events</p>
+          <span className="text-xs font-heading font-extrabold uppercase tracking-widest text-gold">
+            COMPETITION COURTS & INFRASTRUCTURE
+          </span>
+          <h1 className="mt-1 font-heading text-2xl sm:text-3xl font-black tracking-tight text-white">
+            Venues & Match Arenas
+          </h1>
+          <p className="mt-1 text-xs sm:text-sm text-slate-400 font-body">
+            {venues.length} registered venues & courts used by fixtures, schedules, and ceremonies.
+          </p>
         </div>
-        {canEdit && <Button onClick={() => { setForm(empty); setOpen(true); }} data-testid="add-venue-btn"><Plus className="h-4 w-4" /> Add Venue</Button>}
+        {canEdit && (
+          <Button
+            variant="gold"
+            size="sm"
+            onClick={() => {
+              setForm(empty);
+              setOpen(true);
+            }}
+            data-testid="add-venue-btn"
+            className="text-xs font-extrabold"
+          >
+            <Plus className="h-4 w-4" /> Add Venue / Court
+          </Button>
+        )}
       </div>
 
-      <div className="mt-6 overflow-hidden rounded-lg border border-slate-800 bg-slate-900">
-        {loading ? <Spinner /> : venues.length === 0 ? (
-          <div className="p-6"><EmptyState title="No venues yet" hint="Add venues so schedule events can show a location." /></div>
+      {/* VENUES CONTENT */}
+      <div>
+        {loading ? (
+          <div className="rounded-xl border border-white/10 bg-obsidian-900 py-16">
+            <Spinner label="Loading venue registries…" />
+          </div>
+        ) : venues.length === 0 ? (
+          <div className="rounded-xl border border-white/10 bg-obsidian-900 p-6">
+            <EmptyState title="No venues registered yet" hint="Add competition courts or dining arenas." />
+          </div>
         ) : (
           <>
-          <div className="grid gap-2 p-2 lg:hidden">
-            {venues.map((v, i) => (
-              <div key={v.id} data-testid={`venue-card-${v.id}`} className="w-full min-w-0 rounded-lg border border-slate-800 bg-obsidian p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-semibold text-slate-500">#{i + 1}</div>
-                    <div className="break-words text-sm font-bold text-white">{v.name}</div>
-                    <div className="truncate text-[11px] text-slate-400">{v.location || "No location"}</div>
-                  </div>
-                  <span className="shrink-0 rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{v.capacity ?? "—"} cap.</span>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-1 border-t border-white/10 pt-2">
-                  {v.venue_type && <span className="rounded bg-coral/15 px-1.5 py-0.5 text-[10px] font-bold text-coral">{v.venue_type}</span>}
-                </div>
-                {canEdit && (
-                  <div className="mt-2 grid grid-cols-2 gap-1.5">
-                    <Button variant="outline" size="sm" className="h-8 min-w-0 px-1 text-[11px]" onClick={() => { setForm(v); setOpen(true); }}><Pencil className="h-3.5 w-3.5" /> Edit</Button>
-                    <Button variant="danger" size="sm" className="h-8 min-w-0 px-1 text-[11px]" onClick={() => remove(v.id)}><Trash2 className="h-3.5 w-3.5" /> Delete</Button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-          <div className="hidden lg:block"><Table>
-            <THead><TR className="hover:bg-transparent"><TH>#</TH><TH>Name</TH><TH>Type</TH><TH>Location</TH><TH className="text-right">Capacity</TH><TH className="text-right">Actions</TH></TR></THead>
-            <tbody>
+            {/* MOBILE: CARD LIST */}
+            <div className="grid gap-2.5 lg:hidden">
               {venues.map((v, i) => (
-                <TR key={v.id} data-testid={`venue-row-${v.id}`}>
-                  <TD className="text-slate-400">{i + 1}</TD>
-                  <TD className="font-bold text-white">{v.name}</TD>
-                  <TD className="text-slate-300">{v.venue_type || "—"}</TD>
-                  <TD className="text-slate-300">{v.location || "—"}</TD>
-                  <TD className="text-right text-slate-300">{v.capacity ?? "—"}</TD>
-                  <TD><div className="flex justify-end gap-1">
-                    {canEdit && <Button variant="ghost" size="icon" onClick={() => { setForm(v); setOpen(true); }} data-testid={`edit-venue-${v.id}`}><Pencil className="h-4 w-4" /></Button>}
-                    {canEdit && <Button variant="ghost" size="icon" onClick={() => remove(v.id)} data-testid={`delete-venue-${v.id}`}><Trash2 className="h-4 w-4 text-red-400" /></Button>}
-                  </div></TD>
-                </TR>
+                <div
+                  key={v.id}
+                  data-testid={`venue-card-${v.id}`}
+                  className="rounded-xl border border-white/10 bg-obsidian-900 p-4 space-y-2.5 shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span className="text-[10px] font-mono text-slate-500">#{i + 1}</span>
+                      <h3 className="font-heading font-bold text-white text-base">{v.name}</h3>
+                      <p className="text-xs text-slate-400 font-body flex items-center gap-1 mt-0.5">
+                        <MapPin className="h-3.5 w-3.5 text-gold" /> {v.location || "No location specified"}
+                      </p>
+                    </div>
+                    {v.capacity != null && (
+                      <span className="rounded bg-white/5 border border-white/5 px-2 py-0.5 text-xs font-mono font-bold text-slate-300 shrink-0">
+                        {v.capacity} Cap.
+                      </span>
+                    )}
+                  </div>
+
+                  {v.venue_type && (
+                    <div className="pt-1">
+                      <Badge tone="gold" size="sm">
+                        {v.venue_type}
+                      </Badge>
+                    </div>
+                  )}
+
+                  {v.description && (
+                    <p className="text-xs text-slate-400 font-body leading-relaxed">{v.description}</p>
+                  )}
+
+                  {canEdit && (
+                    <div className="grid grid-cols-2 gap-2 border-t border-white/10 pt-2.5">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={() => {
+                          setForm(v);
+                          setOpen(true);
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" /> Edit
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={() => remove(v.id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Delete
+                      </Button>
+                    </div>
+                  )}
+                </div>
               ))}
-            </tbody>
-          </Table></div>
+            </div>
+
+            {/* DESKTOP: TABLE */}
+            <div className="hidden lg:block">
+              <Table>
+                <THead>
+                  <TR>
+                    <TH className="w-12">#</TH>
+                    <TH>Venue / Court Name</TH>
+                    <TH>Facility Type</TH>
+                    <TH>Location / Map Pin</TH>
+                    <TH className="text-right">Seating Capacity</TH>
+                    <TH className="text-right">Actions</TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {venues.map((v, i) => (
+                    <TR key={v.id} data-testid={`venue-row-${v.id}`}>
+                      <TD className="text-slate-500 font-mono text-xs">{i + 1}</TD>
+                      <TD>
+                        <div>
+                          <p className="font-heading font-bold text-white text-sm">{v.name}</p>
+                          {v.description && (
+                            <p className="text-xs text-slate-400 font-body line-clamp-1">{v.description}</p>
+                          )}
+                        </div>
+                      </TD>
+                      <TD>
+                        {v.venue_type ? (
+                          <Badge tone="gold" size="sm">
+                            {v.venue_type}
+                          </Badge>
+                        ) : (
+                          <span className="text-slate-500">—</span>
+                        )}
+                      </TD>
+                      <TD className="text-slate-300 font-body text-xs">{v.location || "—"}</TD>
+                      <TD className="text-right font-mono text-xs font-bold text-slate-200">
+                        {v.capacity ? `${v.capacity} Seats` : "—"}
+                      </TD>
+                      <TD className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          {canEdit && (
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => {
+                                setForm(v);
+                                setOpen(true);
+                              }}
+                              data-testid={`edit-venue-${v.id}`}
+                              title="Edit Venue"
+                            >
+                              <Pencil className="h-3.5 w-3.5 text-slate-300" />
+                            </Button>
+                          )}
+                          {canEdit && (
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => remove(v.id)}
+                              data-testid={`delete-venue-${v.id}`}
+                              title="Delete Venue"
+                            >
+                              <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                            </Button>
+                          )}
+                        </div>
+                      </TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+            </div>
           </>
         )}
       </div>
 
-      <Dialog open={open} onClose={() => setOpen(false)} title={form.id ? "Edit Venue" : "Add Venue"} testId="venue-dialog">
+      {/* ADD / EDIT VENUE DIALOG */}
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title={form.id ? "Edit Venue / Court" : "Register New Venue / Court"}
+        testId="venue-dialog"
+      >
         <div className="space-y-4">
-          <div><Label>Name *</Label><Input value={form.name ?? ""} onChange={(e) => set("name", e.target.value)} data-testid="venue-name-input" /></div>
-          <div className="grid grid-cols-2 gap-4">
-            <div><Label>Type</Label><Input value={form.venue_type ?? ""} onChange={(e) => set("venue_type", e.target.value)} placeholder="Arena, Dining…" /></div>
-            <div><Label>Capacity</Label><Input type="number" value={form.capacity ?? ""} onChange={(e) => set("capacity", e.target.value)} /></div>
+          <div>
+            <Label>Venue Name *</Label>
+            <Input
+              value={form.name ?? ""}
+              onChange={(e) => set("name", e.target.value)}
+              placeholder="e.g. Court 1 (Main Broadcast Mat)"
+              data-testid="venue-name-input"
+            />
           </div>
-          <div><Label>Location</Label><Input value={form.location ?? ""} onChange={(e) => set("location", e.target.value)} /></div>
-          <div><Label>Description</Label><Textarea value={form.description ?? ""} onChange={(e) => set("description", e.target.value)} /></div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={save} data-testid="save-venue-btn">Save</Button>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Facility Type</Label>
+              <Input
+                value={form.venue_type ?? ""}
+                onChange={(e) => set("venue_type", e.target.value)}
+                placeholder="Arena / Dining / Medical"
+              />
+            </div>
+            <div>
+              <Label>Spectator Capacity</Label>
+              <Input
+                type="number"
+                value={form.capacity ?? ""}
+                onChange={(e) => set("capacity", e.target.value)}
+                placeholder="e.g. 500"
+              />
+            </div>
+          </div>
+          <div>
+            <Label>Campus Location</Label>
+            <Input
+              value={form.location ?? ""}
+              onChange={(e) => set("location", e.target.value)}
+              placeholder="e.g. Sports Complex Ground Floor"
+            />
+          </div>
+          <div>
+            <Label>Description / Specifications</Label>
+            <Textarea
+              value={form.description ?? ""}
+              onChange={(e) => set("description", e.target.value)}
+              placeholder="Specifications, mat dimensions, camera platforms..."
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-3 border-t border-white/10">
+            <Button variant="outline" size="sm" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="gold" size="sm" onClick={save} data-testid="save-venue-btn">
+              {form.id ? "Update Venue" : "Save Venue"}
+            </Button>
           </div>
         </div>
       </Dialog>

@@ -1,11 +1,15 @@
 import { useState } from "react";
-import { UploadCloud } from "lucide-react";
+import { UploadCloud, FileSpreadsheet, CheckCircle2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
-interface Result { created: number; skipped: number; errors: string[] }
+interface Result {
+  created: number;
+  skipped: number;
+  errors: string[];
+}
 
 const COLUMNS: Record<string, string> = {
   teams: "name (required), school, region, country, member_count",
@@ -46,33 +50,69 @@ export function ImportDialog({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title={`Import ${type}`} testId="import-dialog">
+    <Dialog open={open} onClose={onClose} title={`Batch Import ${type.toUpperCase()}`} testId="import-dialog">
       <div className="space-y-4">
-        <div className="rounded-md bg-white/5 p-3 text-xs text-slate-300 border border-white/5">
-          <p className="font-bold text-white">Expected columns</p>
-          <p className="mt-1 text-slate-300">{COLUMNS[type]}</p>
-          <p className="mt-2 text-slate-400">Accepts .csv or .xlsx. The first row must be the header.</p>
+        <div className="rounded-xl border border-white/10 bg-obsidian-950 p-3.5 text-xs text-slate-300 space-y-1.5">
+          <p className="font-heading font-bold text-white flex items-center gap-2">
+            <FileSpreadsheet className="h-4 w-4 text-gold" /> Expected Spreadsheet Headers
+          </p>
+          <p className="font-mono text-gold text-[11px] bg-gold/10 px-2 py-1 rounded border border-gold/20">
+            {COLUMNS[type]}
+          </p>
+          <p className="text-slate-400 text-[11px]">
+            Accepts <code className="text-white">.csv</code> or <code className="text-white">.xlsx</code>. The first row must match the expected column names.
+          </p>
         </div>
-        <label className="flex h-24 cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed border-white/15 bg-white/5 text-sm text-slate-400 hover:border-coral hover:text-white">
-          <UploadCloud className="h-6 w-6 text-coral" />
-          {file ? file.name : "Click to choose a spreadsheet…"}
-          <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} data-testid="import-file-input" />
+
+        <label className="flex h-28 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-white/15 bg-obsidian-950 p-4 text-xs text-slate-400 hover:border-gold hover:text-white transition-all">
+          <UploadCloud className="h-7 w-7 text-gold" />
+          <span className="font-semibold text-center truncate max-w-full">
+            {file ? file.name : "Click or drag spreadsheet (.csv, .xlsx) to upload"}
+          </span>
+          <input
+            type="file"
+            accept=".csv,.xlsx,.xls"
+            className="hidden"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            data-testid="import-file-input"
+          />
         </label>
 
         {result && (
-          <div className="rounded-md border border-white/10 bg-white/5 p-3 text-sm text-slate-200" data-testid="import-result">
-            <p><strong className="text-emerald-400">{result.created}</strong> created · <strong className="text-slate-400">{result.skipped}</strong> skipped</p>
+          <div
+            className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3.5 text-xs text-slate-200 space-y-2"
+            data-testid="import-result"
+          >
+            <div className="flex items-center gap-2 font-heading font-bold text-emerald-400">
+              <CheckCircle2 className="h-4 w-4" /> Import Complete
+            </div>
+            <p className="font-mono">
+              <strong className="text-white font-bold">{result.created}</strong> records created ·{" "}
+              <strong className="text-slate-400">{result.skipped}</strong> skipped
+            </p>
             {result.errors.length > 0 && (
-              <ul className="mt-2 max-h-32 list-disc space-y-0.5 overflow-y-auto pl-5 text-xs text-red-400">
-                {result.errors.map((er, i) => <li key={i}>{er}</li>)}
+              <ul className="mt-2 max-h-32 list-disc space-y-0.5 overflow-y-auto pl-5 text-[11px] text-red-400">
+                {result.errors.map((er, i) => (
+                  <li key={i}>{er}</li>
+                ))}
               </ul>
             )}
           </div>
         )}
 
-        <div className="flex justify-end gap-2 pt-1">
-          <Button variant="outline" onClick={onClose}>Close</Button>
-          <Button onClick={upload} disabled={busy} data-testid="run-import-btn">{busy ? "Importing…" : "Import"}</Button>
+        <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+          <Button variant="outline" size="sm" onClick={onClose}>
+            Close
+          </Button>
+          <Button
+            variant="gold"
+            size="sm"
+            onClick={upload}
+            disabled={busy || !file}
+            data-testid="run-import-btn"
+          >
+            {busy ? "Importing Data…" : "Start Import"}
+          </Button>
         </div>
       </div>
     </Dialog>
