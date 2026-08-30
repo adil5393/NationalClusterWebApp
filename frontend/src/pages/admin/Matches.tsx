@@ -1808,34 +1808,37 @@ function LiveConsole({
         </div>
 
         {/* MASSIVE SCOREBOARD NUMBERS */}
-        <div className="grid grid-cols-2 gap-8 my-auto items-center">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8 my-auto items-center">
           {/* TEAM A (RED) */}
-          <div className="rounded-3xl border-2 border-red-500/40 bg-red-950/20 p-8 sm:p-12 text-center space-y-4 shadow-2xl relative overflow-hidden">
+          <div className="rounded-3xl border-2 border-red-500/40 bg-red-950/20 p-5 sm:p-8 lg:p-12 text-center space-y-3 sm:space-y-4 shadow-2xl relative overflow-hidden">
             <div className="absolute top-4 left-4">
-              <span className="h-4 w-4 rounded-full bg-red-500 inline-block shadow-[0_0_12px_#ef4444]" />
+              <span className="h-3.5 w-3.5 sm:h-4 sm:w-4 rounded-full bg-red-500 inline-block shadow-[0_0_12px_#ef4444]" />
             </div>
             {leader === "a" && (
               <div className="inline-flex items-center gap-1.5 rounded-full bg-gold/20 border border-gold/40 px-3 py-1 text-xs font-heading font-black text-gold">
                 <Flag className="h-3.5 w-3.5" /> LEADING
               </div>
             )}
-            <h3 className="font-heading text-2xl sm:text-4xl font-black text-white tracking-tight truncate">
+            <h3
+              className="font-heading text-xl sm:text-3xl lg:text-4xl font-black text-white tracking-tight truncate"
+              title={m.team_a_name ?? "Team Red"}
+            >
               {m.team_a_name ?? "Team Red"}
             </h3>
             <div
               key={m.team_a_score}
-              className="font-heading text-7xl sm:text-9xl font-black tabular-nums text-white"
+              className="font-heading text-6xl sm:text-8xl lg:text-9xl font-black tabular-nums text-white"
               style={{ animation: "scorePop 0.35s ease-out" }}
             >
               {m.team_a_score}
             </div>
             {canEdit && m.status === "ONGOING" && (
-              <div className="flex justify-center gap-2 pt-4">
+              <div className="flex justify-center gap-2 pt-2 sm:pt-4">
                 {[1, 2, 3].map((n) => (
                   <Button
                     key={n}
                     variant="outline"
-                    className="text-lg font-black px-6 py-4 border-red-500/40 hover:bg-red-500/20"
+                    className="text-base sm:text-lg font-black px-4 sm:px-6 py-3 sm:py-4 border-red-500/40 hover:bg-red-500/20"
                     onClick={() => score("a", n)}
                   >
                     +{n}
@@ -1846,16 +1849,19 @@ function LiveConsole({
           </div>
 
           {/* TEAM B (BLUE) */}
-          <div className="rounded-3xl border-2 border-blue-500/40 bg-blue-950/20 p-8 sm:p-12 text-center space-y-4 shadow-2xl relative overflow-hidden">
+          <div className="rounded-3xl border-2 border-blue-500/40 bg-blue-950/20 p-5 sm:p-8 lg:p-12 text-center space-y-3 sm:space-y-4 shadow-2xl relative overflow-hidden">
             <div className="absolute top-4 left-4">
-              <span className="h-4 w-4 rounded-full bg-blue-500 inline-block shadow-[0_0_12px_#3b82f6]" />
+              <span className="h-3.5 w-3.5 sm:h-4 sm:w-4 rounded-full bg-blue-500 inline-block shadow-[0_0_12px_#3b82f6]" />
             </div>
             {leader === "b" && (
               <div className="inline-flex items-center gap-1.5 rounded-full bg-gold/20 border border-gold/40 px-3 py-1 text-xs font-heading font-black text-gold">
                 <Flag className="h-3.5 w-3.5" /> LEADING
               </div>
             )}
-            <h3 className="font-heading text-2xl sm:text-4xl font-black text-white tracking-tight truncate">
+            <h3
+              className="font-heading text-xl sm:text-3xl lg:text-4xl font-black text-white tracking-tight truncate"
+              title={m.team_b_name ?? "Team Blue"}
+            >
               {m.team_b_name ?? "Team Blue"}
             </h3>
             <div

@@ -136,7 +136,7 @@ function ScoreLine({
         />
         {leading && <Flag className="h-3 w-3 shrink-0 text-emerald-400" />}
         {isWinner && <Trophy className="h-3.5 w-3.5 shrink-0 text-gold" />}
-        <span className="truncate">{label}</span>
+        <span className="truncate" title={label}>{label}</span>
       </span>
       <span
         key={value}
@@ -501,6 +501,7 @@ export function BracketMatchCard({
             "truncate font-heading font-bold text-slate-200 cursor-pointer hover:text-white",
             compact && "text-xs leading-tight",
           )}
+          title={m.team_a_name ?? m.team_b_name ?? "Bye"}
         >
           {m.team_a_name ?? m.team_b_name}
         </span>
@@ -563,6 +564,7 @@ export function BracketMatchCard({
           <span
             className={cn("truncate", done && m.winner_team_id === m.team_a_id && "font-black text-white")}
             style={{ color: RED }}
+            title={m.team_a_name ?? "TBD"}
           >
             {m.team_a_name ?? "TBD"}
           </span>
@@ -596,6 +598,7 @@ export function BracketMatchCard({
           <span
             className={cn("truncate", done && m.winner_team_id === m.team_b_id && "font-black text-white")}
             style={{ color: BLUE }}
+            title={m.team_b_name ?? "TBD"}
           >
             {m.team_b_name ?? "TBD"}
           </span>
@@ -673,7 +676,7 @@ export function BracketMatchCard({
       >
         <span className="flex min-w-0 items-center gap-1.5 truncate cursor-pointer font-heading font-bold">
           <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: RED, boxShadow: `0 0 6px ${RED}66` }} />
-          <span className="truncate">{m.team_a_name ?? "TBD"}</span>
+          <span className="truncate" title={m.team_a_name ?? "TBD"}>{m.team_a_name ?? "TBD"}</span>
         </span>
         {(live || done) && (
           <span
@@ -708,7 +711,7 @@ export function BracketMatchCard({
       >
         <span className="flex min-w-0 items-center gap-1.5 truncate cursor-pointer font-heading font-bold">
           <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: BLUE, boxShadow: `0 0 6px ${BLUE}66` }} />
-          <span className="truncate">{m.team_b_name ?? "TBD"}</span>
+          <span className="truncate" title={m.team_b_name ?? "TBD"}>{m.team_b_name ?? "TBD"}</span>
         </span>
         {(live || done) && (
           <span

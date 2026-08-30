@@ -10,15 +10,29 @@ export default defineConfig({
   resolve: {
     alias: { "@": path.resolve(__dirname, "src") },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules/react") || id.includes("node_modules/react-dom") || id.includes("node_modules/react-router-dom")) {
+            return "vendor-react";
+          }
+          if (id.includes("node_modules/lucide-react")) {
+            return "vendor-icons";
+          }
+          if (id.includes("node_modules/axios") || id.includes("node_modules/sonner")) {
+            return "vendor-utils";
+          }
+        },
+      },
+    },
+  },
   server: {
     host: true,
     port: 5173,
     strictPort: true,
     allowedHosts: true,
     hmr: process.env.VITE_HMR_WSS === "true" ? { clientPort: 443, protocol: "wss" } : undefined,
-    // android/** alone is 17k+ files (Gradle build output included) — polling
-    // all of it every 300ms over the Docker/Windows bind mount was starving
-    // the dev server's event loop until it stopped responding to requests.
     watch: { ignored: ["**/node_modules/**", "**/.git/**", "**/android/**", "**/dist/**"], usePolling: true, interval: 300 },
   },
   preview: { host: true, port: 5173 },

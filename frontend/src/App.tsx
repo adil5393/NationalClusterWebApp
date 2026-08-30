@@ -1,35 +1,41 @@
+import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { Capacitor } from "@capacitor/core";
 import { PublicLayout } from "@/components/public/PublicLayout";
 import { AdminLayout } from "@/components/admin/AdminLayout";
 import { ComingSoon } from "@/components/admin/ComingSoon";
-import { PlaceholderPage } from "@/pages/public/PlaceholderPage";
+import { Spinner } from "@/components/ui/feedback";
 
-import Home from "@/pages/public/Home";
-import PublicTeams from "@/pages/public/Teams";
-import TeamPortal from "@/pages/public/TeamPortal";
-import PublicAnnouncements from "@/pages/public/Announcements";
-import Campus from "@/pages/public/Campus";
-import Live from "@/pages/public/Live";
-import Pool from "@/pages/public/Pool";
+// Public route lazy imports
+const Home = lazy(() => import("@/pages/public/Home"));
+const PublicTeams = lazy(() => import("@/pages/public/Teams"));
+const TeamPortal = lazy(() => import("@/pages/public/TeamPortal"));
+const PublicAnnouncements = lazy(() => import("@/pages/public/Announcements"));
+const Campus = lazy(() => import("@/pages/public/Campus"));
+const Live = lazy(() => import("@/pages/public/Live"));
+const Pool = lazy(() => import("@/pages/public/Pool"));
+const PlaceholderPage = lazy(() =>
+  import("@/pages/public/PlaceholderPage").then((m) => ({ default: m.PlaceholderPage })),
+);
 
-import Dashboard from "@/pages/admin/Dashboard";
-import AdminTeams from "@/pages/admin/Teams";
-import Participants from "@/pages/admin/Participants";
-import BuildingsRooms from "@/pages/admin/BuildingsRooms";
-import Accommodation from "@/pages/admin/Accommodation";
-import Transport from "@/pages/admin/Transport";
-import Schedule from "@/pages/admin/Schedule";
-import Venues from "@/pages/admin/Venues";
-import RoomMap from "@/pages/admin/RoomMap";
-import Knowledge from "@/pages/admin/Knowledge";
-import Procurement from "@/pages/admin/Procurement";
-import AdminAnnouncements from "@/pages/admin/Announcements";
-import Staff from "@/pages/admin/Staff";
-import Matches from "@/pages/admin/Matches";
-import Reports from "@/pages/admin/Reports";
-import Accounts from "@/pages/admin/Accounts";
-import Login from "@/pages/admin/Login";
+// Admin route lazy imports
+const Dashboard = lazy(() => import("@/pages/admin/Dashboard"));
+const AdminTeams = lazy(() => import("@/pages/admin/Teams"));
+const Participants = lazy(() => import("@/pages/admin/Participants"));
+const BuildingsRooms = lazy(() => import("@/pages/admin/BuildingsRooms"));
+const Accommodation = lazy(() => import("@/pages/admin/Accommodation"));
+const Transport = lazy(() => import("@/pages/admin/Transport"));
+const Schedule = lazy(() => import("@/pages/admin/Schedule"));
+const Venues = lazy(() => import("@/pages/admin/Venues"));
+const RoomMap = lazy(() => import("@/pages/admin/RoomMap"));
+const Knowledge = lazy(() => import("@/pages/admin/Knowledge"));
+const Procurement = lazy(() => import("@/pages/admin/Procurement"));
+const AdminAnnouncements = lazy(() => import("@/pages/admin/Announcements"));
+const Staff = lazy(() => import("@/pages/admin/Staff"));
+const Matches = lazy(() => import("@/pages/admin/Matches"));
+const Reports = lazy(() => import("@/pages/admin/Reports"));
+const Accounts = lazy(() => import("@/pages/admin/Accounts"));
+const Login = lazy(() => import("@/pages/admin/Login"));
 
 // The Android app (Capacitor) is a dedicated Organizer Portal build — reusing
 // this same web bundle, but it should never land a user on the public
@@ -38,52 +44,89 @@ import Login from "@/pages/admin/Login";
 // (still served fine to real browsers) but are simply unreachable in the app.
 const isNativeApp = Capacitor.isNativePlatform();
 
+function RouteFallback() {
+  return (
+    <div className="flex min-h-[50vh] items-center justify-center p-8">
+      <Spinner label="Loading..." />
+    </div>
+  );
+}
+
 export default function App() {
   return (
-    <Routes>
-      <Route element={<PublicLayout />}>
-        <Route path="/" element={isNativeApp ? <Navigate to="/admin/login" replace /> : <Home />} />
-        <Route path="/teams" element={<PublicTeams />} />
-        <Route path="/teams/:id" element={<TeamPortal />} />
-        <Route path="/announcements" element={<PublicAnnouncements />} />
-        <Route path="/about" element={<PlaceholderPage title="About the Event" section="About" />} />
-        <Route path="/schedule" element={<PlaceholderPage title="Schedule" section="Schedule" />} />
-        <Route path="/venues" element={<PlaceholderPage title="Venues" section="Venues" />} />
-        <Route path="/accommodation" element={<PlaceholderPage title="Accommodation" section="Accommodation" />} />
-        <Route path="/food" element={<PlaceholderPage title="Food & Dining" section="Food" />} />
-        <Route path="/transport" element={<PlaceholderPage title="Transport" section="Transport" />} />
-        <Route path="/campus" element={<Campus />} />
-        <Route path="/live" element={<Live />} />
-        <Route path="/live/pools/:poolId" element={<Pool />} />
-        <Route path="/contacts" element={<PlaceholderPage title="Important Contacts" section="Contacts" />} />
-        <Route path="/faq" element={<PlaceholderPage title="Frequently Asked Questions" section="FAQ" />} />
-      </Route>
+    <Suspense fallback={<RouteFallback />}>
+      <Routes>
+        <Route element={<PublicLayout />}>
+          <Route
+            path="/"
+            element={isNativeApp ? <Navigate to="/admin/login" replace /> : <Home />}
+          />
+          <Route path="/teams" element={<PublicTeams />} />
+          <Route path="/teams/:id" element={<TeamPortal />} />
+          <Route path="/announcements" element={<PublicAnnouncements />} />
+          <Route
+            path="/about"
+            element={<PlaceholderPage title="About the Event" section="About" />}
+          />
+          <Route
+            path="/schedule"
+            element={<PlaceholderPage title="Schedule" section="Schedule" />}
+          />
+          <Route
+            path="/venues"
+            element={<PlaceholderPage title="Venues" section="Venues" />}
+          />
+          <Route
+            path="/accommodation"
+            element={<PlaceholderPage title="Accommodation" section="Accommodation" />}
+          />
+          <Route
+            path="/food"
+            element={<PlaceholderPage title="Food & Dining" section="Food" />}
+          />
+          <Route
+            path="/transport"
+            element={<PlaceholderPage title="Transport" section="Transport" />}
+          />
+          <Route path="/campus" element={<Campus />} />
+          <Route path="/live" element={<Live />} />
+          <Route path="/live/pools/:poolId" element={<Pool />} />
+          <Route
+            path="/contacts"
+            element={<PlaceholderPage title="Important Contacts" section="Contacts" />}
+          />
+          <Route
+            path="/faq"
+            element={<PlaceholderPage title="Frequently Asked Questions" section="FAQ" />}
+          />
+        </Route>
 
-      <Route path="/admin/login" element={<Login />} />
+        <Route path="/admin/login" element={<Login />} />
 
-      <Route element={<AdminLayout />}>
-        <Route path="/admin" element={<Dashboard />} />
-        <Route path="/admin/teams" element={<AdminTeams />} />
-        <Route path="/admin/buildings" element={<BuildingsRooms />} />
-        <Route path="/admin/staff" element={<Staff />} />
-        <Route path="/admin/knowledge" element={<Knowledge />} />
-        <Route path="/admin/procurement" element={<Procurement />} />
-        <Route path="/admin/announcements" element={<AdminAnnouncements />} />
-        <Route path="/admin/participants" element={<Participants />} />
-        <Route path="/admin/accommodation" element={<Accommodation />} />
-        <Route path="/admin/room-map" element={<RoomMap />} />
-        <Route path="/admin/food" element={<ComingSoon title="Food Planning" />} />
-        <Route path="/admin/transport" element={<Transport />} />
-        <Route path="/admin/venues" element={<Venues />} />
-        <Route path="/admin/schedule" element={<Schedule />} />
-        <Route path="/admin/matches" element={<Matches />} />
-        <Route path="/admin/reports" element={<Reports />} />
-        <Route path="/admin/tasks" element={<ComingSoon title="Tasks" />} />
-        <Route path="/admin/documents" element={<ComingSoon title="Documents" />} />
-        <Route path="/admin/contacts" element={<ComingSoon title="Contacts" />} />
-        <Route path="/admin/settings" element={<ComingSoon title="Settings" />} />
-        <Route path="/admin/accounts" element={<Accounts />} />
-      </Route>
-    </Routes>
+        <Route element={<AdminLayout />}>
+          <Route path="/admin" element={<Dashboard />} />
+          <Route path="/admin/teams" element={<AdminTeams />} />
+          <Route path="/admin/buildings" element={<BuildingsRooms />} />
+          <Route path="/admin/staff" element={<Staff />} />
+          <Route path="/admin/knowledge" element={<Knowledge />} />
+          <Route path="/admin/procurement" element={<Procurement />} />
+          <Route path="/admin/announcements" element={<AdminAnnouncements />} />
+          <Route path="/admin/participants" element={<Participants />} />
+          <Route path="/admin/accommodation" element={<Accommodation />} />
+          <Route path="/admin/room-map" element={<RoomMap />} />
+          <Route path="/admin/food" element={<ComingSoon title="Food Planning" />} />
+          <Route path="/admin/transport" element={<Transport />} />
+          <Route path="/admin/venues" element={<Venues />} />
+          <Route path="/admin/schedule" element={<Schedule />} />
+          <Route path="/admin/matches" element={<Matches />} />
+          <Route path="/admin/reports" element={<Reports />} />
+          <Route path="/admin/tasks" element={<ComingSoon title="Tasks" />} />
+          <Route path="/admin/documents" element={<ComingSoon title="Documents" />} />
+          <Route path="/admin/contacts" element={<ComingSoon title="Contacts" />} />
+          <Route path="/admin/settings" element={<ComingSoon title="Settings" />} />
+          <Route path="/admin/accounts" element={<Accounts />} />
+        </Route>
+      </Routes>
+    </Suspense>
   );
 }

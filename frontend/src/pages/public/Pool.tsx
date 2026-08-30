@@ -168,12 +168,13 @@ export default function Pool() {
                           <TD>
                             <span
                               className={cn(
-                                "flex items-center gap-1.5 font-heading text-sm",
+                                "flex items-center gap-1.5 font-heading text-sm truncate",
                                 isLeader ? "font-black text-white" : "font-bold text-slate-200",
                               )}
+                              title={s.team_name}
                             >
                               {isLeader && <Trophy className="h-3.5 w-3.5 shrink-0 text-gold" />}
-                              {s.team_name}
+                              <span className="truncate">{s.team_name}</span>
                             </span>
                           </TD>
                           <TD className="text-right font-mono text-xs text-slate-300">{s.played}</TD>
