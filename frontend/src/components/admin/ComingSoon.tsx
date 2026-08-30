@@ -3,16 +3,19 @@ import { Construction } from "lucide-react";
 export function ComingSoon({ title }: { title: string }) {
   return (
     <div data-testid={`coming-soon-${title.toLowerCase().replace(/[^a-z]+/g, "-")}`}>
-      <h1 className="font-heading text-2xl font-black tracking-tight text-white">{title}</h1>
-      <div className="mt-6 rounded-lg border border-dashed border-white/15 bg-white/5 p-10">
-        <div className="grid h-11 w-11 place-items-center rounded-md bg-coral text-white">
+      <div className="flex items-center gap-2">
+        <h1 className="font-heading text-2xl font-black tracking-tight text-white">{title}</h1>
+        <span className="rounded bg-white/10 px-2 py-0.5 text-[10px] font-mono text-slate-400">
+          PLANNED MODULE
+        </span>
+      </div>
+      <div className="mt-6 rounded-xl border border-dashed border-white/15 bg-obsidian-900/60 p-8 md:p-10">
+        <div className="grid h-11 w-11 place-items-center rounded-lg bg-gold/15 text-gold border border-gold/30">
           <Construction className="h-5 w-5" />
         </div>
-        <h2 className="mt-5 font-heading text-lg font-bold text-white">Coming later</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
-          The <strong>{title}</strong> module is part of the roadmap (Phase 2+). Its data model already exists in the
-          database, so this section can be built out without schema changes. No placeholder functionality is shown here
-          on purpose.
+        <h2 className="mt-5 font-heading text-lg font-bold text-white">Module in development</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400 font-body">
+          The <strong>{title}</strong> operations module is part of the operational deployment pipeline. Its backend schema and permission keys exist in the system, so this section can be enabled without breaking changes.
         </p>
       </div>
     </div>

@@ -1,121 +1,446 @@
-import { Link } from "react-router-dom";
-import { Users, CalendarDays, MapPin, ArrowRight, BedDouble, Bus, UtensilsCrossed } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import {
+  Users,
+  CalendarDays,
+  MapPin,
+  ArrowRight,
+  BedDouble,
+  Bus,
+  UtensilsCrossed,
+  Radio,
+  Trophy,
+  Shield,
+  Search,
+  Megaphone,
+  HelpCircle,
+  PhoneCall,
+  Activity,
+  Award,
+} from "lucide-react";
+import { api } from "@/lib/api";
+import { Badge, LiveBadge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { formatDate, priorityTone } from "@/lib/meta";
 
-const HERO =
-  "https://images.unsplash.com/photo-1785190095920-302ea67de2e0?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODF8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjBzY2hvb2wlMjBjYW1wdXMlMjBhcmNoaXRlY3R1cmV8ZW58MHx8fHwxNzg3MzE5ODIzfDA&ixlib=rb-4.1.0&q=85";
-const CROWD =
-  "https://images.unsplash.com/photo-1629217855633-79a6925d6c47?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzd8MHwxfHNlYXJjaHwzfHxzdGFkaXVtJTIwY3Jvd2QlMjBsaWdodHMlMjBjb21wZXRpdGlvbnxlbnwwfHx8fDE3ODczMTk4MjN8MA&ixlib=rb-4.1.0&q=85";
+interface LiveMatch {
+  id: number;
+  tournament_name?: string;
+  round_name?: string;
+  team_a_name?: string;
+  team_b_name?: string;
+  team_a_score: number;
+  team_b_score: number;
+  status: string;
+  venue_name?: string;
+}
 
-const FEATURES = [
-  { to: "/teams", icon: Users, title: "Participating Teams", desc: "Teams from across India and international guests." },
-  { to: "/schedule", icon: CalendarDays, title: "Schedule", desc: "Fixtures, ceremonies and daily programme." },
-  { to: "/accommodation", icon: BedDouble, title: "Accommodation", desc: "Hostel blocks, floors and room information." },
-  { to: "/food", icon: UtensilsCrossed, title: "Food & Dining", desc: "Meal timings and dining arrangements." },
-  { to: "/transport", icon: Bus, title: "Transport", desc: "Bus routes, pickups and drop points." },
-  { to: "/campus", icon: MapPin, title: "Campus Map", desc: "Find your way around the venue." },
+interface Announcement {
+  id: number;
+  title: string;
+  message: string;
+  priority: string;
+  published_at?: string | null;
+}
+
+interface Team {
+  id: number;
+  name: string;
+  school_code?: string | null;
+}
+
+const TOURNAMENT_SECTIONS = [
+  {
+    to: "/live",
+    icon: Radio,
+    title: "Live Match Arena",
+    desc: "Real-time Kabaddi scoring, active court feeds, pool tables & knockout bracket.",
+    badge: "LIVE NOW",
+    badgeTone: "live" as const,
+    highlight: true,
+  },
+  {
+    to: "/teams",
+    icon: Users,
+    title: "Participating Teams",
+    desc: "State champions from across India and guest delegations from Saudi Arabia.",
+  },
+  {
+    to: "/schedule",
+    icon: CalendarDays,
+    title: "Tournament Schedule",
+    desc: "Daily fixture timetables, opening ceremony, knockouts & championship finals.",
+  },
+  {
+    to: "/campus",
+    icon: MapPin,
+    title: "Campus & Court Map",
+    desc: "Interactive venue blueprint, match court pins, and room locator.",
+  },
+  {
+    to: "/accommodation",
+    icon: BedDouble,
+    title: "Accommodation & Hostels",
+    desc: "Hostel block assignments, floor arrangements, and team room guidelines.",
+  },
+  {
+    to: "/food",
+    icon: UtensilsCrossed,
+    title: "Food & Dining Schedule",
+    desc: "Athlete meal timings, nutritional dining arrangements, and dining hall location.",
+  },
+  {
+    to: "/transport",
+    icon: Bus,
+    title: "Transport & Transit Routes",
+    desc: "Airport / railway station pickups, team shuttles, and route coordinates.",
+  },
+  {
+    to: "/contacts",
+    icon: PhoneCall,
+    title: "Emergency & Helpdesk",
+    desc: "24/7 medical response, security control room, and organizing committee contacts.",
+  },
+  {
+    to: "/faq",
+    icon: HelpCircle,
+    title: "Tournament FAQ",
+    desc: "Protest rules, eligibility requirements, meal passes, and event guidelines.",
+  },
 ];
 
 export default function Home() {
+  const [liveMatches, setLiveMatches] = useState<LiveMatch[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [quickCode, setQuickCode] = useState("");
+  const [codeError, setCodeError] = useState("");
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    // Fetch live matches
+    api
+      .get<LiveMatch[]>("/public/matches/live")
+      .then((r) => setLiveMatches(r.data))
+      .catch(() => {});
+
+    // Fetch announcements
+    api
+      .get<Announcement[]>("/public/announcements")
+      .then((r) => setAnnouncements(r.data.slice(0, 2)))
+      .catch(() => {});
+
+    // Fetch teams for fast lookup
+    api
+      .get<Team[]>("/public/teams")
+      .then((r) => setTeams(r.data))
+      .catch(() => {});
+  }, []);
+
+  const handleQuickLookup = (e: React.FormEvent) => {
+    e.preventDefault();
+    const query = quickCode.trim().toLowerCase();
+    if (!query) return;
+
+    const match = teams.find(
+      (t) =>
+        (t.school_code && t.school_code.toLowerCase() === query) ||
+        t.name.toLowerCase().includes(query),
+    );
+
+    if (match) {
+      setCodeError("");
+      navigate(`/teams/${match.id}`);
+    } else {
+      setCodeError(`No team found matching "${quickCode}". Try browsing all teams.`);
+    }
+  };
+
   return (
-    <div data-testid="public-home" className="bg-obsidian text-slate-100">
-      {/* HERO */}
-      <section className="relative isolate overflow-hidden bg-obsidian text-white">
-        <img src={HERO} alt="Host school campus" className="absolute inset-0 h-full w-full object-cover opacity-30" />
-        <div className="absolute inset-0 bg-gradient-to-t from-obsidian via-obsidian/75 to-transparent" />
-        <div className="relative mx-auto max-w-7xl px-5 md:px-8 pt-24 pb-28 md:pt-32 md:pb-36">
-          <span className="inline-flex items-center rounded-md border border-coral/30 bg-coral/10 px-3 py-1 text-xs font-bold uppercase tracking-widest text-coral">
-            National Cluster Event · Hosted by our School
-          </span>
-          <h1 className="mt-6 max-w-4xl font-heading text-4xl font-black leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl text-white">
-            CLUSTER NATIONALS
-            <span className="block text-coral">2026–27</span>
-          </h1>
-          <p className="mt-6 max-w-2xl text-base leading-relaxed text-slate-300 md:text-lg">
-            Welcome to the official event portal. Around <strong className="text-white">800 participants</strong> and
-            guests — teams from across India and international teams from Saudi Arabia — all in one place.
-          </p>
-          <div className="mt-9 flex flex-wrap gap-3">
-            <Link
-              to="/teams"
-              data-testid="hero-teams-btn"
-              className="inline-flex items-center gap-2 rounded-md bg-coral px-6 py-3 text-sm font-bold text-white transition-colors hover:bg-coral-600 shadow-md"
-            >
-              Explore Teams <ArrowRight className="h-4 w-4" />
-            </Link>
-            <Link
-              to="/announcements"
-              data-testid="hero-announcements-btn"
-              className="inline-flex items-center gap-2 rounded-md border border-white/20 bg-white/5 px-6 py-3 text-sm font-bold text-white transition-colors hover:bg-white/10"
-            >
-              View Announcements
-            </Link>
+    <div data-testid="public-home" className="min-h-screen bg-obsidian text-slate-100 bg-kabaddi-court">
+      {/* HERO SECTION */}
+      <section className="relative isolate overflow-hidden border-b border-white/10 bg-arena-glow">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8 pt-12 pb-16 md:pt-16 md:pb-20">
+          <div className="grid gap-10 lg:grid-cols-12 lg:items-center">
+            {/* LEFT HERO TEXT */}
+            <div className="lg:col-span-7 space-y-5">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-gold/40 bg-gold/10 px-3 py-1 text-xs font-heading font-extrabold tracking-widest text-gold shadow-sm">
+                  <Shield className="h-3.5 w-3.5 text-gold" /> CBSE NATIONAL EVENT
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-semibold text-slate-300">
+                  <Award className="h-3.5 w-3.5 text-coral" /> October 2026
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                <h1 className="font-heading text-3xl font-black leading-[1.08] tracking-tight sm:text-5xl lg:text-6xl text-white">
+                  CBSE NATIONAL <br className="hidden sm:block" />
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-gold via-amber-400 to-coral">
+                    KABADDI CHAMPIONSHIP
+                  </span>
+                  <span className="block text-xl sm:text-2xl lg:text-3xl font-extrabold text-slate-300 mt-1">
+                    2026–27
+                  </span>
+                </h1>
+              </div>
+
+              <p className="max-w-2xl text-sm sm:text-base leading-relaxed text-slate-300 font-body">
+                Official digital tournament portal for the Cluster Nationals. Featuring around{" "}
+                <strong className="text-white font-bold">800 elite student athletes</strong>, coaches, and delegations representing schools across India and international guest squads from Saudi Arabia.
+              </p>
+
+              {/* ACTION BUTTONS */}
+              <div className="pt-2 flex flex-wrap items-center gap-3">
+                <Link
+                  to="/live"
+                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-5 py-3 text-sm font-heading font-black tracking-wide text-obsidian transition-all hover:bg-emerald-400 hover:shadow-live-glow active:scale-95 shadow-md"
+                >
+                  <span className="h-2 w-2 rounded-full bg-obsidian animate-live-dot" />
+                  Live Match Center <ArrowRight className="h-4 w-4" />
+                </Link>
+                <Link
+                  to="/teams"
+                  data-testid="hero-teams-btn"
+                  className="inline-flex items-center gap-2 rounded-lg border border-gold/40 bg-gold/15 px-5 py-3 text-sm font-heading font-bold text-gold transition-all hover:bg-gold/25 hover:border-gold active:scale-95"
+                >
+                  <Users className="h-4 w-4" />
+                  Explore Teams
+                </Link>
+                <Link
+                  to="/announcements"
+                  data-testid="hero-announcements-btn"
+                  className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-4 py-3 text-sm font-heading font-semibold text-slate-300 transition-all hover:bg-white/10 hover:text-white"
+                >
+                  <Megaphone className="h-4 w-4 text-slate-400" />
+                  Announcements
+                </Link>
+              </div>
+            </div>
+
+            {/* RIGHT HERO CARD: FAST TEAM LOOKUP & LIVE HIGHLIGHT */}
+            <div className="lg:col-span-5 space-y-4">
+              {/* LIVE MATCH HIGHLIGHT CARD (if any live matches exist) */}
+              {liveMatches.length > 0 ? (
+                <div className="rounded-xl border border-emerald-500/40 bg-obsidian-900/90 p-5 shadow-live-glow backdrop-blur-md">
+                  <div className="flex items-center justify-between">
+                    <LiveBadge label="MATCH IN PROGRESS" />
+                    <span className="text-xs font-mono text-emerald-400 font-bold">
+                      {liveMatches[0].venue_name || "Court 1"}
+                    </span>
+                  </div>
+                  <div className="mt-4 flex items-center justify-between gap-4">
+                    <div className="min-w-0 flex-1 text-left">
+                      <p className="font-heading text-sm font-bold text-white truncate">
+                        {liveMatches[0].team_a_name || "Team A"}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3 px-3 py-1 rounded-lg bg-white/5 border border-white/10 shrink-0">
+                      <span className="font-heading text-xl font-black text-gold tabular-nums">
+                        {liveMatches[0].team_a_score}
+                      </span>
+                      <span className="text-xs font-bold text-slate-500">:</span>
+                      <span className="font-heading text-xl font-black text-gold tabular-nums">
+                        {liveMatches[0].team_b_score}
+                      </span>
+                    </div>
+                    <div className="min-w-0 flex-1 text-right">
+                      <p className="font-heading text-sm font-bold text-white truncate">
+                        {liveMatches[0].team_b_name || "Team B"}
+                      </p>
+                    </div>
+                  </div>
+                  <Link
+                    to="/live"
+                    className="mt-4 flex items-center justify-center gap-1.5 rounded-md bg-emerald-500/20 border border-emerald-500/30 py-2 text-xs font-heading font-extrabold text-emerald-300 hover:bg-emerald-500/30 transition-colors"
+                  >
+                    View Scorecard & Commentary →
+                  </Link>
+                </div>
+              ) : null}
+
+              {/* COACH / SQUAD PORTAL LOOKUP */}
+              <div className="rounded-xl border border-white/10 bg-obsidian-900/80 p-5 shadow-card-subtle backdrop-blur-md">
+                <div className="flex items-center gap-2.5">
+                  <span className="grid h-8 w-8 place-items-center rounded-lg bg-gold/15 text-gold border border-gold/30">
+                    <Search className="h-4 w-4" />
+                  </span>
+                  <div>
+                    <h3 className="font-heading text-sm font-bold text-white">
+                      Coach & Squad Portal
+                    </h3>
+                    <p className="text-[11px] text-slate-400 font-body">
+                      Search team name or school code for room & transit details
+                    </p>
+                  </div>
+                </div>
+
+                <form onSubmit={handleQuickLookup} className="mt-4 space-y-2">
+                  <div className="flex gap-2">
+                    <Input
+                      value={quickCode}
+                      onChange={(e) => setQuickCode(e.target.value)}
+                      placeholder="e.g. DPS, KV, 104..."
+                      className="h-10 text-xs"
+                    />
+                    <Button type="submit" variant="gold" className="h-10 text-xs px-4 shrink-0">
+                      Lookup
+                    </Button>
+                  </div>
+                  {codeError && <p className="text-xs text-red-400 font-medium">{codeError}</p>}
+                </form>
+
+                <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400 pt-3 border-t border-white/10">
+                  <span>Host Campus: Main Sports Complex</span>
+                  <Link to="/campus" className="text-gold hover:underline font-semibold">
+                    Open Map →
+                  </Link>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
       {/* STATS STRIP */}
-      <section className="border-b border-white/10 bg-slate-900/60">
+      <section className="border-b border-white/10 bg-obsidian-950/90">
         <div className="mx-auto grid max-w-7xl grid-cols-2 gap-px bg-white/5 md:grid-cols-4">
           {[
-            { k: "~800", v: "Participants & Guests" },
-            { k: "India + KSA", v: "Teams Represented" },
-            { k: "1 Campus", v: "Single Host Venue" },
-            { k: "Live", v: "Announcements & Info" },
+            { k: "~800", v: "Participants & Officials", icon: Users, tone: "gold" },
+            { k: "India + KSA", v: "National & Int'l Teams", icon: Shield, tone: "coral" },
+            { k: "3 Mats", v: "Official Kabaddi Courts", icon: Trophy, tone: "gold" },
+            { k: "Real-time", v: "Live Digital Scoring", icon: Activity, tone: "live" },
           ].map((s) => (
-            <div key={s.v} className="bg-obsidian px-6 py-8">
-              <p className="font-heading text-2xl font-black text-white md:text-3xl">{s.k}</p>
-              <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-400">{s.v}</p>
+            <div key={s.v} className="bg-obsidian-950 px-5 py-6 sm:px-6">
+              <div className="flex items-center gap-2">
+                <s.icon className="h-4 w-4 text-gold/80" />
+                <p className="font-heading text-2xl font-black text-white sm:text-3xl tabular-nums">
+                  {s.k}
+                </p>
+              </div>
+              <p className="mt-1 text-xs font-heading font-bold uppercase tracking-wider text-slate-400">
+                {s.v}
+              </p>
             </div>
           ))}
         </div>
       </section>
 
-      {/* FEATURES */}
-      <section className="mx-auto max-w-7xl px-5 md:px-8 py-20 md:py-24">
-        <div className="max-w-2xl">
-          <h2 className="font-heading text-3xl font-black tracking-tight text-white">Everything for the event, in one place</h2>
-          <p className="mt-3 text-base text-slate-400">
-            Find the information you need before and during Cluster Nationals. Sections fill in as the event approaches.
+      {/* RECENT ANNOUNCEMENTS BANNER (if any) */}
+      {announcements.length > 0 && (
+        <section className="border-b border-white/10 bg-gold/5 py-4">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3 overflow-hidden">
+                <span className="rounded bg-gold px-2 py-0.5 font-heading text-[10px] font-black uppercase text-obsidian tracking-wider shrink-0">
+                  LATEST NOTICE
+                </span>
+                <p className="truncate text-xs text-slate-200 font-body">
+                  <strong className="text-white font-bold">{announcements[0].title}:</strong>{" "}
+                  {announcements[0].message}
+                </p>
+              </div>
+              <Link
+                to="/announcements"
+                className="inline-flex items-center gap-1 text-xs font-bold text-gold hover:underline shrink-0"
+              >
+                All Notices ({announcements.length}) →
+              </Link>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* TOURNAMENT DIRECTORY HUB */}
+      <section className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8 py-14 md:py-20">
+        <div className="max-w-2xl space-y-1.5">
+          <span className="text-xs font-heading font-extrabold uppercase tracking-widest text-gold">
+            Information Architecture
+          </span>
+          <h2 className="font-heading text-2xl sm:text-3xl font-black tracking-tight text-white">
+            Everything for the championship, in one place
+          </h2>
+          <p className="text-sm text-slate-400 leading-relaxed font-body">
+            Fast access to schedules, court blueprints, team rosters, and accommodation services for athletes and visitors.
           </p>
         </div>
-        <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {FEATURES.map((f) => (
+
+        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {TOURNAMENT_SECTIONS.map((item) => (
             <Link
-              key={f.to}
-              to={f.to}
-              data-testid={`feature-${f.title.toLowerCase().replace(/[^a-z]+/g, "-")}`}
-              className="group rounded-lg border border-slate-800 bg-slate-900 p-6 transition-transform hover:-translate-y-1 hover:border-coral"
+              key={item.to}
+              to={item.to}
+              data-testid={`feature-${item.title.toLowerCase().replace(/[^a-z]+/g, "-")}`}
+              className={`group relative flex flex-col justify-between rounded-xl border p-5 transition-all duration-200 hover:-translate-y-1 ${
+                item.highlight
+                  ? "border-emerald-500/40 bg-gradient-to-br from-emerald-950/30 via-obsidian-900 to-obsidian hover:border-emerald-400 hover:shadow-live-glow"
+                  : "border-white/10 bg-obsidian-900/80 hover:border-gold/50 hover:bg-obsidian-800"
+              }`}
             >
-              <div className="grid h-11 w-11 place-items-center rounded-md bg-white/5 border border-white/10 text-coral transition-colors group-hover:bg-coral group-hover:text-white">
-                <f.icon className="h-5 w-5" />
+              <div>
+                <div className="flex items-center justify-between">
+                  <div
+                    className={`grid h-10 w-10 place-items-center rounded-lg border transition-colors ${
+                      item.highlight
+                        ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-300"
+                        : "border-white/10 bg-white/5 text-gold group-hover:bg-gold group-hover:text-obsidian"
+                    }`}
+                  >
+                    <item.icon className="h-5 w-5" />
+                  </div>
+                  {item.badge && (
+                    <Badge tone={item.badgeTone || "gold"}>{item.badge}</Badge>
+                  )}
+                </div>
+
+                <h3 className="mt-4 font-heading text-base font-bold tracking-tight text-white group-hover:text-gold transition-colors">
+                  {item.title}
+                </h3>
+                <p className="mt-1.5 text-xs leading-relaxed text-slate-400 font-body">
+                  {item.desc}
+                </p>
               </div>
-              <h3 className="mt-5 font-heading text-lg font-bold text-white">{f.title}</h3>
-              <p className="mt-1.5 text-sm leading-relaxed text-slate-400">{f.desc}</p>
-              <span className="mt-4 inline-flex items-center gap-1 text-sm font-bold text-coral">
-                Open <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-              </span>
+
+              <div className="mt-5 flex items-center gap-1 text-xs font-heading font-extrabold text-gold">
+                <span>View Section</span>
+                <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
+              </div>
             </Link>
           ))}
         </div>
       </section>
 
-      {/* CTA BAND */}
-      <section className="relative isolate overflow-hidden bg-slate-900 border-t border-white/10 text-white">
-        <img src={CROWD} alt="Competition crowd" className="absolute inset-0 h-full w-full object-cover opacity-20" />
-        <div className="relative mx-auto max-w-7xl px-5 md:px-8 py-20 text-center md:py-24">
-          <h2 className="mx-auto max-w-3xl font-heading text-3xl font-black tracking-tight md:text-4xl">
-            Are you a coach or team manager?
-          </h2>
-          <p className="mx-auto mt-4 max-w-xl text-slate-300">
-            Team-specific portals with accommodation, transport and schedule details are available. Browse
-            the participating teams below.
-          </p>
-          <Link
-            to="/teams"
-            className="mt-8 inline-flex items-center gap-2 rounded-md bg-coral px-6 py-3 text-sm font-bold text-white transition-colors hover:bg-coral-600 shadow-md"
-          >
-            View Participating Teams <ArrowRight className="h-4 w-4" />
-          </Link>
+      {/* BOTTOM CTA: COACHES & PARTICIPANTS */}
+      <section className="border-t border-white/10 bg-obsidian-950/80 py-14 md:py-16">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8">
+          <div className="rounded-2xl border border-gold/30 bg-gradient-to-br from-gold/10 via-obsidian-900 to-obsidian p-8 md:p-12 text-center relative overflow-hidden">
+            <div className="relative z-10 max-w-2xl mx-auto space-y-3">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-gold/20 px-3 py-1 text-xs font-heading font-bold text-gold">
+                <Trophy className="h-3.5 w-3.5" /> OFFICIAL PARTICIPANT PORTAL
+              </span>
+              <h2 className="font-heading text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tight">
+                Are you an athlete, coach or team manager?
+              </h2>
+              <p className="text-sm text-slate-300 font-body leading-relaxed">
+                Personalized team portals with dedicated room assignments, shuttle timings, and match lineups are ready. Check your school squad below.
+              </p>
+              <div className="pt-3 flex flex-wrap justify-center gap-3">
+                <Link
+                  to="/teams"
+                  className="inline-flex items-center gap-2 rounded-lg bg-gold px-6 py-3 text-xs sm:text-sm font-heading font-black text-obsidian hover:bg-gold-400 transition-all shadow-md active:scale-95"
+                >
+                  <Users className="h-4 w-4" /> Find Your Team Roster
+                </Link>
+                <Link
+                  to="/campus"
+                  className="inline-flex items-center gap-2 rounded-lg border border-white/20 bg-white/5 px-6 py-3 text-xs sm:text-sm font-heading font-bold text-white hover:bg-white/10 transition-all"
+                >
+                  <MapPin className="h-4 w-4 text-gold" /> Find Your Room on Map
+                </Link>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
     </div>
