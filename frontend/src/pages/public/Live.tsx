@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Radio, Flag, Trophy, ChevronRight, ChevronLeft, CheckCircle2, Columns, Layers } from "lucide-react";
+import { Radio, Flag, Trophy, ChevronRight, ChevronLeft, CheckCircle2, Columns, Layers, Activity, Users, Shield, MapPin, Sparkles } from "lucide-react";
 import { api } from "@/lib/api";
 import { connectLive, matchChannel, tournamentChannel } from "@/lib/live";
 import { formatDate } from "@/lib/meta";
 import { Dialog } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 // Every match has two sides — team A is always red, team B is always blue,
 // regardless of which actual team ends up in that slot as the bracket fills
@@ -107,36 +109,38 @@ function ScoreLine({
       }}
       onMouseEnter={() => onTeamHover?.(true)}
       onMouseLeave={() => onTeamHover?.(false)}
-      className={`group flex items-center justify-between rounded px-2 py-1 transition-all duration-150 ${
+      className={cn(
+        "group flex items-center justify-between rounded-lg px-2.5 py-1.5 transition-all duration-150 cursor-pointer",
         isWinner
-          ? "bg-emerald-950/50 ring-1 ring-emerald-500/30"
+          ? "bg-emerald-950/60 ring-1 ring-emerald-500/40"
           : leading
           ? "bg-emerald-950/40"
           : isLoser
           ? "opacity-50 grayscale-[0.4]"
-          : "hover:bg-white/5"
-      }`}
+          : "hover:bg-white/5",
+      )}
     >
       <span
-        className={`flex min-w-0 items-center gap-1.5 truncate text-sm transition-colors ${
+        className={cn(
+          "flex min-w-0 items-center gap-2 truncate text-xs sm:text-sm transition-colors",
           isWinner
-            ? "font-bold text-white"
+            ? "font-extrabold text-white"
             : leading
             ? "font-bold text-emerald-400"
-            : "text-slate-300 group-hover:text-white"
-        }`}
+            : "text-slate-300 group-hover:text-white",
+        )}
       >
         <span
-          className="h-2 w-2 shrink-0 rounded-full transition-transform group-hover:scale-125"
-          style={{ background: color, boxShadow: `0 0 6px ${color}88` }}
+          className="h-2 w-2 shrink-0 rounded-full transition-transform group-hover:scale-125 shadow-sm"
+          style={{ background: color, boxShadow: `0 0 8px ${color}88` }}
         />
         {leading && <Flag className="h-3 w-3 shrink-0 text-emerald-400" />}
-        {isWinner && <Trophy className="h-3 w-3 shrink-0 text-amber-400" />}
+        {isWinner && <Trophy className="h-3.5 w-3.5 shrink-0 text-gold" />}
         <span className="truncate">{label}</span>
       </span>
       <span
         key={value}
-        className="font-heading text-lg font-black tabular-nums text-white"
+        className="font-heading text-lg sm:text-xl font-black tabular-nums text-white shrink-0 ml-2"
         style={{ animation: "scorePop 0.35s ease-out" }}
       >
         {value}
@@ -164,18 +168,34 @@ function LiveMatchCard({ initial }: { initial: MatchT }) {
 
   return (
     <div
-      className="relative overflow-hidden rounded-lg border border-emerald-500/50 bg-slate-900 p-4 shadow-lg transition-transform duration-200 hover:-translate-y-0.5"
+      className="relative overflow-hidden rounded-xl border border-emerald-500/50 bg-gradient-to-b from-slate-900 to-obsidian-950 p-4 shadow-xl transition-all duration-300 hover:-translate-y-0.5 hover:shadow-emerald-500/10"
       style={{ animation: "liveCardAura 2.5s ease-in-out infinite" }}
       data-testid={`public-live-match-${m.id}`}
     >
-      <div className="flex items-center justify-between text-xs">
-        <span className="font-bold uppercase tracking-wide text-slate-400">{m.sport ?? m.tournament_name}</span>
-        <span className="inline-flex items-center gap-1.5 font-bold tracking-wider text-emerald-400">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" /> LIVE
+      {/* Subtle Court Watermark */}
+      <div className="pointer-events-none absolute -right-4 -bottom-4 opacity-5">
+        <Shield className="h-28 w-28 text-white" />
+      </div>
+
+      <div className="flex items-center justify-between text-xs border-b border-white/10 pb-2">
+        <span className="font-heading font-extrabold uppercase tracking-wider text-gold">
+          {m.sport ?? m.tournament_name}
+        </span>
+        <span className="inline-flex items-center gap-1.5 font-heading font-black tracking-widest text-emerald-400 text-[11px]">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" /> LIVE ARENA
         </span>
       </div>
-      <p className="mt-1 text-xs text-slate-400">{m.round_name}</p>
-      <div className="mt-2.5 space-y-1">
+
+      <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400 font-mono">
+        <span className="truncate">{m.round_name}</span>
+        {m.venue_name && (
+          <span className="flex items-center gap-1 truncate text-slate-300 font-semibold">
+            <MapPin className="h-3 w-3 text-gold" /> {m.venue_name}
+          </span>
+        )}
+      </div>
+
+      <div className="mt-3 space-y-1.5">
         <ScoreLine label={m.team_a_name ?? "TBD"} value={m.team_a_score} leading={leader === "a"} color={RED} />
         <ScoreLine label={m.team_b_name ?? "TBD"} value={m.team_b_score} leading={leader === "b"} color={BLUE} />
       </div>
@@ -360,7 +380,7 @@ function ChampionshipCelebration() {
       const dist = 45 + Math.random() * 55;
       const tx = Math.cos(rad) * dist;
       const ty = Math.sin(rad) * dist;
-      const colors = ["#FFD700", "#FF4500", "#10B981", "#3B82F6", "#F59E0B", "#F43F5E", "#FFFFFF"];
+      const colors = ["#F59E0B", "#EF4444", "#10B981", "#3B82F6", "#FBBF24", "#F43F5E", "#FFFFFF"];
       const color = colors[i % colors.length];
       const size = 3 + (i % 3) * 2;
       return { id: i, tx, ty, color, size, delay: (i % 4) * 50 };
@@ -433,7 +453,8 @@ export function BracketMatchCard({
   // Check if card or any of its teams is part of the highlighted route
   const isTeamAHighlighted = highlightedTeamId != null && m.team_a_id === highlightedTeamId;
   const isTeamBHighlighted = highlightedTeamId != null && m.team_b_id === highlightedTeamId;
-  const isCardHighlighted = isTeamAHighlighted || isTeamBHighlighted || (highlightedTeamId != null && m.winner_team_id === highlightedTeamId);
+  const isCardHighlighted =
+    isTeamAHighlighted || isTeamBHighlighted || (highlightedTeamId != null && m.winner_team_id === highlightedTeamId);
   const isDimmed = highlightedTeamId != null && !isCardHighlighted;
 
   // Entrance style calculated dynamically
@@ -456,11 +477,13 @@ export function BracketMatchCard({
           ...boxStyle,
           animation: cardAnimation,
         }}
-        className={`${boxClass} flex flex-col justify-center rounded-md border border-slate-800 bg-obsidian ${
-          compact ? "p-1" : "p-2.5"
-        } text-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-700 ${
-          isDimmed ? "opacity-30" : isCardHighlighted ? "ring-2 ring-coral border-coral/80" : ""
-        }`}
+        className={cn(
+          boxClass,
+          "flex flex-col justify-center rounded-xl border border-white/10 bg-obsidian-950 p-2.5 text-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-white/20",
+          compact ? "p-1" : "p-2.5",
+          isDimmed && "opacity-30",
+          isCardHighlighted && "ring-2 ring-gold border-gold/80",
+        )}
       >
         <span
           ref={(el) => {
@@ -474,18 +497,20 @@ export function BracketMatchCard({
           }}
           onMouseEnter={() => byeTeamId != null && onHoverTeam?.(byeTeamId)}
           onMouseLeave={() => byeTeamId != null && onHoverTeam?.(null)}
-          className={`truncate font-bold text-slate-200 cursor-pointer hover:text-white ${
-            compact ? "text-xs leading-tight" : ""
-          }`}
+          className={cn(
+            "truncate font-heading font-bold text-slate-200 cursor-pointer hover:text-white",
+            compact && "text-xs leading-tight",
+          )}
         >
           {m.team_a_name ?? m.team_b_name}
         </span>
         <span
-          className={`font-semibold uppercase tracking-wide text-slate-500 ${
-            compact ? "text-[9px] leading-tight" : "mt-1 text-[11px]"
-          }`}
+          className={cn(
+            "font-semibold uppercase tracking-wider text-slate-500 font-mono",
+            compact ? "text-[9px] leading-tight" : "mt-1 text-[10px]",
+          )}
         >
-          {compact ? "Bye" : "Bye — advances automatically"}
+          {compact ? "Bye" : "Bye — Automatic Advance"}
         </span>
       </div>
     );
@@ -499,19 +524,22 @@ export function BracketMatchCard({
           ...boxStyle,
           animation: cardAnimation,
         }}
-        className={`${boxClass} relative flex flex-col justify-center gap-0.5 rounded-md border p-1 text-xs shadow-sm transition-all duration-200 ${
+        className={cn(
+          boxClass,
+          "relative flex flex-col justify-center gap-0.5 rounded-lg border p-1 text-xs shadow-sm transition-all duration-200",
           isChampion && done
-            ? "border-amber-400 bg-amber-950/40 ring-1 ring-amber-400/50"
+            ? "border-gold bg-amber-950/40 ring-1 ring-gold/50"
             : live
             ? "border-emerald-500/60 bg-emerald-950/40"
             : isFinal
-            ? "border-coral/80 bg-coral/10"
+            ? "border-gold/80 bg-gold/10"
             : roundStatus === "completed"
-            ? "border-slate-800/80 bg-slate-900/90"
-            : "border-slate-800 bg-slate-900"
-        } ${clickable ? "cursor-pointer hover:border-slate-700 hover:-translate-y-0.5" : ""} ${
-          isDimmed ? "opacity-30" : isCardHighlighted ? "ring-2 ring-coral/90 shadow-lg shadow-coral/20" : ""
-        }`}
+            ? "border-white/10 bg-obsidian-950"
+            : "border-white/10 bg-obsidian-950",
+          clickable && "cursor-pointer hover:border-white/30 hover:-translate-y-0.5",
+          isDimmed && "opacity-30",
+          isCardHighlighted && "ring-2 ring-gold shadow-lg shadow-gold/20",
+        )}
         data-testid={`bracket-match-${m.id}`}
       >
         {isChampion && done && <ChampionshipCelebration />}
@@ -527,12 +555,13 @@ export function BracketMatchCard({
           }}
           onMouseEnter={() => m.team_a_id != null && onHoverTeam?.(m.team_a_id)}
           onMouseLeave={() => m.team_a_id != null && onHoverTeam?.(null)}
-          className={`flex items-center justify-between gap-1 leading-tight rounded px-1 transition-colors hover:bg-white/5 ${
-            done && m.winner_team_id === m.team_b_id ? "opacity-50 grayscale-[0.4]" : ""
-          }`}
+          className={cn(
+            "flex items-center justify-between gap-1 leading-tight rounded px-1 transition-colors hover:bg-white/5",
+            done && m.winner_team_id === m.team_b_id && "opacity-50 grayscale-[0.4]",
+          )}
         >
           <span
-            className={`truncate ${done && m.winner_team_id === m.team_a_id ? "font-bold text-white" : ""}`}
+            className={cn("truncate", done && m.winner_team_id === m.team_a_id && "font-black text-white")}
             style={{ color: RED }}
           >
             {m.team_a_name ?? "TBD"}
@@ -540,7 +569,7 @@ export function BracketMatchCard({
           {(live || done) && (
             <span
               key={m.team_a_score}
-              className="shrink-0 tabular-nums font-bold"
+              className="shrink-0 tabular-nums font-mono font-bold"
               style={{ color: RED, animation: "scorePop 0.35s ease-out" }}
             >
               {m.team_a_score}
@@ -559,12 +588,13 @@ export function BracketMatchCard({
           }}
           onMouseEnter={() => m.team_b_id != null && onHoverTeam?.(m.team_b_id)}
           onMouseLeave={() => m.team_b_id != null && onHoverTeam?.(null)}
-          className={`flex items-center justify-between gap-1 leading-tight rounded px-1 transition-colors hover:bg-white/5 ${
-            done && m.winner_team_id === m.team_a_id ? "opacity-50 grayscale-[0.4]" : ""
-          }`}
+          className={cn(
+            "flex items-center justify-between gap-1 leading-tight rounded px-1 transition-colors hover:bg-white/5",
+            done && m.winner_team_id === m.team_a_id && "opacity-50 grayscale-[0.4]",
+          )}
         >
           <span
-            className={`truncate ${done && m.winner_team_id === m.team_b_id ? "font-bold text-white" : ""}`}
+            className={cn("truncate", done && m.winner_team_id === m.team_b_id && "font-black text-white")}
             style={{ color: BLUE }}
           >
             {m.team_b_name ?? "TBD"}
@@ -572,7 +602,7 @@ export function BracketMatchCard({
           {(live || done) && (
             <span
               key={m.team_b_score}
-              className="shrink-0 tabular-nums font-bold"
+              className="shrink-0 tabular-nums font-mono font-bold"
               style={{ color: BLUE, animation: "scorePop 0.35s ease-out" }}
             >
               {m.team_b_score}
@@ -590,30 +620,35 @@ export function BracketMatchCard({
         ...boxStyle,
         animation: cardAnimation,
       }}
-      className={`${boxClass} relative flex flex-col justify-between rounded-md border p-2.5 text-sm shadow-sm transition-all duration-200 ${
+      className={cn(
+        boxClass,
+        "relative flex flex-col justify-between rounded-xl border p-2.5 text-sm shadow-md transition-all duration-200",
         isChampion && done
-          ? "border-amber-400 bg-gradient-to-br from-amber-950/40 via-slate-900 to-slate-950 shadow-amber-500/20 ring-1 ring-amber-400/50"
+          ? "border-gold bg-gradient-to-br from-amber-950/60 via-slate-900 to-obsidian-950 shadow-gold/20 ring-1 ring-gold/60"
           : live
-          ? "border-emerald-500/60 bg-emerald-950/40"
+          ? "border-emerald-500/60 bg-gradient-to-br from-emerald-950/40 to-obsidian-950"
           : isFinal
-          ? "border-coral/80 bg-coral/10"
+          ? "border-gold/60 bg-gradient-to-br from-gold/10 to-obsidian-950"
           : roundStatus === "completed"
-          ? "border-slate-800/80 bg-slate-900/90"
-          : "border-slate-800 bg-slate-900"
-      } ${clickable ? "cursor-pointer hover:border-slate-700 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/60" : ""} ${
-        isDimmed ? "opacity-30 scale-[0.99]" : isCardHighlighted ? "ring-2 ring-coral/90 shadow-xl shadow-coral/20 border-coral/80" : ""
-      }`}
+          ? "border-white/10 bg-obsidian-950"
+          : "border-white/10 bg-obsidian-950",
+        clickable && "cursor-pointer hover:border-white/30 hover:-translate-y-0.5 hover:shadow-lg",
+        isDimmed && "opacity-30 scale-[0.99]",
+        isCardHighlighted && "ring-2 ring-gold shadow-xl shadow-gold/20 border-gold/80",
+      )}
       data-testid={`bracket-match-${m.id}`}
     >
       {isChampion && done && <ChampionshipCelebration />}
-      <div className="flex items-center justify-between text-[11px] text-slate-400">
-        <span className="truncate">{m.venue_name ?? "Venue TBD"}</span>
+      <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono border-b border-white/5 pb-1">
+        <span className="truncate">{m.venue_name ?? "Court TBD"}</span>
         {live && (
-          <span className="inline-flex items-center gap-1 shrink-0 font-bold tracking-wide text-emerald-400">
+          <span className="inline-flex items-center gap-1 shrink-0 font-heading font-black text-emerald-400 tracking-wider">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" /> LIVE
           </span>
         )}
-        {m.status === "SCHEDULED" && m.scheduled_at && <span className="shrink-0">{formatDate(m.scheduled_at)}</span>}
+        {m.status === "SCHEDULED" && m.scheduled_at && (
+          <span className="shrink-0">{formatDate(m.scheduled_at)}</span>
+        )}
       </div>
       <div
         ref={(el) => {
@@ -627,22 +662,23 @@ export function BracketMatchCard({
         }}
         onMouseEnter={() => m.team_a_id != null && onHoverTeam?.(m.team_a_id)}
         onMouseLeave={() => m.team_a_id != null && onHoverTeam?.(null)}
-        className={`mt-1 flex items-center justify-between rounded px-1.5 py-0.5 transition-all ${
+        className={cn(
+          "mt-1 flex items-center justify-between rounded-lg px-2 py-0.5 transition-all",
           done && m.winner_team_id === m.team_a_id
-            ? "font-bold text-white bg-emerald-950/40 ring-1 ring-emerald-500/20"
+            ? "font-extrabold text-white bg-emerald-950/40 ring-1 ring-emerald-500/30"
             : done && m.winner_team_id === m.team_b_id
             ? "text-slate-500 opacity-50 grayscale-[0.4]"
-            : "text-slate-300 hover:bg-white/5"
-        }`}
+            : "text-slate-200 hover:bg-white/5",
+        )}
       >
-        <span className="flex min-w-0 items-center gap-1.5 truncate cursor-pointer">
-          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: RED, boxShadow: `0 0 5px ${RED}66` }} />
+        <span className="flex min-w-0 items-center gap-1.5 truncate cursor-pointer font-heading font-bold">
+          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: RED, boxShadow: `0 0 6px ${RED}66` }} />
           <span className="truncate">{m.team_a_name ?? "TBD"}</span>
         </span>
         {(live || done) && (
           <span
             key={m.team_a_score}
-            className="shrink-0 tabular-nums font-heading font-black text-white"
+            className="shrink-0 tabular-nums font-mono font-black text-white ml-2"
             style={{ animation: "scorePop 0.35s ease-out" }}
           >
             {m.team_a_score}
@@ -661,22 +697,23 @@ export function BracketMatchCard({
         }}
         onMouseEnter={() => m.team_b_id != null && onHoverTeam?.(m.team_b_id)}
         onMouseLeave={() => m.team_b_id != null && onHoverTeam?.(null)}
-        className={`flex items-center justify-between rounded px-1.5 py-0.5 transition-all ${
+        className={cn(
+          "flex items-center justify-between rounded-lg px-2 py-0.5 transition-all",
           done && m.winner_team_id === m.team_b_id
-            ? "font-bold text-white bg-emerald-950/40 ring-1 ring-emerald-500/20"
+            ? "font-extrabold text-white bg-emerald-950/40 ring-1 ring-emerald-500/30"
             : done && m.winner_team_id === m.team_a_id
             ? "text-slate-500 opacity-50 grayscale-[0.4]"
-            : "text-slate-300 hover:bg-white/5"
-        }`}
+            : "text-slate-200 hover:bg-white/5",
+        )}
       >
-        <span className="flex min-w-0 items-center gap-1.5 truncate cursor-pointer">
-          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: BLUE, boxShadow: `0 0 5px ${BLUE}66` }} />
+        <span className="flex min-w-0 items-center gap-1.5 truncate cursor-pointer font-heading font-bold">
+          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: BLUE, boxShadow: `0 0 6px ${BLUE}66` }} />
           <span className="truncate">{m.team_b_name ?? "TBD"}</span>
         </span>
         {(live || done) && (
           <span
             key={m.team_b_score}
-            className="shrink-0 tabular-nums font-heading font-black text-white"
+            className="shrink-0 tabular-nums font-mono font-black text-white ml-2"
             style={{ animation: "scorePop 0.35s ease-out" }}
           >
             {m.team_b_score}
@@ -685,9 +722,10 @@ export function BracketMatchCard({
       </div>
       {done && m.winner_team_name && (
         <div
-          className={`mt-1 flex items-center gap-1 text-[11px] font-bold ${
-            isFinal ? "text-amber-400" : "text-emerald-400"
-          }`}
+          className={cn(
+            "mt-1 flex items-center gap-1 text-[11px] font-heading font-black pt-1 border-t border-white/5",
+            isFinal ? "text-gold" : "text-emerald-400",
+          )}
         >
           <Trophy className="h-3 w-3 shrink-0" />
           <span className="truncate">
@@ -711,19 +749,19 @@ interface MatchDetail extends MatchT {
 
 function RosterColumn({ name, color, roster }: { name: string; color: string; roster?: RosterEntry[] }) {
   return (
-    <div>
-      <div className="flex items-center gap-1.5 border-b border-white/10 pb-2">
-        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />
-        <h4 className="truncate font-heading font-bold text-white">{name}</h4>
+    <div className="rounded-xl border border-white/10 bg-obsidian-950 p-3.5">
+      <div className="flex items-center gap-2 border-b border-white/10 pb-2">
+        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color, boxShadow: `0 0 6px ${color}88` }} />
+        <h4 className="truncate font-heading font-bold text-white text-sm">{name}</h4>
       </div>
-      <ul className="mt-2 space-y-1 text-sm">
+      <ul className="mt-2 space-y-1.5 text-xs">
         {(roster ?? []).map((p, i) => (
           <li key={i} className="flex items-center justify-between gap-2 text-slate-300">
-            <span className="truncate">{p.full_name}</span>
-            {p.role && <span className="text-xs text-slate-500">{p.role}</span>}
+            <span className="truncate font-medium">{p.full_name}</span>
+            {p.role && <span className="text-[10px] text-slate-500 font-mono">{p.role}</span>}
           </li>
         ))}
-        {(roster ?? []).length === 0 && <li className="text-xs text-slate-500">No roster members listed</li>}
+        {(roster ?? []).length === 0 && <li className="text-xs text-slate-500 py-2">No roster members listed</li>}
       </ul>
     </div>
   );
@@ -740,19 +778,19 @@ export function MatchRosterDialog({ matchId, onClose }: { matchId: number; onClo
       open
       onClose={onClose}
       title={detail ? `${detail.team_a_name ?? "TBD"} vs ${detail.team_b_name ?? "TBD"}` : "Match Details"}
-      className="max-w-2xl border-slate-800 bg-slate-900 text-white"
+      className="max-w-2xl"
       testId="public-match-roster-dialog"
     >
       {!detail ? (
-        <p className="text-sm text-slate-400">Loading roster…</p>
+        <p className="text-xs text-slate-400 py-6 text-center">Loading match squad rosters…</p>
       ) : (
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
-            <span>{detail.round_name}</span>
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400 font-mono border-b border-white/10 pb-3">
+            <span className="font-heading font-bold text-gold">{detail.round_name}</span>
             <span>{detail.venue_name ?? "Venue TBD"}</span>
             {detail.scheduled_at && <span>{formatDate(detail.scheduled_at)}</span>}
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2">
             <RosterColumn name={detail.team_a_name ?? "Team A"} color={RED} roster={detail.team_a_roster} />
             <RosterColumn name={detail.team_b_name ?? "Team B"} color={BLUE} roster={detail.team_b_roster} />
           </div>
@@ -909,7 +947,7 @@ function BracketSegment({
           const isDimmed = highlightedTeamId != null && !isHighlighted;
           const isAdvancing = advancingMatchEvents && advancingMatchEvents[c.srcMatchId] != null;
 
-          const strokeColor = isHighlighted ? (c.color !== NEUTRAL ? c.color : "#ff4500") : c.color;
+          const strokeColor = isHighlighted ? (c.color !== NEUTRAL ? c.color : "#F59E0B") : c.color;
           const strokeWidth = isHighlighted ? 3 : isWinnerPath ? 2 : 1.5;
           const pathOpacity = isDimmed ? 0.12 : isHighlighted ? 1 : isWinnerPath ? 0.85 : 0.4;
           // Cards drop down first; connectors begin drawing after cards have settled
@@ -952,10 +990,10 @@ function BracketSegment({
               {/* Winner Advancement Traveling Glow Pulse */}
               {isAdvancing && (
                 <g>
-                  <circle r="4.5" fill={c.color !== NEUTRAL ? c.color : "#10b981"} filter="drop-shadow(0 0 6px #ffffff)">
+                  <circle r="4.5" fill={c.color !== NEUTRAL ? c.color : "#F59E0B"} filter="drop-shadow(0 0 6px #ffffff)">
                     <animateMotion dur="0.75s" repeatCount="1" path={c.d} fill="freeze" />
                   </circle>
-                  <circle r="9" fill={c.color !== NEUTRAL ? c.color : "#10b981"} opacity="0.35">
+                  <circle r="9" fill={c.color !== NEUTRAL ? c.color : "#F59E0B"} opacity="0.35">
                     <animateMotion dur="0.75s" repeatCount="1" path={c.d} fill="freeze" />
                   </circle>
                 </g>
@@ -984,13 +1022,14 @@ function BracketSegment({
             }}
           >
             <h3
-              className={`truncate font-heading text-xs font-bold uppercase tracking-wider ${
+              className={cn(
+                "truncate font-heading text-xs font-bold uppercase tracking-wider",
                 status === "current"
                   ? "text-emerald-400 font-black"
                   : status === "completed"
                   ? "text-slate-400"
-                  : "text-slate-500"
-              }`}
+                  : "text-slate-500",
+              )}
             >
               {r.name}
             </h3>
@@ -1099,29 +1138,31 @@ function PoolsSegment({
                     ? `bracketEntrance 0.42s cubic-bezier(0.16, 1, 0.3, 1) ${pIdx * 60 + 50}ms both`
                     : undefined,
                 }}
-                className={`block rounded-md border p-3 text-left shadow-sm transition-all duration-200 hover:border-coral hover:-translate-y-0.5 ${
+                className={cn(
+                  "block rounded-xl border p-3.5 text-left shadow-md transition-all duration-200 hover:border-gold hover:-translate-y-0.5",
                   hasHighlightedTeam
-                    ? "border-emerald-500/80 bg-slate-900 ring-2 ring-emerald-500/30"
+                    ? "border-emerald-500/80 bg-obsidian-950 ring-2 ring-emerald-500/30"
                     : isDimmed
-                    ? "border-slate-800 bg-slate-900 opacity-35"
-                    : "border-slate-800 bg-slate-900"
-                }`}
+                    ? "border-white/10 bg-obsidian-950 opacity-35"
+                    : "border-white/10 bg-obsidian-950",
+                )}
               >
                 <div className="flex items-center justify-between">
                   <h4 className="truncate font-heading text-sm font-bold text-white">{p.name}</h4>
                   <span
-                    className={`shrink-0 text-xs font-semibold ${
+                    className={cn(
+                      "shrink-0 text-xs font-semibold font-mono",
                       p.status !== "finalized"
                         ? "text-slate-400"
                         : p.match_count > 0 && p.pending_count === 0
                         ? "text-emerald-400"
-                        : "text-amber-400"
-                    }`}
+                        : "text-amber-400",
+                    )}
                   >
                     {p.status !== "finalized" ? "Draft" : p.match_count > 0 && p.pending_count === 0 ? "Done" : "In Progress"}
                   </span>
                 </div>
-                <ol className="mt-2 space-y-1 text-xs text-slate-300">
+                <ol className="mt-2.5 space-y-1 text-xs text-slate-300">
                   {p.teams.map((t, i) => {
                     const isTeamActive = highlightedTeamId === t.id;
                     return (
@@ -1135,13 +1176,14 @@ function PoolsSegment({
                         }}
                         onMouseEnter={() => onHoverTeam?.(t.id)}
                         onMouseLeave={() => onHoverTeam?.(null)}
-                        className={`cursor-pointer truncate rounded px-1.5 py-0.5 transition-all ${
+                        className={cn(
+                          "cursor-pointer truncate rounded-lg px-2 py-0.5 transition-all",
                           isTeamActive
                             ? "bg-emerald-950/70 font-bold text-emerald-400 ring-1 ring-emerald-500/50"
                             : highlightedTeamId != null
                             ? "opacity-40"
-                            : "hover:bg-white/5 hover:text-white"
-                        }`}
+                            : "hover:bg-white/5 hover:text-white",
+                        )}
                       >
                         {i + 1}. {t.name}
                       </li>
@@ -1149,7 +1191,7 @@ function PoolsSegment({
                   })}
                   {p.teams.length === 0 && <li className="text-slate-500">No teams yet</li>}
                 </ol>
-                <p className="mt-2 text-xs text-slate-400">
+                <p className="mt-2.5 text-[11px] text-slate-400 font-mono border-t border-white/5 pt-1.5">
                   {p.team_count} teams · {p.match_count} matches
                 </p>
               </Link>
@@ -1165,8 +1207,8 @@ function FlowDivider({ label }: { label: string }) {
   return (
     <div className="mx-4 flex shrink-0 flex-col items-center self-stretch" title={label}>
       <span className="w-px flex-1 bg-white/10" />
-      <span className="my-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/10 bg-obsidian text-slate-400 shadow-sm">
-        <ChevronRight className="h-3.5 w-3.5" />
+      <span className="my-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/10 bg-obsidian text-gold shadow-sm">
+        <ChevronRight className="h-4 w-4" />
       </span>
       <span className="w-px flex-1 bg-white/10" />
     </div>
@@ -1363,10 +1405,6 @@ function TournamentFlow({
 
   const recomputeBoundaries = useCallback(() => {
     const container = containerRef.current;
-    // Cards are still mid-flight through their bracketEntrance transform until
-    // hasInitialRevealed flips true, so getBoundingClientRect() on anchors would
-    // return their current animated position, not the final one — measuring now
-    // would just draw a wrong line that later snaps. Wait for cards to settle.
     if (!container || activeSegments.length < 2 || !hasInitialRevealed) {
       setBoundaryPaths([]);
       return;
@@ -1400,10 +1438,6 @@ function TournamentFlow({
       }
     }
     setBoundaryPaths(paths);
-    // hasInitialRevealed isn't read above, but cards animate in with a CSS
-    // transform (bracketEntrance) — getBoundingClientRect() reflects wherever
-    // that transform is mid-flight, so this must rerun once cards settle into
-    // their final position, not just when the segment layout itself changes.
   }, [activeSegments, wrapperWidth, isPagedView, hasInitialRevealed]);
 
   useLayoutEffect(() => {
@@ -1440,7 +1474,7 @@ function TournamentFlow({
   };
 
   if (!bracket) return null;
-  if (sortedRounds.length === 0) return <p className="mt-4 text-sm text-slate-400">No rounds yet.</p>;
+  if (sortedRounds.length === 0) return <p className="mt-4 text-xs text-slate-400 py-6 text-center">No rounds scheduled yet.</p>;
 
   const children: React.ReactNode[] = [];
   activeSegments.forEach((seg, i) => {
@@ -1474,20 +1508,20 @@ function TournamentFlow({
   });
 
   return (
-    <div className="mt-4 space-y-3" data-testid="public-tournament-flow">
+    <div className="mt-4 space-y-4" data-testid="public-tournament-flow">
       {/* 2-Round Pages Navigation Bar for Small Screens & Focus View */}
       {pages.length > 1 && (
-        <div className="flex flex-col gap-2 rounded-lg border border-white/10 bg-slate-900/70 p-2.5 sm:p-3 shadow-sm">
+        <div className="flex flex-col gap-2 rounded-xl border border-white/10 bg-obsidian-900 p-3 shadow-md">
           <div className="flex flex-wrap items-center justify-between gap-2">
             {/* Page Buttons with Round Names */}
             <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 max-w-full">
               <button
                 onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
                 disabled={currentPage === 0}
-                className="flex items-center gap-1 rounded-md border border-white/10 bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-slate-300 transition-all hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none shrink-0"
+                className="flex items-center gap-1 rounded-lg border border-white/10 bg-obsidian-950 px-3 py-1.5 text-xs font-heading font-bold text-slate-300 transition-all hover:bg-white/5 disabled:opacity-30 disabled:pointer-events-none shrink-0"
                 title="Previous 2 rounds"
               >
-                <ChevronLeft className="h-3.5 w-3.5" />
+                <ChevronLeft className="h-3.5 w-3.5 text-gold" />
                 <span className="hidden sm:inline">Prev</span>
               </button>
 
@@ -1499,11 +1533,12 @@ function TournamentFlow({
                       setCurrentPage(idx);
                       if (viewMode === "all") setViewMode("paged");
                     }}
-                    className={`flex items-center gap-1 shrink-0 rounded-md px-3 py-1.5 text-xs font-bold transition-all ${
+                    className={cn(
+                      "flex items-center gap-1 shrink-0 rounded-lg px-3 py-1.5 text-xs font-heading font-bold transition-all",
                       currentPage === idx && isPagedView
-                        ? "bg-coral text-white shadow-md shadow-coral/30 ring-1 ring-coral/60"
-                        : "border border-white/10 bg-slate-900/90 text-slate-400 hover:text-white hover:bg-slate-800"
-                    }`}
+                        ? "bg-gold text-obsidian shadow-sm font-black"
+                        : "border border-white/10 bg-obsidian-950 text-slate-400 hover:text-white hover:bg-white/5",
+                    )}
                   >
                     <span className="sm:hidden">{p.shortLabel}</span>
                     <span className="hidden sm:inline">{p.label}</span>
@@ -1514,61 +1549,59 @@ function TournamentFlow({
               <button
                 onClick={() => setCurrentPage((p) => Math.min(pages.length - 1, p + 1))}
                 disabled={currentPage === pages.length - 1}
-                className="flex items-center gap-1 rounded-md border border-white/10 bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-slate-300 transition-all hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none shrink-0"
+                className="flex items-center gap-1 rounded-lg border border-white/10 bg-obsidian-950 px-3 py-1.5 text-xs font-heading font-bold text-slate-300 transition-all hover:bg-white/5 disabled:opacity-30 disabled:pointer-events-none shrink-0"
                 title="Next 2 rounds"
               >
                 <span className="hidden sm:inline">Next</span>
-                <ChevronRight className="h-3.5 w-3.5" />
+                <ChevronRight className="h-3.5 w-3.5 text-gold" />
               </button>
             </div>
 
             {/* Desktop / Toggle view mode */}
-            <div className="hidden md:flex items-center gap-1 rounded-md border border-white/10 bg-slate-950 p-0.5 text-xs">
+            <div className="hidden md:flex items-center gap-1 rounded-lg border border-white/10 bg-obsidian-950 p-1 text-xs font-heading">
               <button
                 onClick={() => setViewMode("all")}
-                className={`flex items-center gap-1.5 rounded px-2.5 py-1 font-medium transition-colors ${
-                  !isPagedView ? "bg-white/15 text-white shadow-sm" : "text-slate-400 hover:text-white"
-                }`}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-bold transition-colors",
+                  !isPagedView ? "bg-gold text-obsidian shadow-sm font-black" : "text-slate-400 hover:text-white",
+                )}
                 title="View all rounds horizontally"
               >
-                <Columns className="h-3.5 w-3.5" /> All Rounds
+                <Columns className="h-3.5 w-3.5" /> Full Tournament Tree
               </button>
               <button
                 onClick={() => setViewMode("paged")}
-                className={`flex items-center gap-1.5 rounded px-2.5 py-1 font-medium transition-colors ${
-                  isPagedView ? "bg-white/15 text-white shadow-sm" : "text-slate-400 hover:text-white"
-                }`}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-bold transition-colors",
+                  isPagedView ? "bg-gold text-obsidian shadow-sm font-black" : "text-slate-400 hover:text-white",
+                )}
                 title="View 2 connected rounds per page"
               >
-                <Layers className="h-3.5 w-3.5" /> 2-Round Pages
+                <Layers className="h-3.5 w-3.5" /> 2-Round Segments
               </button>
             </div>
           </div>
 
           {/* Current Page Subtitle Indicator */}
           {isPagedView && pages[currentPage] && (
-            <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-white/5">
+            <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1.5 border-t border-white/5 font-mono">
               <span>
-                Page {currentPage + 1} of {pages.length}: <strong className="text-slate-200">{pages[currentPage].label}</strong>
+                Segment {currentPage + 1} of {pages.length}: <strong className="text-white">{pages[currentPage].label}</strong>
               </span>
-              <span className="text-[10px] text-slate-500 hidden sm:inline">Swipe or tap Next to see subsequent rounds</span>
+              <span className="text-[10px] text-slate-500 hidden sm:inline">Swipe or tap Next to navigate adjacent rounds</span>
             </div>
           )}
         </div>
       )}
 
       {/* Bracket Flow Canvas */}
-      {/* items-start (not the flex default of stretch) — without it, this wrapper's
-          explicit height (already scaled down below) would squash the scaled child
-          to that same shorter height *before* its own scale() transform is even
-          applied, throwing off where the transform renders relative to the clipped
-          box and cutting the round headers/top cards off on narrow screens. */}
       <div
-        className={`w-full select-none pt-3 pb-4 ${
+        className={cn(
+          "w-full select-none pt-3 pb-4 rounded-xl border border-white/10 bg-obsidian-900 p-4 shadow-inner",
           isPagedView && scaleFactor < 1
             ? "flex items-start justify-center overflow-hidden"
-            : "overflow-x-auto"
-        }`}
+            : "overflow-x-auto",
+        )}
         ref={scrollWrapperRef}
         onClick={handleContainerClick}
         onTouchStart={handleTouchStart}
@@ -1606,14 +1639,10 @@ function TournamentFlow({
             {boundaryPaths.map((p, i) => {
               const isHighlighted = highlightedTeamId != null && p.teamId === highlightedTeamId;
               const isDimmed = highlightedTeamId != null && !isHighlighted;
-              const strokeColor = isHighlighted ? (p.color !== NEUTRAL ? p.color : "#10b981") : p.color;
+              const strokeColor = isHighlighted ? (p.color !== NEUTRAL ? p.color : "#F59E0B") : p.color;
               const strokeWidth = isHighlighted ? 3 : 2;
               const pathOpacity = isDimmed ? 0.12 : isHighlighted ? 1 : 0.85;
 
-              // boundaryPaths only ever populates once cards have fully settled
-              // (see recomputeBoundaries) — so every path here is freshly mounted
-              // with an already-correct position, and this draw-in animation plays
-              // exactly once per path, right when it first appears.
               return (
                 <path
                   key={i}
@@ -1667,36 +1696,34 @@ export default function Live() {
   );
 
   return (
-    <div className="mx-auto max-w-7xl px-5 py-10 md:px-8 text-slate-100">
-      <div className="flex items-center gap-2">
-        <Radio className="h-5 w-5 text-coral animate-pulse" />
-        <h1 className="font-heading text-2xl font-black tracking-tight text-white">Live &amp; Fixtures</h1>
-      </div>
-      <p className="mt-1 text-sm text-slate-400">Live scores and the tournament bracket, updating in real time.</p>
-
-      <section className="mt-8">
-        <h2 className="font-heading text-sm font-bold uppercase tracking-widest text-slate-400">Live Now</h2>
-        {loading ? (
-          <p className="mt-3 text-sm text-slate-400">Loading…</p>
-        ) : liveMatches.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-400">No matches are live right now — check back soon.</p>
-        ) : (
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {liveMatches.map((m) => (
-              <LiveMatchCard key={m.id} initial={m} />
-            ))}
+    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-10">
+      {/* ARENA BROADCAST BANNER */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-white/10 pb-6">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_10px_#34d399]" />
+            <span className="text-xs font-heading font-extrabold uppercase tracking-widest text-gold">
+              OFFICIAL CHAMPIONSHIP ARENA FEED
+            </span>
           </div>
-        )}
-      </section>
+          <h1 className="mt-1 font-heading text-3xl sm:text-4xl font-black tracking-tight text-white">
+            Live Matches & Bracket Center
+          </h1>
+          <p className="mt-1 text-xs sm:text-sm text-slate-400 font-body">
+            Real-time court scorecards, electronic point trackers, and live knockout tree progression.
+          </p>
+        </div>
 
-      <section className="mt-10">
-        <div className="flex items-center justify-between">
-          <h2 className="font-heading text-sm font-bold uppercase tracking-widest text-slate-400">Tournament Flow</h2>
-          {tournaments.length > 0 && (
+        {/* TOURNAMENT SELECTOR DROPDOWN */}
+        {tournaments.length > 0 && (
+          <div className="shrink-0">
+            <label className="block text-[10px] font-heading font-bold uppercase tracking-wider text-slate-400 mb-1">
+              Select Category
+            </label>
             <select
               value={selected ?? ""}
               onChange={(e) => setSelected(Number(e.target.value))}
-              className="rounded-md border border-white/10 bg-slate-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:border-slate-700 focus:outline-none focus:ring-1 focus:ring-coral"
+              className="rounded-lg border border-white/15 bg-obsidian-900 px-4 py-2 text-xs sm:text-sm font-heading font-bold text-white transition-colors hover:border-gold focus:outline-none focus:ring-2 focus:ring-gold"
               data-testid="public-tournament-select"
             >
               {tournaments.map((t) => (
@@ -1705,11 +1732,64 @@ export default function Live() {
                 </option>
               ))}
             </select>
+          </div>
+        )}
+      </div>
+
+      {/* LIVE NOW SECTION */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Activity className="h-4 w-4 text-emerald-400" />
+            <h2 className="font-heading text-sm font-black uppercase tracking-widest text-white">
+              Courts Live Now ({liveMatches.length})
+            </h2>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="rounded-xl border border-white/10 bg-obsidian-900 py-10 text-center text-xs text-slate-400 font-mono">
+            Connecting to arena telemetry…
+          </div>
+        ) : liveMatches.length === 0 ? (
+          <div className="rounded-xl border border-white/10 bg-obsidian-900/60 p-6 text-center">
+            <Radio className="h-8 w-8 text-slate-600 mx-auto mb-2" />
+            <p className="font-heading font-bold text-white text-sm">No Matches Currently in Progress</p>
+            <p className="text-xs text-slate-400 mt-1">
+              Scheduled fixtures and pool matches will stream live points here the instant the whistle blows.
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {liveMatches.map((m) => (
+              <LiveMatchCard key={m.id} initial={m} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* TOURNAMENT FLOW / BRACKET / POOLS */}
+      <section className="space-y-3 pt-4">
+        <div className="flex items-center justify-between border-b border-white/10 pb-3">
+          <div className="flex items-center gap-2">
+            <Trophy className="h-4 w-4 text-gold" />
+            <h2 className="font-heading text-sm font-black uppercase tracking-widest text-white">
+              Championship Tournament Progression
+            </h2>
+          </div>
+          {selectedTournament && (
+            <span className="font-heading font-bold text-xs text-gold">
+              {selectedTournament.name}
+            </span>
           )}
         </div>
+
         {!loading && tournaments.length === 0 && (
-          <p className="mt-3 text-sm text-slate-400">No published tournaments yet.</p>
+          <div className="rounded-xl border border-white/10 bg-obsidian-900 p-8 text-center text-xs text-slate-400">
+            No published tournament categories found.
+          </div>
         )}
+
         {selectedTournament && (
           <TournamentFlow tournamentId={selectedTournament.id} onSelectMatch={setRosterMatchId} />
         )}
@@ -1719,4 +1799,3 @@ export default function Live() {
     </div>
   );
 }
-
