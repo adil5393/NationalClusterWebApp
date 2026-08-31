@@ -175,6 +175,7 @@ export default function Reports() {
                   href={`${BACKEND}/api/reports/tournaments/${detail.id}/full.xlsx`}
                   className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-xs font-heading font-black text-obsidian hover:bg-emerald-400 transition-colors shadow-sm shrink-0"
                   data-testid="download-full-report-btn"
+                  title="Download complete multi-sheet workbook including Overview Dashboard, Roadmaps, Standings and Round tabs"
                 >
                   <FileSpreadsheet className="h-4 w-4" /> Download Complete Excel Workbook (.xlsx)
                 </a>

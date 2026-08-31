@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Download, BedDouble, Building, Layers, CheckCircle2 } from "lucide-react";
+import { Download, BedDouble, Building, Layers, CheckCircle2, FileSpreadsheet } from "lucide-react";
 import { api } from "@/lib/api";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
@@ -69,13 +69,22 @@ export default function RoomMap() {
             Bed-level diagram and loose group allocation visualizer across all hostel blocks.
           </p>
         </div>
-        <a
-          href={`${BACKEND}/api/export/rooms.csv`}
-          className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-xs font-heading font-bold text-slate-200 hover:bg-white/10 hover:text-white transition-colors shrink-0"
-          data-testid="export-rooms-btn"
-        >
-          <Download className="h-4 w-4 text-gold" /> Export Allocation CSV
-        </a>
+        <div className="flex items-center gap-2 shrink-0">
+          <a
+            href={`${BACKEND}/api/export/rooms.csv`}
+            className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3.5 py-2 text-xs font-heading font-bold text-slate-200 hover:bg-white/10 hover:text-white transition-colors"
+            data-testid="export-rooms-btn"
+          >
+            <Download className="h-4 w-4 text-slate-400" /> Export CSV
+          </a>
+          <a
+            href={`${BACKEND}/api/export/rooms.xlsx`}
+            className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2 text-xs font-heading font-bold text-emerald-300 hover:bg-emerald-500/20 transition-colors"
+            data-testid="export-rooms-xlsx-btn"
+          >
+            <FileSpreadsheet className="h-4 w-4 text-emerald-400" /> Export XLSX
+          </a>
+        </div>
       </div>
 
       {data.length === 0 ? (

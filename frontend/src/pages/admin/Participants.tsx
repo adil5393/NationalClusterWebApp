@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, CheckCircle2, Circle, Upload, Download, Users, Search, Filter } from "lucide-react";
+import { Plus, Pencil, Trash2, CheckCircle2, Circle, Upload, Download, Users, Search, Filter, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -172,6 +172,13 @@ export default function Participants() {
             data-testid="export-participants-btn"
           >
             <Download className="h-3.5 w-3.5 text-slate-400" /> Export CSV
+          </a>
+          <a
+            href={`${import.meta.env.REACT_APP_BACKEND_URL ?? ""}/api/export/participants.xlsx`}
+            className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 transition-colors"
+            data-testid="export-participants-xlsx-btn"
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" /> Export XLSX
           </a>
           {canEdit && (
             <Button
