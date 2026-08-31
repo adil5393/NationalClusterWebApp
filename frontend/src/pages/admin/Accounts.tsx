@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus, Pencil, Trash2, ShieldCheck, ShieldOff, Crown, User, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -9,12 +9,14 @@ import { Dialog } from "@/components/ui/dialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { groupStaffByCategory } from "@/lib/meta";
 
 type PermissionLevel = "" | "view" | "edit";
 
 interface StaffBrief {
   id: number;
   full_name: string;
+  category?: string | null;
 }
 interface OrganizerUser {
   id: number;
@@ -51,6 +53,7 @@ export default function Accounts() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm);
+  const staffByCategory = useMemo(() => groupStaffByCategory(staff), [staff]);
 
   const load = () => {
     setLoading(true);
@@ -390,19 +393,26 @@ export default function Accounts() {
               className="mt-1.5 max-h-36 overflow-y-auto rounded-lg border border-white/10 bg-obsidian-950 p-2 space-y-1"
               data-testid="account-staff-list"
             >
-              {staff.map((s) => (
-                <label
-                  key={s.id}
-                  className="flex items-center gap-2 rounded px-2 py-1 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
-                >
-                  <input
-                    type="checkbox"
-                    checked={form.staff_member_ids.includes(s.id)}
-                    onChange={() => toggleFormStaff(s.id)}
-                    className="rounded border-white/20 text-gold focus:ring-gold"
-                  />
-                  <span>{s.full_name}</span>
-                </label>
+              {staffByCategory.map(([category, members]) => (
+                <div key={category}>
+                  <p className="px-2 pt-1.5 text-[10px] font-heading font-bold uppercase tracking-wider text-slate-500">
+                    {category}
+                  </p>
+                  {members.map((s) => (
+                    <label
+                      key={s.id}
+                      className="flex items-center gap-2 rounded px-2 py-1 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={form.staff_member_ids.includes(s.id)}
+                        onChange={() => toggleFormStaff(s.id)}
+                        className="rounded border-white/20 text-gold focus:ring-gold"
+                      />
+                      <span>{s.full_name}</span>
+                    </label>
+                  ))}
+                </div>
               ))}
               {staff.length === 0 && (
                 <p className="p-2 text-xs text-slate-400">No staff members enrolled yet.</p>

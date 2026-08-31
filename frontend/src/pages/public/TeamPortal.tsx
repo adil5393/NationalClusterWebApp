@@ -14,16 +14,26 @@ import {
   Phone,
   Shield,
   Trophy,
+  Lock,
+  ImageIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Dialog } from "@/components/ui/dialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { QRDialog } from "@/components/admin/QRDialog";
 import { formatDate } from "@/lib/meta";
 import { TeamAvatar } from "@/components/ui/team-badge";
 
+interface Coach {
+  full_name: string;
+  role: string;
+  email?: string;
+  phone?: string | null;
+}
 interface TeamDetail {
   id: number;
   name: string;
@@ -31,7 +41,9 @@ interface TeamDetail {
   region?: string;
   country?: string;
   member_count?: number;
-  coaches: { full_name: string; email?: string; phone?: string }[];
+  photos: { thumbnail: string; view: string }[];
+  coaches: Coach[];
+  has_hidden_contacts?: boolean;
   participants: { full_name: string; role?: string; age_group?: string }[];
   accommodation: { room?: string; floor?: string; building?: string; notes?: string }[];
   transport: {
@@ -98,15 +110,54 @@ export default function TeamPortal() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
+  const [revealOpen, setRevealOpen] = useState(false);
+  const [revealPassword, setRevealPassword] = useState("");
+  const [revealBusy, setRevealBusy] = useState(false);
+  const [contactsRevealed, setContactsRevealed] = useState(false);
+  const [photoIndex, setPhotoIndex] = useState(0);
+  const [failedPhotoIndexes, setFailedPhotoIndexes] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     setLoading(true);
+    setPhotoIndex(0);
+    setFailedPhotoIndexes(new Set());
     api
       .get<TeamDetail>(`/public/teams/${id}`)
       .then((r) => setTeam(r.data))
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false));
   }, [id]);
+
+  const photoCount = team?.photos.length ?? 0;
+  useEffect(() => {
+    if (photoCount <= 1) return;
+    const timer = setInterval(() => setPhotoIndex((i) => (i + 1) % photoCount), 2000);
+    return () => clearInterval(timer);
+  }, [photoCount]);
+
+  const revealContacts = async () => {
+    if (!revealPassword.trim()) return toast.error("Enter the admin password");
+    setRevealBusy(true);
+    try {
+      const r = await api.post<{ coaches: Coach[] }>(`/public/teams/${id}/reveal-contacts`, {
+        password: revealPassword,
+      });
+      setTeam((t) => (t ? { ...t, coaches: r.data.coaches } : t));
+      setContactsRevealed(true);
+      setRevealOpen(false);
+      setRevealPassword("");
+      toast.success("Contact numbers revealed");
+    } catch (e: any) {
+      toast.error(e?.response?.status === 401 ? "Incorrect password" : "Could not verify password");
+    } finally {
+      setRevealBusy(false);
+    }
+  };
+
+  const hideContacts = () => {
+    setTeam((t) => (t ? { ...t, coaches: t.coaches.map((c) => ({ ...c, phone: undefined })) } : t));
+    setContactsRevealed(false);
+  };
 
   const share = async () => {
     try {
@@ -226,31 +277,115 @@ export default function TeamPortal() {
         title={`${team.name} - Official QR`}
       />
 
+      {/* TEAM PHOTO(S) — rotates every 2s when there's more than one */}
+      {team.photos.length > 0 && (() => {
+        const current = team.photos[photoIndex] ?? team.photos[0];
+        const failed = failedPhotoIndexes.has(photoIndex);
+        return (
+          <div className="mt-6 overflow-hidden rounded-2xl border border-white/15 bg-obsidian-900 shadow-md" data-testid="team-photo-card">
+            <div className="flex items-center justify-between gap-2 border-b border-white/10 bg-obsidian-950 px-5 py-3">
+              <div className="flex items-center gap-2">
+                <ImageIcon className="h-4 w-4 text-gold" />
+                <h2 className="font-heading text-sm font-bold text-white">Official Team Photo</h2>
+              </div>
+              {team.photos.length > 1 && (
+                <div className="flex items-center gap-1.5" data-testid="team-photo-dots">
+                  {team.photos.map((_, i) => (
+                    <span
+                      key={i}
+                      className={`h-1.5 w-1.5 rounded-full transition-colors ${i === photoIndex ? "bg-gold" : "bg-white/20"}`}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+            {failed ? (
+              <div className="flex flex-col items-center justify-center gap-2 p-10 text-center">
+                <ImageIcon className="h-8 w-8 text-slate-500" />
+                <p className="text-xs text-slate-400 font-body max-w-sm">
+                  This photo couldn't be loaded here — the Google Drive file may not be shared as
+                  "Anyone with the link can view" yet.
+                </p>
+                <a
+                  href={current.view}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs font-bold text-gold hover:underline"
+                >
+                  Open in Google Drive →
+                </a>
+              </div>
+            ) : (
+              <img
+                key={current.thumbnail}
+                src={current.thumbnail}
+                alt={`${team.name} team photo`}
+                className="max-h-[480px] w-full object-cover"
+                loading="lazy"
+                referrerPolicy="no-referrer"
+                onError={() => setFailedPhotoIndexes((s) => new Set(s).add(photoIndex))}
+              />
+            )}
+          </div>
+        );
+      })()}
+
       {/* 4 OPERATIONAL CARDS */}
       <div className="mt-8 grid gap-5 md:grid-cols-2">
-        {/* COACHES */}
+        {/* COACHES & MANAGER */}
         <SectionCard icon={UserCog} title="Coaching & Delegation Staff" badge={`${team.coaches.length} Staff`}>
           {team.coaches.length === 0 ? (
             <p className="text-xs text-slate-400">No coach assigned in records yet.</p>
           ) : (
+            <>
+              {contactsRevealed && (
+                <div className="mb-3 flex items-center justify-between rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-[11px] text-emerald-300">
+                  <span>Contact numbers are visible.</span>
+                  <button
+                    onClick={hideContacts}
+                    data-testid="hide-contacts-btn"
+                    className="inline-flex items-center gap-1 font-heading font-bold text-emerald-200 hover:underline"
+                  >
+                    <Lock className="h-3 w-3" /> Hide Again
+                  </button>
+                </div>
+              )}
             <ul className="space-y-3">
               {team.coaches.map((c, i) => (
                 <li key={i} className="flex items-center justify-between gap-3 rounded-lg border border-white/5 bg-white/[0.02] p-3 text-xs">
                   <div>
-                    <p className="font-heading font-bold text-white text-sm">{c.full_name}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-heading font-bold text-white text-sm">{c.full_name}</p>
+                      <Badge tone={c.role === "Manager" ? "coral" : "gold"} size="sm">
+                        {c.role}
+                      </Badge>
+                    </div>
                     {c.email && <p className="text-slate-400 font-body mt-0.5">{c.email}</p>}
                   </div>
-                  {c.phone && (
+                  {c.phone ? (
                     <a
                       href={`tel:${c.phone}`}
                       className="inline-flex items-center gap-1 rounded bg-gold/15 px-2.5 py-1 font-mono text-xs font-bold text-gold hover:bg-gold/25"
                     >
                       <Phone className="h-3 w-3" /> {c.phone}
                     </a>
+                  ) : (
+                    team.has_hidden_contacts &&
+                    !contactsRevealed && (
+                      <button
+                        onClick={() => setRevealOpen(true)}
+                        data-testid="reveal-contacts-btn"
+                        className="inline-flex items-center gap-1 rounded bg-white/5 px-2.5 py-1 font-mono text-xs font-semibold text-slate-400 hover:bg-white/10 hover:text-white"
+                        title="Click to reveal contact number"
+                      >
+                        <Lock className="h-3 w-3" /> •••• ••••••
+                      </button>
+                    )
                   )}
                 </li>
               ))}
             </ul>
+            </>
           )}
         </SectionCard>
 
@@ -373,6 +508,46 @@ export default function TeamPortal() {
           )}
         </SectionCard>
       </div>
+
+      {/* CONTACT REVEAL — admin password gate */}
+      <Dialog
+        open={revealOpen}
+        onClose={() => setRevealOpen(false)}
+        title="Reveal Contact Numbers"
+        testId="reveal-contacts-dialog"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-slate-400 font-body">
+            Coach and manager contact numbers are hidden from public view. Enter the organizer admin password
+            to reveal them.
+          </p>
+          <div>
+            <Input
+              type="password"
+              placeholder="Admin password"
+              value={revealPassword}
+              onChange={(e) => setRevealPassword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && revealContacts()}
+              data-testid="reveal-contacts-password-input"
+              autoFocus
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+            <Button variant="outline" size="sm" onClick={() => setRevealOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="gold"
+              size="sm"
+              onClick={revealContacts}
+              disabled={revealBusy}
+              data-testid="submit-reveal-contacts-btn"
+            >
+              {revealBusy ? "Verifying…" : "Reveal"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }

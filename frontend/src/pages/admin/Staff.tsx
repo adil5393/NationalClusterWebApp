@@ -7,7 +7,8 @@ import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { Table, THead, TH, TR, TD, TBody } from "@/components/ui/table";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
-import { formatDate } from "@/lib/meta";
+import { Dialog } from "@/components/ui/dialog";
+import { formatDate, groupStaffByCategory } from "@/lib/meta";
 import { cn } from "@/lib/utils";
 import { useModuleAccess } from "@/lib/permissions";
 
@@ -58,6 +59,7 @@ export default function Staff() {
   const emptyMember = { full_name: "", phone: "", email: "", category: "", notes: "" };
   const [member, setMember] = useState(emptyMember);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [newLogin, setNewLogin] = useState<{ full_name: string; username: string; password: string } | null>(null);
   const [assign, setAssign] = useState({
     staff_id: "",
     room_id: "",
@@ -100,8 +102,9 @@ export default function Staff() {
         await api.put(`/staff/${editingId}`, payload);
         toast.success("Staff member updated");
       } else {
-        await api.post("/staff", payload);
+        const r = await api.post<{ full_name: string; login_username: string; login_password: string }>("/staff", payload);
         toast.success("Staff member added");
+        setNewLogin({ full_name: r.data.full_name, username: r.data.login_username, password: r.data.login_password });
       }
       setMember(emptyMember);
       setEditingId(null);
@@ -184,6 +187,8 @@ export default function Staff() {
     for (const g of grouped) for (const d of g.rows) map.set(d.id, ++n);
     return map;
   }, [grouped]);
+
+  const staffByCategory = useMemo(() => groupStaffByCategory(staff), [staff]);
 
   const filteredStaff = useMemo(() => {
     const q = staffSearch.trim().toLowerCase();
@@ -424,10 +429,14 @@ export default function Staff() {
                   data-testid="duty-staff-select"
                 >
                   <option value="">Select staff member…</option>
-                  {staff.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.full_name} {s.category ? `(${s.category})` : ""}
-                    </option>
+                  {staffByCategory.map(([category, members]) => (
+                    <optgroup key={category} label={category}>
+                      {members.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.full_name}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </Select>
               </div>
@@ -613,6 +622,42 @@ export default function Staff() {
           </div>
         )}
       </div>
+
+      {/* NEW LOGIN CREDENTIALS — shown once, right after a staff member is created */}
+      <Dialog
+        open={!!newLogin}
+        onClose={() => setNewLogin(null)}
+        title="Staff Portal Login Created"
+        testId="new-staff-login-dialog"
+      >
+        {newLogin && (
+          <div className="space-y-4">
+            <p className="text-xs text-slate-400 font-body">
+              {newLogin.full_name} can now sign in to the Organizer Portal with base view access. Share these
+              credentials now — the password can't be shown again after you close this (reset it from Accounts if lost).
+            </p>
+            <div className="space-y-2.5 rounded-lg border border-gold/30 bg-gold/5 p-4">
+              <div>
+                <Label>Username</Label>
+                <p className="font-mono text-sm font-bold text-white" data-testid="new-staff-login-username">
+                  {newLogin.username}
+                </p>
+              </div>
+              <div>
+                <Label>Password</Label>
+                <p className="font-mono text-sm font-bold text-white" data-testid="new-staff-login-password">
+                  {newLogin.password}
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end pt-2 border-t border-white/10">
+              <Button variant="gold" size="sm" onClick={() => setNewLogin(null)} data-testid="close-new-staff-login">
+                Got It
+              </Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
     </div>
   );
 }

@@ -31,6 +31,7 @@ from .routers import (
     search,
     staff,
     structure,
+    tasks,
     teams,
     transport,
     venues,
@@ -99,7 +100,7 @@ for module in (health, public, auth, live_ws):
 # security.py / schemas.ORGANIZER_MODULES) — applied centrally here rather than
 # editing every router file. GET needs "view" on the module, everything else
 # needs "edit"; admins bypass this entirely.
-for module in (dashboard, search):
+for module in (dashboard, search, tasks):
     app.include_router(module.router, dependencies=[Depends(require_auth)])
 
 for router_module, module_key in (
@@ -130,3 +131,21 @@ app.include_router(exports.router, dependencies=[Depends(require_auth)])
 
 # Managing who else can log in, and with what access, is admin-only.
 app.include_router(organizer_users.router, dependencies=[Depends(require_admin)])
+
+# Static assets serving for event images & documents (e.g. backend/assets/about/1.jpg)
+from starlette.staticfiles import StaticFiles
+
+ASSETS_DIR = BASE_DIR / "assets"
+ABOUT_DIR = ASSETS_DIR / "about"
+ABOUT_DIR.mkdir(parents=True, exist_ok=True)
+
+app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
+app.mount("/api/assets", StaticFiles(directory=str(ASSETS_DIR)), name="api-assets")
+
+
+@app.get("/public/about-images", response_model=list[str])
+def public_about_images_alias():
+    from .routers.public import public_about_images
+
+    return public_about_images()
+

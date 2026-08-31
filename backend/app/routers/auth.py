@@ -21,6 +21,7 @@ class LoginRequest(BaseModel):
 def _user_payload(user: "models.OrganizerUser | None"):
     if not user:
         return {"authenticated": False}
+    staff = user.staff_members[0] if user.staff_members else None
     return {
         "authenticated": True,
         "id": user.id,
@@ -28,6 +29,7 @@ def _user_payload(user: "models.OrganizerUser | None"):
         "full_name": user.full_name,
         "is_admin": user.is_admin,
         "permissions": user.permissions or {},
+        "staff_member": {"id": staff.id, "full_name": staff.full_name, "category": staff.category} if staff else None,
     }
 
 

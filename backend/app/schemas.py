@@ -77,9 +77,15 @@ class AccommodationLocation(BaseModel):
     count: int = 0
 
 
+class TeamPhotoRead(ORMModel):
+    id: int
+    url: str
+
+
 class TeamRead(ORMModel, TeamBase):
     id: int
     school_code: Optional[str] = None
+    photos: List[TeamPhotoRead] = []
     participant_count: Optional[int] = None
     accommodation_status: Optional[str] = None  # "none" | "partial" | "full"
     accommodation_locations: List[AccommodationLocation] = []
@@ -91,6 +97,11 @@ class TeamRead(ORMModel, TeamBase):
     updated_at: datetime
 
 
+class TeamPhotoPublic(BaseModel):
+    thumbnail: str
+    view: str
+
+
 class TeamPublic(ORMModel):
     id: int
     name: str
@@ -99,6 +110,7 @@ class TeamPublic(ORMModel):
     region: Optional[str] = None
     country: Optional[str] = None
     member_count: Optional[int] = None
+    photos: List[TeamPhotoPublic] = []
 
 
 # --- Buildings / Floors / Rooms ---
@@ -429,6 +441,16 @@ class StaffRead(ORMModel, StaffBase):
     id: int
 
 
+class StaffCreateResult(StaffRead):
+    """create_staff's response — same fields as StaffRead, plus the login this
+    staff member was just auto-provisioned. Shown once, since after this the
+    password only exists as a bcrypt hash — the organizer creating the staff
+    record needs to hand it off now or it's gone (resettable from Accounts,
+    but not recoverable)."""
+    login_username: str
+    login_password: str
+
+
 class DutyAssignmentCreate(BaseModel):
     staff_id: int
     room_id: int
@@ -466,6 +488,12 @@ ORGANIZER_MODULES = {
     "attendance": "Attendance",
 }
 PERMISSION_LEVELS = ["view", "edit"]  # a module key missing from `permissions` means no access
+
+# Auto-provisioned staff logins (routers/staff.py create_staff) get view access to
+# every operational module — everything staff would need to see day-to-day — but
+# not Procurement (vendor pricing) or Knowledge Base (internal decisions/notes),
+# which stay admin/explicitly-granted only.
+STAFF_BASE_PERMISSIONS = {k: "view" for k in ORGANIZER_MODULES if k not in ("procurement", "knowledge")}
 
 
 class OrganizerUserCreate(BaseModel):
@@ -717,3 +745,39 @@ class FinalizePoolRequest(BaseModel):
     # Required (true) to proceed if the pool already has fixtures generated —
     # mirrors GenerateBracketRequest.replace's confirm-to-regenerate pattern.
     regenerate: bool = False
+
+
+# --- Shared staff task board (routers/tasks.py) ---
+TASK_STATUSES = ["pending", "in_progress", "completed"]
+
+
+class TaskCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    category: str = "General"
+    status: str = "pending"
+    assigned_staff_id: Optional[int] = None
+    due_date: Optional[datetime] = None
+
+    @field_validator("status")
+    @classmethod
+    def valid_status(cls, v: str) -> str:
+        if v not in TASK_STATUSES:
+            raise ValueError(f"Invalid status '{v}'")
+        return v
+
+
+class TaskUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    status: Optional[str] = None
+    assigned_staff_id: Optional[int] = None
+    due_date: Optional[datetime] = None
+
+    @field_validator("status")
+    @classmethod
+    def valid_status(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in TASK_STATUSES:
+            raise ValueError(f"Invalid status '{v}'")
+        return v

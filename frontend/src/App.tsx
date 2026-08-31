@@ -11,6 +11,8 @@ const Home = lazy(() => import("@/pages/public/Home"));
 const PublicTeams = lazy(() => import("@/pages/public/Teams"));
 const TeamPortal = lazy(() => import("@/pages/public/TeamPortal"));
 const PublicAnnouncements = lazy(() => import("@/pages/public/Announcements"));
+const PublicAbout = lazy(() => import("@/pages/public/About"));
+const PublicSchedule = lazy(() => import("@/pages/public/Schedule"));
 const Campus = lazy(() => import("@/pages/public/Campus"));
 const Live = lazy(() => import("@/pages/public/Live"));
 const Pool = lazy(() => import("@/pages/public/Pool"));
@@ -34,6 +36,7 @@ const AdminAnnouncements = lazy(() => import("@/pages/admin/Announcements"));
 const Staff = lazy(() => import("@/pages/admin/Staff"));
 const Matches = lazy(() => import("@/pages/admin/Matches"));
 const Reports = lazy(() => import("@/pages/admin/Reports"));
+const Tasks = lazy(() => import("@/pages/admin/Tasks"));
 const Accounts = lazy(() => import("@/pages/admin/Accounts"));
 const Login = lazy(() => import("@/pages/admin/Login"));
 
@@ -64,14 +67,8 @@ export default function App() {
           <Route path="/teams" element={<PublicTeams />} />
           <Route path="/teams/:id" element={<TeamPortal />} />
           <Route path="/announcements" element={<PublicAnnouncements />} />
-          <Route
-            path="/about"
-            element={<PlaceholderPage title="About the Event" section="About" />}
-          />
-          <Route
-            path="/schedule"
-            element={<PlaceholderPage title="Schedule" section="Schedule" />}
-          />
+          <Route path="/about" element={<PublicAbout />} />
+          <Route path="/schedule" element={<PublicSchedule />} />
           <Route
             path="/venues"
             element={<PlaceholderPage title="Venues" section="Venues" />}
@@ -120,7 +117,7 @@ export default function App() {
           <Route path="/admin/schedule" element={<Schedule />} />
           <Route path="/admin/matches" element={<Matches />} />
           <Route path="/admin/reports" element={<Reports />} />
-          <Route path="/admin/tasks" element={<ComingSoon title="Tasks" />} />
+          <Route path="/admin/tasks" element={<Tasks />} />
           <Route path="/admin/documents" element={<ComingSoon title="Documents" />} />
           <Route path="/admin/contacts" element={<ComingSoon title="Contacts" />} />
           <Route path="/admin/settings" element={<ComingSoon title="Settings" />} />

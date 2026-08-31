@@ -265,3 +265,12 @@ def delete_team(team_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Team not found")
     db.delete(team)
     db.commit()
+
+
+@router.delete("/{team_id}/photos/{photo_id}", status_code=204)
+def delete_team_photo(team_id: int, photo_id: int, db: Session = Depends(get_db)):
+    photo = db.get(models.TeamPhoto, photo_id)
+    if not photo or photo.team_id != team_id:
+        raise HTTPException(404, "Photo not found")
+    db.delete(photo)
+    db.commit()

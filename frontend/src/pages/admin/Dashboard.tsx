@@ -22,6 +22,70 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge, LiveBadge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/feedback";
 import { knowledgeStatusTone, priorityTone, formatDate } from "@/lib/meta";
+import { useMe } from "@/lib/permissions";
+import { ClipboardList } from "lucide-react";
+
+interface MyDuty {
+  id: number;
+  room_name?: string;
+  building_name?: string;
+  floor_name?: string;
+  duty_type: string;
+  start_time?: string;
+  end_time?: string;
+  notes?: string;
+}
+
+function MyDutiesPanel({ staffId, staffName }: { staffId: number; staffName: string }) {
+  const [duties, setDuties] = useState<MyDuty[] | null>(null);
+
+  useEffect(() => {
+    api.get<MyDuty[]>("/staff/duties", { params: { staff_id: staffId } }).then((r) => setDuties(r.data));
+  }, [staffId]);
+
+  return (
+    <Card className="border-white/10 bg-obsidian-900 shadow-sm" data-testid="my-duties-panel">
+      <CardHeader className="border-white/10 pb-3.5">
+        <CardTitle className="flex items-center gap-2 text-base text-white font-heading">
+          <ClipboardList className="h-4 w-4 text-gold" /> My Duties
+        </CardTitle>
+        <p className="text-xs text-slate-400 font-body">Rooms and shifts assigned to {staffName}</p>
+      </CardHeader>
+      <CardContent className="space-y-3 pt-4">
+        {!duties ? (
+          <Spinner label="Loading your duty assignments…" />
+        ) : duties.length === 0 ? (
+          <p className="text-xs text-slate-400 py-4 text-center">No duties assigned to you yet.</p>
+        ) : (
+          duties.map((d) => (
+            <div
+              key={d.id}
+              data-testid={`my-duty-${d.id}`}
+              className="rounded-lg border border-white/5 bg-white/[0.02] p-3 text-xs"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-heading font-bold text-white text-sm">{d.room_name || "—"}</p>
+                <Badge tone="gold" size="sm">
+                  {d.duty_type}
+                </Badge>
+              </div>
+              <p className="text-[11px] text-slate-400 font-body mt-1">
+                {d.building_name} · {d.floor_name}
+              </p>
+              {(d.start_time || d.end_time) && (
+                <p className="text-[11px] text-slate-400 font-mono mt-1">
+                  {d.start_time ? formatDate(d.start_time) : "—"}
+                  {d.end_time ? ` → ${formatDate(d.end_time)}` : ""}
+                </p>
+              )}
+              {d.notes && <p className="text-[11px] text-slate-300 font-body mt-1">{d.notes}</p>}
+            </div>
+          ))
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 interface Stats {
   participants: { total: number; expected: number; member_sum: number };
@@ -35,6 +99,7 @@ interface Stats {
 }
 
 export default function Dashboard() {
+  const me = useMe();
   const [s, setS] = useState<Stats | null>(null);
 
   useEffect(() => {
@@ -83,6 +148,9 @@ export default function Dashboard() {
           </Link>
         </div>
       </div>
+
+      {/* MY DUTIES — only shown to accounts linked to a staff member */}
+      {me?.staff_member && <MyDutiesPanel staffId={me.staff_member.id} staffName={me.staff_member.full_name} />}
 
       {/* METRICS STRIP (6 STAT CARDS) */}
       <div className="grid grid-cols-2 gap-3.5 sm:gap-4 lg:grid-cols-3 xl:grid-cols-6">

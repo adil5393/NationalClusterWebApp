@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Users, Shield, ArrowRight, Flag } from "lucide-react";
+import { Users, Shield, ArrowRight, Flag, ImageIcon } from "lucide-react";
 import { api } from "@/lib/api";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
@@ -12,9 +12,37 @@ interface Team {
   id: number;
   name: string;
   school?: string;
+  school_code?: string;
   region?: string;
   country?: string;
   member_count?: number;
+  photos: { thumbnail: string; view: string }[];
+}
+
+function TeamCardPhoto({ team }: { team: Team }) {
+  const [failed, setFailed] = useState(false);
+  const photo = team.photos[0];
+
+  // Fixed height regardless of whether there's a real photo, so the grid
+  // stays uniform — a card never grows/shrinks depending on photo presence.
+  return (
+    <div className="h-32 w-full shrink-0 overflow-hidden bg-obsidian-950">
+      {photo && !failed ? (
+        <img
+          src={photo.thumbnail}
+          alt=""
+          className="h-full w-full object-cover"
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-white/5 to-transparent">
+          <ImageIcon className="h-6 w-6 text-slate-600" />
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function PublicTeams() {
@@ -58,7 +86,7 @@ export default function PublicTeams() {
     if (!s) return result;
 
     return result.filter((t) =>
-      [t.name, t.school, t.region, t.country]
+      [t.name, t.school, t.school_code, t.region, t.country]
         .filter(Boolean)
         .some((v) => v!.toLowerCase().includes(s)),
     );
@@ -105,7 +133,7 @@ export default function PublicTeams() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onClear={() => setQ("")}
-            placeholder="Search by team, school or region…"
+            placeholder="Search by team, school, school code or region…"
             data-testid="team-search-input"
           />
         </div>
@@ -142,47 +170,57 @@ export default function PublicTeams() {
                 key={t.id}
                 to={`/teams/${t.id}`}
                 data-testid={`team-card-${t.id}`}
-                className="group relative flex flex-col justify-between rounded-xl border border-white/10 bg-obsidian-900/90 p-5 transition-all duration-200 hover:-translate-y-1 hover:border-gold/50 hover:bg-obsidian-800 shadow-sm"
+                className="group relative flex flex-col justify-between overflow-hidden rounded-xl border border-white/10 bg-obsidian-900/90 transition-all duration-200 hover:-translate-y-1 hover:border-gold/50 hover:bg-obsidian-800 shadow-sm"
               >
-                <div>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <TeamAvatar
-                        name={t.name}
-                        size="md"
-                        tone={isIndia ? "gold" : "coral"}
-                      />
-                      <div className="min-w-0">
-                        <h3 className="font-heading text-base font-bold text-white group-hover:text-gold transition-colors truncate">
-                          {t.name}
-                        </h3>
-                        {t.school && (
-                          <p className="text-xs text-slate-400 font-body truncate">
-                            {t.school}
-                          </p>
+                <TeamCardPhoto team={t} />
+
+                <div className="flex flex-1 flex-col justify-between p-5">
+                  <div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <TeamAvatar
+                          name={t.name}
+                          size="md"
+                          tone={isIndia ? "gold" : "coral"}
+                        />
+                        <div className="min-w-0">
+                          <h3 className="font-heading text-base font-bold text-white group-hover:text-gold transition-colors truncate">
+                            {t.name}
+                          </h3>
+                          {t.school && (
+                            <p className="text-xs text-slate-400 font-body truncate">
+                              {t.school}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <Badge tone={isIndia ? "gold" : "coral"}>
+                        {t.country || "General"}
+                      </Badge>
+                    </div>
+
+                    {(t.region || t.school_code) && (
+                      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400 font-body">
+                        {t.region && (
+                          <span className="flex items-center gap-1.5">
+                            <Shield className="h-3.5 w-3.5 text-slate-500" /> {t.region}
+                          </span>
+                        )}
+                        {t.school_code && (
+                          <span className="font-mono text-[11px] text-slate-500">#{t.school_code}</span>
                         )}
                       </div>
-                    </div>
-                    <Badge tone={isIndia ? "gold" : "coral"}>
-                      {t.country || "General"}
-                    </Badge>
+                    )}
                   </div>
 
-                  {t.region && (
-                    <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-400 font-body">
-                      <Shield className="h-3.5 w-3.5 text-slate-500" />
-                      <span>{t.region}</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-5 flex items-center justify-between border-t border-white/10 pt-3 text-xs">
-                  <span className="font-body text-slate-400 flex items-center gap-1">
-                    <Users className="h-3.5 w-3.5 text-slate-500" /> Squad Members:
-                  </span>
-                  <span className="font-heading font-black text-white tabular-nums">
-                    {t.member_count ?? "—"}
-                  </span>
+                  <div className="mt-5 flex items-center justify-between border-t border-white/10 pt-3 text-xs">
+                    <span className="font-body text-slate-400 flex items-center gap-1">
+                      <Users className="h-3.5 w-3.5 text-slate-500" /> Squad Members:
+                    </span>
+                    <span className="font-heading font-black text-white tabular-nums">
+                      {t.member_count ?? "—"}
+                    </span>
+                  </div>
                 </div>
               </Link>
             );

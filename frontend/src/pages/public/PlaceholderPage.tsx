@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  CalendarDays,
   MapPin,
   BedDouble,
   UtensilsCrossed,
@@ -12,7 +11,6 @@ import {
   Trophy,
   ArrowRight,
   Clock,
-  Radio,
   Building,
   CheckCircle2,
   ChevronDown,
@@ -50,148 +48,12 @@ export function PlaceholderPage({ title, section }: SectionProps) {
       </div>
 
       {/* RENDER BESPOKE SECTION CONTENT */}
-      {normSection === "schedule" && <ScheduleSection />}
       {normSection === "venues" && <VenuesSection />}
       {normSection === "accommodation" && <AccommodationSection />}
       {normSection === "food" && <FoodSection />}
       {normSection === "transport" && <TransportSection />}
       {normSection === "contacts" && <ContactsSection />}
       {normSection === "faq" && <FaqSection />}
-      {normSection === "about" && <AboutSection />}
-    </div>
-  );
-}
-
-/* ========================================================================== */
-/* SCHEDULE SECTION                                                          */
-/* ========================================================================== */
-function ScheduleSection() {
-  const [activeDay, setActiveDay] = useState<number>(1);
-
-  const DAYS = [
-    {
-      day: 1,
-      title: "Day 1: Arrival & Opening Ceremony",
-      date: "October 14, 2026",
-      events: [
-        { time: "08:00 – 13:00", title: "Team Arrivals & Accreditation Registration", venue: "Admin Building Reception", badge: "Logistics" },
-        { time: "14:00 – 15:30", title: "Official Weigh-in & Age Verification", venue: "Medical Centre & Sports Complex", badge: "Mandatory" },
-        { time: "16:00 – 17:00", title: "Managers & Coaches Technical Meeting & Fixture Draw", venue: "Main Auditorium", badge: "Officials" },
-        { time: "17:30 – 19:30", title: "Grand Opening Ceremony & Athlete March-Past", venue: "Main Stadium", badge: "Ceremony" },
-      ],
-    },
-    {
-      day: 2,
-      title: "Day 2: Pool & League Matches",
-      date: "October 15, 2026",
-      events: [
-        { time: "08:30 – 12:30", title: "Morning Pool Matches (Under-19 & Under-17)", venue: "Courts 1, 2, 3", badge: "Matches" },
-        { time: "12:30 – 14:00", title: "Lunch Break & Athlete Recovery", venue: "Central Dining Hall", badge: "Dining" },
-        { time: "14:30 – 18:30", title: "Afternoon Pool Stages & Deciding League Clashes", venue: "Courts 1, 2, 3", badge: "Matches" },
-        { time: "19:00 – 20:00", title: "Pool Table Confirmation & Knockout Seedings", venue: "Match Operations Desk", badge: "Results" },
-      ],
-    },
-    {
-      day: 3,
-      title: "Day 3: Knockout Stage & Quarter-Finals",
-      date: "October 16, 2026",
-      events: [
-        { time: "09:00 – 13:00", title: "Round of 16 Elimination Matches", venue: "Courts 1 & 2", badge: "Knockout" },
-        { time: "15:00 – 18:30", title: "National Quarter-Final Matches", venue: "Court 1 (Broadcast Arena)", badge: "High Stakes" },
-      ],
-    },
-    {
-      day: 4,
-      title: "Day 4: Semi-Finals & Grand Finals",
-      date: "October 17, 2026",
-      events: [
-        { time: "09:30 – 11:30", title: "National Semi-Final 1 & Semi-Final 2", venue: "Court 1", badge: "Semi-Finals" },
-        { time: "15:00 – 16:30", title: "Grand Championship Final Match", venue: "Main Broadcast Court 1", badge: "Championship" },
-        { time: "17:30 – 19:30", title: "Medal Ceremony, Trophy Presentation & Closing Ceremony", venue: "Main Stadium Pavilion", badge: "Awards" },
-      ],
-    },
-  ];
-
-  const current = DAYS.find((d) => d.day === activeDay) || DAYS[0];
-
-  return (
-    <div className="space-y-8">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-white/10 pb-6">
-        <div>
-          <h1 className="font-heading text-3xl sm:text-4xl lg:text-5xl font-black text-white">
-            Tournament Programme
-          </h1>
-          <p className="mt-2 text-sm sm:text-base text-slate-400 font-body">
-            Daily schedule of matches, ceremonies, weigh-in sessions, and championship fixtures.
-          </p>
-        </div>
-        <Link
-          to="/live"
-          className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-xs font-heading font-black text-obsidian hover:bg-emerald-400 transition-colors shadow-sm shrink-0"
-        >
-          <Radio className="h-4 w-4" /> Live Scoreboard →
-        </Link>
-      </div>
-
-      {/* DAY SWITCHER TABS */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        {DAYS.map((d) => (
-          <button
-            key={d.day}
-            onClick={() => setActiveDay(d.day)}
-            className={`rounded-xl border p-4 text-left transition-all ${
-              activeDay === d.day
-                ? "border-gold bg-gold/15 text-gold shadow-gold-glow/30"
-                : "border-white/10 bg-obsidian-900 text-slate-400 hover:border-white/20 hover:text-white"
-            }`}
-          >
-            <p className="text-xs font-heading font-black tracking-wider uppercase">Day 0{d.day}</p>
-            <p className="text-sm font-bold text-white mt-1 truncate">{d.title.split(":")[1] || d.title}</p>
-            <p className="text-[11px] text-slate-400 font-mono mt-1">{d.date}</p>
-          </button>
-        ))}
-      </div>
-
-      {/* DAY TIMELINE */}
-      <div className="rounded-2xl border border-white/10 bg-obsidian-900/90 p-6 sm:p-8 shadow-sm">
-        <div className="flex items-center justify-between border-b border-white/10 pb-4">
-          <div>
-            <h2 className="font-heading text-xl font-black text-white">{current.title}</h2>
-            <p className="text-xs text-gold font-mono font-bold mt-0.5">{current.date}</p>
-          </div>
-          <Badge tone="gold">Official Schedule</Badge>
-        </div>
-
-        <div className="mt-6 space-y-4">
-          {current.events.map((ev, i) => (
-            <div
-              key={i}
-              className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-white/5 bg-white/[0.02] p-4 transition-colors hover:border-white/15 hover:bg-white/[0.04]"
-            >
-              <div className="flex items-start gap-3.5">
-                <span className="grid h-8 w-8 place-items-center rounded-lg bg-gold/15 text-gold font-mono font-bold text-xs shrink-0">
-                  {i + 1}
-                </span>
-                <div>
-                  <h3 className="font-heading text-base font-bold text-white">{ev.title}</h3>
-                  <div className="mt-1 flex items-center gap-3 text-xs text-slate-400 font-body">
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-3.5 w-3.5 text-gold" /> {ev.time}
-                    </span>
-                    <span>·</span>
-                    <span className="flex items-center gap-1">
-                      <MapPin className="h-3.5 w-3.5 text-slate-400" /> {ev.venue}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <Badge tone="neutral" size="sm" className="self-start sm:self-center">
-                {ev.badge}
-              </Badge>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }
@@ -574,47 +436,6 @@ function FaqSection() {
             </div>
           );
         })}
-      </div>
-    </div>
-  );
-}
-
-/* ========================================================================== */
-/* ABOUT SECTION                                                             */
-/* ========================================================================== */
-function AboutSection() {
-  return (
-    <div className="space-y-8">
-      <div className="border-b border-white/10 pb-6">
-        <span className="text-xs font-heading font-extrabold uppercase tracking-widest text-gold">
-          CHAMPIONSHIP HERITAGE
-        </span>
-        <h1 className="mt-2 font-heading text-3xl sm:text-4xl lg:text-5xl font-black text-white">
-          About the Championship
-        </h1>
-        <p className="mt-2 text-sm sm:text-base text-slate-400 font-body">
-          CBSE National Kabaddi Championship 2026–27 — Celebrating youth sports excellence and heritage.
-        </p>
-      </div>
-
-      <div className="grid gap-6 md:grid-cols-2">
-        <div className="rounded-xl border border-white/10 bg-obsidian-900 p-6 space-y-3">
-          <h3 className="font-heading text-lg font-bold text-white flex items-center gap-2">
-            <Trophy className="h-5 w-5 text-gold" /> The Pinnacle of School Kabaddi
-          </h3>
-          <p className="text-xs sm:text-sm text-slate-300 font-body leading-relaxed">
-            The CBSE National Kabaddi Championship brings together the champion teams from all geographical CBSE clusters across India, along with invited international squads from the Gulf zone (Saudi Arabia, UAE).
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-white/10 bg-obsidian-900 p-6 space-y-3">
-          <h3 className="font-heading text-lg font-bold text-white flex items-center gap-2">
-            <Shield className="h-5 w-5 text-coral" /> Rules & Sanctioning
-          </h3>
-          <p className="text-xs sm:text-sm text-slate-300 font-body leading-relaxed">
-            All fixtures are officially conducted under the technical supervision of the Amateur Kabaddi Federation of India (AKFI) and the CBSE Sports Department, utilizing international grade mats, electronic referee review, and live broadcast scoring.
-          </p>
-        </div>
       </div>
     </div>
   );

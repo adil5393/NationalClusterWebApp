@@ -65,6 +65,9 @@ chainlit.md
 
 # Data and databases
 agenthub/agents/youtube/db
+# Postgres runs off a named Docker volume (see docker-compose.yml), never this
+# path — if it reappears here it's a stray/orphaned copy, not live data.
+/data/postgres/
 
 # Archive files and large assets
 **/*.zip
@@ -89,3 +92,5 @@ credentials.json
 *.key
 .credentials
 .claude/
+
+/backend/tests/*

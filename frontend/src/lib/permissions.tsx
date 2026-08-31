@@ -9,6 +9,7 @@ export interface Me {
   full_name?: string | null;
   is_admin?: boolean;
   permissions?: Record<string, PermissionLevel>;
+  staff_member?: { id: number; full_name: string; category?: string | null } | null;
 }
 
 export const PermissionsContext = createContext<Me | null>(null);

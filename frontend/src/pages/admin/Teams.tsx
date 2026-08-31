@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Pencil, Trash2, QrCode, Upload, Trophy, X, Shield, Users, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, QrCode, Upload, Trophy, X, Shield, Users, Search, ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -9,9 +9,11 @@ import { Dialog } from "@/components/ui/dialog";
 import { QRDialog } from "@/components/admin/QRDialog";
 import { ImportDialog } from "@/components/admin/ImportDialog";
 import { AttendanceImportDialog } from "@/components/admin/AttendanceImportDialog";
+import { TeamDetailsImportDialog } from "@/components/admin/TeamDetailsImportDialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { useModuleAccess } from "@/lib/permissions";
+import { driveThumbnail } from "@/lib/meta";
 import { cn } from "@/lib/utils";
 import { TeamAvatar } from "@/components/ui/team-badge";
 
@@ -24,6 +26,7 @@ interface Team {
   id: number;
   name: string;
   school?: string;
+  school_code?: string;
   region?: string;
   country?: string;
   contact_name?: string;
@@ -38,6 +41,7 @@ interface Team {
   present_counts?: Record<string, number>;
   is_active?: boolean;
   last_year_awards?: LastYearAward[];
+  photos?: { id: number; url: string }[];
 }
 
 const MIN_SQUAD_SIZE = 12;
@@ -230,6 +234,78 @@ function AwardsDialog({
   );
 }
 
+function PhotosDialog({
+  team,
+  canEdit,
+  onClose,
+  onChanged,
+}: {
+  team: Team;
+  canEdit: boolean;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [photos, setPhotos] = useState(team.photos ?? []);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const removePhoto = async (photoId: number) => {
+    if (!confirm("Delete this photo? It won't show on the team's public page anymore.")) return;
+    setDeletingId(photoId);
+    try {
+      await api.delete(`/teams/${team.id}/photos/${photoId}`);
+      setPhotos((p) => p.filter((x) => x.id !== photoId));
+      toast.success("Photo deleted");
+      onChanged();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not delete photo");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  return (
+    <Dialog open onClose={onClose} title={`Team Photos — ${team.name}`} testId="photos-dialog">
+      <div className="space-y-4">
+        <p className="text-xs text-slate-400 font-body">
+          Uploaded via the school registration form import. Multiple photos rotate on the team's public
+          page every 2 seconds.
+        </p>
+        {photos.length === 0 ? (
+          <p className="text-xs text-slate-400 py-4 text-center">No photos on file for this team yet.</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {photos.map((p) => (
+              <div
+                key={p.id}
+                data-testid={`team-photo-thumb-${p.id}`}
+                className="group relative overflow-hidden rounded-lg border border-white/10 bg-obsidian-950"
+              >
+                <img src={driveThumbnail(p.url)} alt="" className="h-28 w-full object-cover" referrerPolicy="no-referrer" />
+                {canEdit && (
+                  <button
+                    onClick={() => removePhoto(p.id)}
+                    disabled={deletingId === p.id}
+                    data-testid={`delete-team-photo-${p.id}`}
+                    title="Delete photo"
+                    className="absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-md bg-black/70 text-red-400 opacity-0 transition-opacity hover:bg-black/90 group-hover:opacity-100"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex justify-end pt-3 border-t border-white/10">
+          <Button variant="outline" size="sm" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
 const ACCOMMODATION_LABEL: Record<string, string> = { none: "Not Set Up", partial: "Partial", full: "Set Up" };
 const ACCOMMODATION_TONE: Record<string, "neutral" | "amber" | "green"> = { none: "neutral", partial: "amber", full: "green" };
 
@@ -266,6 +342,7 @@ export default function AdminTeams() {
   const [qrTeam, setQrTeam] = useState<{ id: number; name: string } | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [attendanceImportOpen, setAttendanceImportOpen] = useState(false);
+  const [teamDetailsImportOpen, setTeamDetailsImportOpen] = useState(false);
   const [form, setForm] = useState<Partial<Team>>(empty);
   const [search, setSearch] = useState("");
 
@@ -302,6 +379,7 @@ export default function AdminTeams() {
   };
 
   const [awardsTeam, setAwardsTeam] = useState<Team | null>(null);
+  const [photosTeam, setPhotosTeam] = useState<Team | null>(null);
 
   const toggleActive = async (t: Team) => {
     try {
@@ -327,7 +405,7 @@ export default function AdminTeams() {
   const filtered = teams.filter((t) => {
     if (!search.trim()) return true;
     const s = search.toLowerCase();
-    return [t.name, t.school, t.region, t.country, t.contact_name]
+    return [t.name, t.school, t.school_code, t.region, t.country, t.contact_name]
       .filter(Boolean)
       .some((v) => v!.toLowerCase().includes(s));
   });
@@ -358,6 +436,15 @@ export default function AdminTeams() {
               className="text-xs font-semibold"
             >
               <Upload className="h-3.5 w-3.5 text-gold" /> Attendance Excel
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setTeamDetailsImportOpen(true)}
+              data-testid="import-team-details-btn"
+              className="text-xs font-semibold"
+            >
+              <Upload className="h-3.5 w-3.5 text-gold" /> Registration Form
             </Button>
             <Button
               variant="outline"
@@ -401,7 +488,7 @@ export default function AdminTeams() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search teams by name, school, region…"
+            placeholder="Search teams by name, school, school code, region…"
             className="h-9 text-xs"
           />
         </div>
@@ -447,6 +534,7 @@ export default function AdminTeams() {
                           <span className="text-[10px] font-mono text-slate-500">#{i + 1}</span>
                           <h3 className="font-heading font-bold text-white text-sm truncate">{t.name}</h3>
                           {t.school && <p className="text-xs text-slate-400 truncate">{t.school}</p>}
+                          {t.school_code && <p className="font-mono text-[10px] text-slate-500">Code: {t.school_code}</p>}
                         </div>
                       </div>
                       <div className="flex flex-col items-end gap-1.5 shrink-0">
@@ -570,6 +658,7 @@ export default function AdminTeams() {
                             <div>
                               <p className="font-heading font-bold text-white text-sm">{t.name}</p>
                               {t.school && <p className="text-xs text-slate-400 font-body truncate">{t.school}</p>}
+                              {t.school_code && <p className="font-mono text-[10px] text-slate-500">#{t.school_code}</p>}
                             </div>
                           </div>
                         </TD>
@@ -609,6 +698,15 @@ export default function AdminTeams() {
                               title="Generate Team QR"
                             >
                               <QrCode className="h-3.5 w-3.5 text-gold" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => setPhotosTeam(t)}
+                              data-testid={`manage-photos-${t.id}`}
+                              title={`Manage Photos (${t.photos?.length ?? 0})`}
+                            >
+                              <ImageIcon className="h-3.5 w-3.5 text-slate-300" />
                             </Button>
                             {canEdit && (
                               <Button
@@ -747,6 +845,7 @@ export default function AdminTeams() {
 
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} type="teams" onDone={load} />
       <AttendanceImportDialog open={attendanceImportOpen} onClose={() => setAttendanceImportOpen(false)} onDone={load} />
+      <TeamDetailsImportDialog open={teamDetailsImportOpen} onClose={() => setTeamDetailsImportOpen(false)} onDone={load} />
       {awardsTeam && (
         <AwardsDialog
           team={awardsTeam}
@@ -755,6 +854,14 @@ export default function AdminTeams() {
             setAwardsTeam(null);
             load();
           }}
+        />
+      )}
+      {photosTeam && (
+        <PhotosDialog
+          team={photosTeam}
+          canEdit={canEdit}
+          onClose={() => setPhotosTeam(null)}
+          onChanged={load}
         />
       )}
     </div>

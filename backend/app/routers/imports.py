@@ -90,6 +90,125 @@ async def import_participants(file: UploadFile = File(...), db: Session = Depend
     return {"entity": "participants", "created": created, "skipped": skipped, "errors": errors}
 
 
+def _find_col(columns, *prefixes: str) -> "str | None":
+    """The school registration form's headers are long and instructional
+    (e.g. "Coach Name(For Multiple Coaches, use comma to separate them)") —
+    match by a short lowercase prefix instead of the exact text."""
+    for col in columns:
+        low = str(col).strip().lower()
+        if any(low.startswith(p) for p in prefixes):
+            return col
+    return None
+
+
+@router.post("/team-details")
+async def import_team_details(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """The school registration form (backend/assets/data/form.xlsx is a sample
+    of its shape): one row per school with its school code, coach(es) +
+    manager, contact info, and team photo link. Updates the matching Team by
+    school_code and upserts Coach rows tagged role="Coach"/"Manager" —
+    re-uploading a corrected sheet is safe, existing rows are only ever
+    updated in place, never duplicated or deleted. Multiple coaches/numbers
+    are comma-separated in their own cell and paired by position; a coach
+    past the last given number is still added, just with no phone captured.
+
+    Deliberately does NOT create a Team for a school code this doesn't
+    already know — a team has to exist first (via the attendance-list roster
+    import, which is the actual source of truth for who's attending) before
+    there's anywhere to attach a coach or photo to. Unrecognized codes are
+    reported back instead, so the organizer knows which schools still need
+    their roster imported."""
+    content = await file.read()
+    try:
+        df = pd.read_excel(io.BytesIO(content)) if (file.filename or "").lower().endswith((".xlsx", ".xls")) else pd.read_csv(io.BytesIO(content))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, f"Could not parse file: {e}")
+
+    col_school_name = _find_col(df.columns, "school name")
+    col_coach_name = _find_col(df.columns, "coach name")
+    col_manager_name = _find_col(df.columns, "manager name")
+    col_coach_phone = _find_col(df.columns, "contact number of coach")
+    col_email = _find_col(df.columns, "email")
+    col_photo = _find_col(df.columns, "attach a team photo", "team photo")
+    col_school_code = _find_col(df.columns, "school code")
+    if not col_school_code:
+        raise HTTPException(400, "Missing a 'School Code' column")
+
+    teams_by_code = {t.school_code: t for t in db.query(models.Team).filter(models.Team.school_code.isnot(None)).all()}
+    teams_updated = 0
+    coaches_created = coaches_updated = 0
+    photos_added = 0
+    unmatched_school_codes: list[dict] = []
+    errors: list[str] = []
+
+    for i, row in df.iterrows():
+        code = _val(row, col_school_code) if col_school_code else None
+        if not code:
+            errors.append(f"Row {i + 2}: missing School Code")
+            continue
+
+        team = teams_by_code.get(code)
+        if team is None:
+            unmatched_school_codes.append({
+                "school_code": code,
+                "school_name": (_val(row, col_school_name) if col_school_name else None) or "(no name given)",
+            })
+            continue
+        teams_updated += 1
+
+        email = _val(row, col_email) if col_email else None
+        if email:
+            team.contact_email = email
+
+        # A school's photo cell can list more than one Drive link, comma-separated
+        # (same convention as the coach-name cell) — add any not already stored,
+        # so a school with several photos ends up with several rows here.
+        photo_links = [p.strip() for p in str(_val(row, col_photo) or "").split(",") if p.strip()] if col_photo else []
+        existing_photo_urls = {p.url for p in team.photos}
+        for link in photo_links:
+            if link not in existing_photo_urls:
+                db.add(models.TeamPhoto(team_id=team.id, url=link))
+                existing_photo_urls.add(link)
+                photos_added += 1
+        db.flush()
+
+        existing_coaches = {(c.full_name.lower(), c.role): c for c in team.coaches}
+
+        def _upsert_person(name: "str | None", phone: "str | None", role: str):
+            nonlocal coaches_created, coaches_updated
+            if not name:
+                return
+            key = (name.lower(), role)
+            existing = existing_coaches.get(key)
+            if existing:
+                if phone and existing.phone != phone:
+                    existing.phone = phone
+                    coaches_updated += 1
+            else:
+                c = models.Coach(team_id=team.id, full_name=name, role=role, phone=phone)
+                db.add(c)
+                existing_coaches[key] = c
+                coaches_created += 1
+
+        coach_names = [n.strip() for n in str(_val(row, col_coach_name) or "").split(",") if n.strip()] if col_coach_name else []
+        coach_phones = [p.strip() for p in str(_val(row, col_coach_phone) or "").split(",") if p.strip()] if col_coach_phone else []
+        for idx, cname in enumerate(coach_names):
+            _upsert_person(cname, coach_phones[idx] if idx < len(coach_phones) else None, "Coach")
+
+        manager_name = _val(row, col_manager_name) if col_manager_name else None
+        _upsert_person(manager_name, None, "Manager")
+
+    db.commit()
+    return {
+        "entity": "team-details",
+        "teams": {"updated": teams_updated},
+        "coaches": {"created": coaches_created, "updated": coaches_updated},
+        "photos": {"added": photos_added},
+        "unmatched_school_codes": unmatched_school_codes,
+        "errors": errors,
+    }
+
+
 REQUIRED_STUDENT_SHEET_COLUMNS = {"schcode", "SchoolName", "registrationNo", "studentname", "gender", "dob"}
 
 

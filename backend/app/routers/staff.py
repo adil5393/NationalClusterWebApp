@@ -1,11 +1,29 @@
 """Staff members and their duty assignments (room-scoped, shift-based)."""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
+from ..auth_utils import hash_password
 from ..database import get_db
 
 router = APIRouter(prefix="/api/staff", tags=["staff"])
+
+
+def _provision_login(db: Session, full_name: str) -> tuple[str, str]:
+    """Every staff member gets a login the moment they're created — no separate
+    "create an account and link it" step. Username is their first name in caps
+    (suffixed with a number if that's already taken by someone else), password
+    is "2026" + their first name; both are handed back once in the create
+    response since the password only exists as a bcrypt hash after this."""
+    first = (full_name or "").strip().split()[0] if (full_name or "").strip() else "STAFF"
+    base_username = first.upper()
+    username = base_username
+    suffix = 2
+    while db.query(models.OrganizerUser).filter(func.lower(models.OrganizerUser.username) == username.lower()).first():
+        username = f"{base_username}{suffix}"
+        suffix += 1
+    return username, f"2026{first}"
 
 
 @router.get("/meta")
@@ -19,13 +37,30 @@ def list_staff(db: Session = Depends(get_db)):
     return db.query(models.StaffMember).order_by(models.StaffMember.full_name).all()
 
 
-@router.post("", response_model=schemas.StaffRead, status_code=201)
+@router.post("", response_model=schemas.StaffCreateResult, status_code=201)
 def create_staff(payload: schemas.StaffCreate, db: Session = Depends(get_db)):
     staff = models.StaffMember(**payload.model_dump())
     db.add(staff)
+    db.flush()
+
+    username, password = _provision_login(db, staff.full_name)
+    login = models.OrganizerUser(
+        username=username,
+        full_name=staff.full_name,
+        password_hash=hash_password(password),
+        is_active=True,
+        is_admin=False,
+        permissions=schemas.STAFF_BASE_PERMISSIONS,
+        staff_members=[staff],
+    )
+    db.add(login)
     db.commit()
     db.refresh(staff)
-    return staff
+
+    result = schemas.StaffRead.model_validate(staff).model_dump()
+    result["login_username"] = username
+    result["login_password"] = password
+    return result
 
 
 @router.put("/{staff_id}", response_model=schemas.StaffRead)
@@ -77,8 +112,11 @@ def _duty_dict(a: models.DutyAssignment):
 
 
 @router.get("/duties")
-def list_duties(db: Session = Depends(get_db)):
-    rows = db.query(models.DutyAssignment).order_by(models.DutyAssignment.id.desc()).all()
+def list_duties(staff_id: int | None = Query(None), db: Session = Depends(get_db)):
+    q = db.query(models.DutyAssignment)
+    if staff_id:
+        q = q.filter(models.DutyAssignment.staff_id == staff_id)
+    rows = q.order_by(models.DutyAssignment.id.desc()).all()
     return [_duty_dict(a) for a in rows]
 
 

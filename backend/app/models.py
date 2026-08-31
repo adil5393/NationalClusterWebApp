@@ -68,9 +68,25 @@ class Team(TimestampMixin, Base):
 
     participants = relationship("Participant", back_populates="team", cascade="all, delete-orphan")
     coaches = relationship("Coach", back_populates="team", cascade="all, delete-orphan")
+    photos = relationship("TeamPhoto", back_populates="team", cascade="all, delete-orphan", order_by="TeamPhoto.id")
     accommodation = relationship("AccommodationAssignment", back_populates="team")
     transport = relationship("TransportAssignment", back_populates="team")
     last_year_awards = relationship("TeamLastYearAward", back_populates="team", cascade="all, delete-orphan")
+
+
+class TeamPhoto(TimestampMixin, Base):
+    """One of possibly several photos for a team — the school registration
+    form's photo column can list more than one Drive link, comma-separated
+    (same convention as its coach-name column), and the public team page
+    rotates through all of them rather than showing just one. Stored raw as
+    entered; routers/public.py converts each to a hotlinkable thumbnail URL
+    on the way out."""
+    __tablename__ = "team_photos"
+    id = Column(Integer, primary_key=True)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    url = Column(String(600), nullable=False)
+
+    team = relationship("Team", back_populates="photos")
 
 
 class TeamLastYearAward(Base):
@@ -119,6 +135,7 @@ class Coach(TimestampMixin, Base):
     id = Column(Integer, primary_key=True)
     team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
     full_name = Column(String(200), nullable=False)
+    role = Column(String(20), nullable=False, default="Coach")  # "Coach" | "Manager"
     email = Column(String(200))
     phone = Column(String(60))
     notes = Column(Text)
@@ -305,6 +322,12 @@ class KnowledgeItem(TimestampMixin, Base):
 
 
 class Task(TimestampMixin, Base):
+    """The shared staff task board (routers/tasks.py) — every logged-in account
+    (organizer or staff) sees the same board and can add to it; category is the
+    free-text "list" it sits in. assigned_staff_id is optional: an unassigned
+    task is just a general team to-do, an assigned one additionally shows up as
+    "yours" to that staff member — distinct from DutyAssignment, which is the
+    room/shift roster, not a to-do."""
     __tablename__ = "tasks"
     id = Column(Integer, primary_key=True)
     title = Column(String(200), nullable=False)
@@ -312,10 +335,13 @@ class Task(TimestampMixin, Base):
     status = Column(String(40), default="pending")  # pending|in_progress|completed
     priority = Column(String(20), default="normal")
     owner = Column(String(160))
+    category = Column(String(80), nullable=False, default="General")
+    assigned_staff_id = Column(Integer, ForeignKey("staff_members.id", ondelete="SET NULL"))
     due_date = Column(DateTime(timezone=True))
     knowledge_item_id = Column(Integer, ForeignKey("knowledge_items.id", ondelete="SET NULL"))
 
     knowledge_item = relationship("KnowledgeItem", back_populates="tasks")
+    assigned_staff = relationship("StaffMember")
 
 
 class Document(TimestampMixin, Base):

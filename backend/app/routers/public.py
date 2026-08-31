@@ -1,19 +1,81 @@
 """Public, read-only endpoints. These expose ONLY non-sensitive fields and never
 leak internal organizer data (procurement, knowledge base, contacts, notes)."""
+import re
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
+from ..auth_utils import verify_password
 from ..database import get_db
 
 router = APIRouter(prefix="/api/public", tags=["public"])
 
+_DRIVE_ID_RE = re.compile(r"(?:id=|/d/)([\w-]{25,})")
+
+
+def _drive_urls(raw: "str | None") -> "tuple[str | None, str | None]":
+    """A raw Google Drive "share" link (drive.google.com/open?id=... or
+    /file/d/<id>/view) can't be hotlinked as an <img src> directly — Drive's
+    /thumbnail endpoint can, PROVIDED the file is shared "anyone with the
+    link"; if it's not, that endpoint silently redirects to an HTML
+    permission page instead of image bytes, so the <img> just fails to load.
+    Returns (thumbnail_url_for_img, normal_drive_view_url_for_a_fallback_link)
+    — the frontend falls back to the second one if the first fails to load."""
+    if not raw:
+        return None, None
+    m = _DRIVE_ID_RE.search(raw)
+    if not m:
+        return raw, raw
+    file_id = m.group(1)
+    return f"https://drive.google.com/thumbnail?id={file_id}&sz=w1000", f"https://drive.google.com/file/d/{file_id}/view"
+
 
 @router.get("/teams", response_model=list[schemas.TeamPublic])
 def public_teams(db: Session = Depends(get_db)):
-    return db.query(models.Team).order_by(models.Team.name).all()
+    teams = db.query(models.Team).order_by(models.Team.name).all()
+    result = []
+    for t in teams:
+        photos = []
+        for p in t.photos:
+            thumbnail, view = _drive_urls(p.url)
+            photos.append({"thumbnail": thumbnail, "view": view})
+        result.append({
+            "id": t.id,
+            "name": t.name,
+            "school": t.school,
+            "school_code": t.school_code,
+            "region": t.region,
+            "country": t.country,
+            "member_count": t.member_count,
+            "photos": photos,
+        })
+    return result
+
+
+@router.get("/schedule")
+def public_schedule(db: Session = Depends(get_db)):
+    """The tournament-wide schedule shown on the public site — unlike
+    /api/schedule (organizer-only, gated behind the "schedule" module), this
+    has no auth so visitors can see it. Every event, not just team-linked
+    ones: an event with no team is a general/all-delegations one."""
+    rows = db.query(models.ScheduleEvent).order_by(models.ScheduleEvent.start_time.asc().nullslast()).all()
+    result = []
+    for s in rows:
+        team = db.get(models.Team, s.team_id) if s.team_id else None
+        venue = db.get(models.Venue, s.venue_id) if s.venue_id else None
+        result.append({
+            "id": s.id,
+            "title": s.title,
+            "team_name": team.name if team else None,
+            "venue_name": venue.name if venue else None,
+            "start_time": s.start_time.isoformat() if s.start_time else None,
+            "end_time": s.end_time.isoformat() if s.end_time else None,
+            "description": s.description,
+        })
+    return result
 
 
 @router.get("/announcements", response_model=list[schemas.AnnouncementRead])
@@ -193,9 +255,12 @@ def public_team_detail(team_id: int, db: Session = Depends(get_db)):
     if not team:
         raise HTTPException(404, "Team not found")
 
+    # Phone numbers are deliberately withheld here — a visitor has to pass the
+    # /reveal-contacts check to get them, see below.
     coaches = [
-        {"full_name": c.full_name, "email": c.email, "phone": c.phone} for c in team.coaches
+        {"full_name": c.full_name, "role": c.role, "email": c.email} for c in team.coaches
     ]
+    has_hidden_contacts = any(c.phone for c in team.coaches)
     participants = [
         {"full_name": p.full_name, "role": p.role, "age_group": p.age_group} for p in team.participants
     ]
@@ -239,6 +304,11 @@ def public_team_detail(team_id: int, db: Session = Depends(get_db)):
             "end_time": s.end_time.isoformat() if s.end_time else None,
         })
 
+    photos = []
+    for p in team.photos:
+        thumbnail, view = _drive_urls(p.url)
+        photos.append({"thumbnail": thumbnail, "view": view})
+
     return {
         "id": team.id,
         "name": team.name,
@@ -246,9 +316,64 @@ def public_team_detail(team_id: int, db: Session = Depends(get_db)):
         "region": team.region,
         "country": team.country,
         "member_count": team.member_count,
+        "photos": photos,
         "coaches": coaches,
+        "has_hidden_contacts": has_hidden_contacts,
         "participants": participants,
         "accommodation": accommodation,
         "transport": transport,
         "schedule": schedule,
     }
+
+
+class RevealContactsRequest(BaseModel):
+    password: str
+
+
+@router.post("/teams/{team_id}/reveal-contacts")
+def reveal_team_contacts(team_id: int, payload: RevealContactsRequest, db: Session = Depends(get_db)):
+    """A public visitor proves they're staff by typing an admin account's
+    password (not logging in — this stays a one-off unlock on this page) to
+    see coach/manager phone numbers. Doesn't reveal which account matched, or
+    whether the team even has any — same response shape either way."""
+    is_admin_password = (
+        db.query(models.OrganizerUser)
+        .filter(models.OrganizerUser.is_active.is_(True), models.OrganizerUser.is_admin.is_(True))
+        .all()
+    )
+    if not any(verify_password(payload.password, u.password_hash) for u in is_admin_password):
+        raise HTTPException(401, "Incorrect password")
+
+    team = db.get(models.Team, team_id)
+    if not team:
+        raise HTTPException(404, "Team not found")
+    return {"coaches": [{"full_name": c.full_name, "role": c.role, "phone": c.phone} for c in team.coaches]}
+
+
+import re
+from pathlib import Path
+
+VALID_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+ASSETS_ABOUT_DIR = Path(__file__).resolve().parent.parent.parent / "assets" / "about"
+
+
+def _natural_sort_key(p: Path):
+    """Sort filenames numerically (1.jpg, 2.jpg, 10.jpg) rather than lexical."""
+    parts = re.split(r"(\d+)", p.name.lower())
+    return [int(part) if part.isdigit() else part for part in parts]
+
+
+@router.get("/about-images", response_model=list[str])
+def public_about_images():
+    """Discover and return event photographs from backend/assets/about/ sorted numerically."""
+    if not ASSETS_ABOUT_DIR.exists() or not ASSETS_ABOUT_DIR.is_dir():
+        return []
+
+    images = [
+        f
+        for f in ASSETS_ABOUT_DIR.iterdir()
+        if f.is_file() and f.suffix.lower() in VALID_IMAGE_EXTENSIONS and not f.name.startswith(".")
+    ]
+    images.sort(key=_natural_sort_key)
+    return [f"/assets/about/{img.name}" for img in images]
+
