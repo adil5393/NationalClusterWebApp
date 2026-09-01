@@ -220,42 +220,66 @@ export default function Home() {
             </div>
 
             {/* RIGHT HERO CARD: FAST TEAM LOOKUP & LIVE HIGHLIGHT */}
-            <div className="lg:col-span-5 space-y-4">
+            <div className="lg:col-span-5 space-y-4 min-w-0 w-full max-w-full">
               {/* LIVE MATCH HIGHLIGHT CARD (if any live matches exist) */}
               {liveMatches.length > 0 ? (
-                <div className="rounded-xl border border-emerald-500/40 bg-obsidian-900/90 p-5 shadow-live-glow backdrop-blur-md">
-                  <div className="flex items-center justify-between">
-                    <LiveBadge label="MATCH IN PROGRESS" />
-                    <span className="text-xs font-mono text-emerald-400 font-bold">
-                      {liveMatches[0].venue_name || "Court 1"}
-                    </span>
+                <div
+                  className="w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-emerald-500/40 bg-obsidian-900/90 p-3.5 sm:p-5 shadow-live-glow backdrop-blur-md"
+                  data-testid="homepage-live-match-card"
+                >
+                  <div className="flex items-center justify-between gap-2 min-w-0">
+                    <LiveBadge label="MATCH IN PROGRESS" className="shrink-0 text-[10px] sm:text-xs px-2 py-0.5" />
+                    {liveMatches[0].venue_name && (
+                      <span className="flex min-w-0 items-center justify-end gap-1 text-[11px] sm:text-xs font-mono text-emerald-400 font-bold truncate">
+                        <MapPin className="h-3 w-3 text-gold shrink-0" />
+                        <span className="truncate">{liveMatches[0].venue_name}</span>
+                      </span>
+                    )}
                   </div>
-                  <div className="mt-4 flex items-center justify-between gap-4">
-                    <div className="min-w-0 flex-1 text-left">
-                      <p className="font-heading text-sm font-bold text-white truncate">
-                        {liveMatches[0].team_a_name || "Team A"}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3 px-3 py-1 rounded-lg bg-white/5 border border-white/10 shrink-0">
-                      <span className="font-heading text-xl font-black text-gold tabular-nums">
+
+                  <div className="mt-3 space-y-1.5 sm:space-y-2 min-w-0">
+                    {/* Team A */}
+                    <div className="flex items-center justify-between gap-1.5 sm:gap-2 rounded-lg bg-white/[0.03] border border-white/5 p-2 sm:px-3 sm:py-2 min-w-0">
+                      <div className="flex min-w-0 items-center gap-1.5 sm:gap-2 flex-1">
+                        <span className="h-2 w-2 sm:h-2.5 sm:w-2.5 shrink-0 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]" />
+                        <span className="font-heading text-xs sm:text-sm font-bold text-white truncate min-w-0 flex-1" title={liveMatches[0].team_a_name || "Team A"}>
+                          {liveMatches[0].team_a_name || "Team A"}
+                        </span>
+                        {liveMatches[0].team_a_score > liveMatches[0].team_b_score && (
+                          <span className="shrink-0 rounded bg-emerald-500/20 text-emerald-400 text-[9px] sm:text-[10px] font-heading font-extrabold px-1.5 py-0.5">
+                            LEADING
+                          </span>
+                        )}
+                      </div>
+                      <span className="font-heading text-base sm:text-xl font-black text-gold tabular-nums shrink-0 ml-2">
                         {liveMatches[0].team_a_score}
                       </span>
-                      <span className="text-xs font-bold text-slate-500">:</span>
-                      <span className="font-heading text-xl font-black text-gold tabular-nums">
+                    </div>
+
+                    {/* Team B */}
+                    <div className="flex items-center justify-between gap-1.5 sm:gap-2 rounded-lg bg-white/[0.03] border border-white/5 p-2 sm:px-3 sm:py-2 min-w-0">
+                      <div className="flex min-w-0 items-center gap-1.5 sm:gap-2 flex-1">
+                        <span className="h-2 w-2 sm:h-2.5 sm:w-2.5 shrink-0 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
+                        <span className="font-heading text-xs sm:text-sm font-bold text-white truncate min-w-0 flex-1" title={liveMatches[0].team_b_name || "Team B"}>
+                          {liveMatches[0].team_b_name || "Team B"}
+                        </span>
+                        {liveMatches[0].team_b_score > liveMatches[0].team_a_score && (
+                          <span className="shrink-0 rounded bg-emerald-500/20 text-emerald-400 text-[9px] sm:text-[10px] font-heading font-extrabold px-1.5 py-0.5">
+                            LEADING
+                          </span>
+                        )}
+                      </div>
+                      <span className="font-heading text-base sm:text-xl font-black text-gold tabular-nums shrink-0 ml-2">
                         {liveMatches[0].team_b_score}
                       </span>
                     </div>
-                    <div className="min-w-0 flex-1 text-right">
-                      <p className="font-heading text-sm font-bold text-white truncate">
-                        {liveMatches[0].team_b_name || "Team B"}
-                      </p>
-                    </div>
                   </div>
+
                   <Link
                     to="/live"
-                    className="mt-4 flex items-center justify-center gap-1.5 rounded-md bg-emerald-500/20 border border-emerald-500/30 py-2 text-xs font-heading font-extrabold text-emerald-300 hover:bg-emerald-500/30 transition-colors"
+                    className="mt-3 flex items-center justify-center gap-1.5 rounded-md bg-emerald-500/20 border border-emerald-500/30 py-2 sm:py-2.5 text-xs font-heading font-extrabold text-emerald-300 hover:bg-emerald-500/30 transition-colors w-full"
                   >
-                    View Scorecard & Commentary →
+                    View Scorecard &amp; Commentary →
                   </Link>
                 </div>
               ) : null}

@@ -64,6 +64,10 @@ export default function Pool() {
     pool?.matches.filter((m) => m.status !== "COMPLETED" && m.status !== "CANCELLED").length ?? 0;
   const isDone = !!pool && pool.status === "finalized" && pool.matches.length > 0 && pendingCount === 0;
 
+  const liveMatches = pool?.matches.filter((m) => m.status === "ONGOING" || m.status === "PAUSED") ?? [];
+  const pendingMatches = pool?.matches.filter((m) => m.status === "SCHEDULED" || m.status === "POSTPONED") ?? [];
+  const completedMatches = pool?.matches.filter((m) => m.status === "COMPLETED") ?? [];
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8 space-y-8">
       <Link
@@ -75,7 +79,7 @@ export default function Pool() {
 
       {loading || !pool ? (
         <div className="rounded-xl border border-white/10 bg-obsidian-900 py-16 text-center text-xs text-slate-400 font-mono">
-          Loading pool fixtures & standings…
+          Loading pool fixtures &amp; standings…
         </div>
       ) : (
         <>
@@ -206,13 +210,22 @@ export default function Pool() {
             )}
           </section>
 
-          {/* FIXTURES GRID */}
-          <section className="space-y-3 pt-4">
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-gold" />
-              <h2 className="font-heading text-sm font-black uppercase tracking-widest text-white">
-                Pool Match Fixtures ({pool.matches.length})
-              </h2>
+          {/* FIXTURES SECTION */}
+          <section className="space-y-6 pt-4">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-gold" />
+                <h2 className="font-heading text-sm font-black uppercase tracking-widest text-white">
+                  Pool Fixtures &amp; Scorecards ({pool.matches.length})
+                </h2>
+              </div>
+              <span className="text-xs font-mono font-bold text-slate-400">
+                {liveMatches.length > 0
+                  ? `${liveMatches.length} Live Now`
+                  : pendingMatches.length > 0
+                  ? `${pendingMatches.length} Upcoming`
+                  : "All Fixtures Concluded"}
+              </span>
             </div>
 
             {pool.matches.length === 0 ? (
@@ -220,10 +233,64 @@ export default function Pool() {
                 Fixtures have not been finalized for this pool yet.
               </div>
             ) : (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {pool.matches.map((m) => (
-                  <BracketMatchCard key={m.id} m={m} autoHeight onSelect={setRosterMatchId} />
-                ))}
+              <div className="space-y-6">
+                {/* 1. LIVE MATCHES */}
+                {liveMatches.length > 0 && (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <h3 className="font-heading text-xs font-black uppercase tracking-wider text-emerald-400">
+                        Live Now ({liveMatches.length})
+                      </h3>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {liveMatches.map((m) => (
+                        <BracketMatchCard key={m.id} m={m} autoHeight onSelect={setRosterMatchId} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. UPCOMING / PENDING MATCHES */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="h-3.5 w-3.5 text-gold" />
+                      <h3 className="font-heading text-xs font-black uppercase tracking-wider text-slate-200">
+                        Upcoming Fixtures ({pendingMatches.length})
+                      </h3>
+                    </div>
+                  </div>
+
+                  {pendingMatches.length === 0 ? (
+                    <div className="rounded-xl border border-white/10 bg-obsidian-900/40 p-4 text-center text-xs text-slate-400">
+                      No upcoming matches remaining in this pool.
+                    </div>
+                  ) : (
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {pendingMatches.map((m) => (
+                        <BracketMatchCard key={m.id} m={m} autoHeight onSelect={setRosterMatchId} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 3. COMPLETED RESULTS */}
+                {completedMatches.length > 0 && (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Trophy className="h-3.5 w-3.5 text-slate-400" />
+                      <h3 className="font-heading text-xs font-black uppercase tracking-wider text-slate-400">
+                        Completed Results ({completedMatches.length})
+                      </h3>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {completedMatches.map((m) => (
+                        <BracketMatchCard key={m.id} m={m} autoHeight onSelect={setRosterMatchId} />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </section>

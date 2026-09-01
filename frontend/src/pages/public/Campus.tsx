@@ -69,6 +69,12 @@ export default function Campus() {
     startPosY: 0,
     dragging: false,
   });
+  // Two-finger pinch-to-zoom: tracks every currently-down pointer by id so we
+  // can tell a single-finger pan from a two-finger pinch (Pointer Events fire
+  // for touch too, but give no gesture info on their own — this is what turns
+  // raw pointer positions into a pinch distance/midpoint).
+  const activePointers = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchRef = useRef<{ startDist: number; startScale: number; startPos: { x: number; y: number } } | null>(null);
 
   const [teams, setTeams] = useState<Team[]>([]);
   const [teamId, setTeamId] = useState("");
@@ -205,30 +211,86 @@ export default function Campus() {
 
   const onPointerDown = (e: React.PointerEvent) => {
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-    dragRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      startPosX: pos.x,
-      startPosY: pos.y,
-      dragging: true,
-    };
-    setAnimated(false);
+    activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activePointers.current.size === 2) {
+      // Second finger just landed — stop panning, start a pinch instead.
+      dragRef.current.dragging = false;
+      const [p1, p2] = [...activePointers.current.values()];
+      pinchRef.current = {
+        startDist: Math.hypot(p1.x - p2.x, p1.y - p2.y),
+        startScale: scaleRef.current,
+        startPos: posRef.current,
+      };
+      setAnimated(false);
+    } else if (activePointers.current.size === 1) {
+      dragRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        startPosX: pos.x,
+        startPosY: pos.y,
+        dragging: true,
+      };
+      setAnimated(false);
+    }
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
-    if (!dragRef.current.dragging) return;
-    const dx = e.clientX - dragRef.current.startX;
-    const dy = e.clientY - dragRef.current.startY;
+    if (activePointers.current.has(e.pointerId)) {
+      activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    }
     const el = viewportRef.current;
     const w = el ? el.clientWidth : viewportSize.w;
     const h = el ? el.clientHeight : viewportSize.h;
+
+    if (activePointers.current.size === 2 && pinchRef.current) {
+      const [p1, p2] = [...activePointers.current.values()];
+      const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+      const rect = el?.getBoundingClientRect();
+      const cx = (p1.x + p2.x) / 2 - (rect?.left ?? 0);
+      const cy = (p1.y + p2.y) / 2 - (rect?.top ?? 0);
+      const { startDist, startScale, startPos } = pinchRef.current;
+      const nextScale = clamp(
+        startScale * (dist / startDist),
+        fitScale * MIN_ZOOM_MULT,
+        fitScale * MAX_ZOOM_MULT,
+      );
+      // Anchor against the pinch's start position/scale (not the previous
+      // frame's) so small per-frame rounding never compounds into drift.
+      const layerX = (cx - startPos.x) / startScale;
+      const layerY = (cy - startPos.y) / startScale;
+      setScale(nextScale);
+      setPos(clampPan({ x: cx - layerX * nextScale, y: cy - layerY * nextScale }, nextScale, w, h));
+      return;
+    }
+
+    if (!dragRef.current.dragging) return;
+    const dx = e.clientX - dragRef.current.startX;
+    const dy = e.clientY - dragRef.current.startY;
     setPos(clampPan({ x: dragRef.current.startPosX + dx, y: dragRef.current.startPosY + dy }, scale, w, h));
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
-    if (!dragRef.current.dragging) return;
-    dragRef.current.dragging = false;
+    activePointers.current.delete(e.pointerId);
     (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+
+    if (activePointers.current.size < 2) {
+      pinchRef.current = null;
+    }
+    if (activePointers.current.size === 1) {
+      // One finger lifted off a pinch — resume panning from here instead of
+      // jumping to wherever the old single-finger drag start was.
+      const [remaining] = [...activePointers.current.values()];
+      dragRef.current = {
+        startX: remaining.x,
+        startY: remaining.y,
+        startPosX: posRef.current.x,
+        startPosY: posRef.current.y,
+        dragging: true,
+      };
+    } else if (activePointers.current.size === 0) {
+      dragRef.current.dragging = false;
+    }
   };
 
   const selectTeam = async (id: string) => {

@@ -254,8 +254,8 @@ function resolveSource(m: MatchT, prevRoundMatches: MatchT[], side: "a" | "b"): 
 function layoutBracket(rounds: RoundT[], compact: boolean) {
   const cardH = compact ? COMPACT_CARD_H : CARD_H;
   const rowGap = compact ? COMPACT_ROW_GAP : ROW_GAP;
-  const teamARowY = compact ? cardH * 0.32 : 42;
-  const teamBRowY = compact ? cardH * 0.72 : 66;
+  const teamARowY = compact ? cardH * 0.32 : 36;
+  const teamBRowY = compact ? cardH * 0.72 : 58;
 
   const sorted = [...rounds].sort((a, b) => a.sequence - b.sequence);
   const positions: Record<number, Pos> = {};
@@ -616,6 +616,121 @@ export function BracketMatchCard({
     );
   }
 
+  if (autoHeight) {
+    return (
+      <div
+        onClick={() => clickable && onSelect!(m.id)}
+        className={cn(
+          "w-full min-w-0 max-w-full relative flex flex-col justify-between rounded-xl border p-3.5 text-sm shadow-md transition-all duration-200",
+          isChampion && done
+            ? "border-gold bg-gradient-to-br from-amber-950/60 via-slate-900 to-obsidian-950 shadow-gold/20 ring-1 ring-gold/60"
+            : live
+            ? "border-emerald-500/60 bg-gradient-to-br from-emerald-950/40 to-obsidian-950 shadow-live-glow"
+            : isFinal
+            ? "border-gold/60 bg-gradient-to-br from-gold/10 to-obsidian-950"
+            : roundStatus === "completed" || done
+            ? "border-white/10 bg-obsidian-950"
+            : "border-white/10 bg-obsidian-950",
+          clickable && "cursor-pointer hover:border-white/30 hover:-translate-y-0.5 hover:shadow-lg",
+        )}
+        data-testid={`bracket-match-${m.id}`}
+      >
+        <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono border-b border-white/5 pb-2 min-w-0">
+          <span className="flex items-center gap-1 truncate flex-1 min-w-0 mr-2" title={m.venue_name ?? "Court TBD"}>
+            <MapPin className="h-3 w-3 text-slate-500 shrink-0" />
+            <span className="truncate">{m.venue_name ?? "Court TBD"}</span>
+          </span>
+          {live && (
+            <span className="inline-flex items-center gap-1 shrink-0 font-heading font-black text-emerald-400 text-xs tracking-wider">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" /> LIVE
+            </span>
+          )}
+          {m.status === "SCHEDULED" && (
+            <span className="shrink-0 text-slate-400 font-medium">
+              {m.scheduled_at ? formatDate(m.scheduled_at) : "UPCOMING"}
+            </span>
+          )}
+          {m.status === "POSTPONED" && (
+            <span className="shrink-0 text-amber-400 font-bold text-xs">POSTPONED</span>
+          )}
+          {done && (
+            <span className="shrink-0 text-emerald-400 font-bold text-xs">COMPLETED</span>
+          )}
+        </div>
+
+        <div className="mt-2.5 space-y-1.5">
+          {/* Team A */}
+          <div
+            className={cn(
+              "flex items-center justify-between rounded-lg px-2.5 py-1.5 transition-all min-w-0",
+              done && m.winner_team_id === m.team_a_id
+                ? "font-extrabold text-white bg-emerald-950/40 ring-1 ring-emerald-500/30"
+                : done && m.winner_team_id === m.team_b_id
+                ? "text-slate-500 opacity-50 grayscale-[0.4]"
+                : "text-slate-200 bg-white/[0.02]",
+            )}
+          >
+            <span className="flex min-w-0 items-center gap-1.5 truncate font-heading font-bold text-xs sm:text-sm flex-1">
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: RED, boxShadow: `0 0 6px ${RED}66` }} />
+              {done && m.winner_team_id === m.team_a_id && (
+                <Trophy className="h-3.5 w-3.5 shrink-0 text-gold" />
+              )}
+              {live && m.team_a_score > m.team_b_score && (
+                <span className="shrink-0 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-heading font-extrabold px-1.5 py-0.5">
+                  LEADING
+                </span>
+              )}
+              <span className="truncate" title={m.team_a_name ?? "TBD"}>{m.team_a_name ?? "TBD"}</span>
+            </span>
+            {(live || done) && (
+              <span
+                key={m.team_a_score}
+                className="shrink-0 tabular-nums font-mono font-black text-white ml-2 text-sm sm:text-base"
+                style={{ animation: "scorePop 0.35s ease-out" }}
+              >
+                {m.team_a_score}
+              </span>
+            )}
+          </div>
+
+          {/* Team B */}
+          <div
+            className={cn(
+              "flex items-center justify-between rounded-lg px-2.5 py-1.5 transition-all min-w-0",
+              done && m.winner_team_id === m.team_b_id
+                ? "font-extrabold text-white bg-emerald-950/40 ring-1 ring-emerald-500/30"
+                : done && m.winner_team_id === m.team_a_id
+                ? "text-slate-500 opacity-50 grayscale-[0.4]"
+                : "text-slate-200 bg-white/[0.02]",
+            )}
+          >
+            <span className="flex min-w-0 items-center gap-1.5 truncate font-heading font-bold text-xs sm:text-sm flex-1">
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: BLUE, boxShadow: `0 0 6px ${BLUE}66` }} />
+              {done && m.winner_team_id === m.team_b_id && (
+                <Trophy className="h-3.5 w-3.5 shrink-0 text-gold" />
+              )}
+              {live && m.team_b_score > m.team_a_score && (
+                <span className="shrink-0 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-heading font-extrabold px-1.5 py-0.5">
+                  LEADING
+                </span>
+              )}
+              <span className="truncate" title={m.team_b_name ?? "TBD"}>{m.team_b_name ?? "TBD"}</span>
+            </span>
+            {(live || done) && (
+              <span
+                key={m.team_b_score}
+                className="shrink-0 tabular-nums font-mono font-black text-white ml-2 text-sm sm:text-base"
+                style={{ animation: "scorePop 0.35s ease-out" }}
+              >
+                {m.team_b_score}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       onClick={() => clickable && onSelect!(m.id)}
@@ -625,7 +740,7 @@ export function BracketMatchCard({
       }}
       className={cn(
         boxClass,
-        "relative flex flex-col justify-between rounded-xl border p-2.5 text-sm shadow-md transition-all duration-200",
+        "relative flex flex-col justify-between rounded-xl border p-2 text-xs shadow-md transition-all duration-200 overflow-hidden",
         isChampion && done
           ? "border-gold bg-gradient-to-br from-amber-950/60 via-slate-900 to-obsidian-950 shadow-gold/20 ring-1 ring-gold/60"
           : live
@@ -642,15 +757,25 @@ export function BracketMatchCard({
       data-testid={`bracket-match-${m.id}`}
     >
       {isChampion && done && <ChampionshipCelebration />}
-      <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono border-b border-white/5 pb-1">
-        <span className="truncate">{m.venue_name ?? "Court TBD"}</span>
+      <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono border-b border-white/5 pb-1 min-w-0">
+        <span className="truncate flex-1 min-w-0 mr-1" title={m.venue_name ?? "Court TBD"}>
+          {m.venue_name ?? "Court TBD"}
+        </span>
         {live && (
           <span className="inline-flex items-center gap-1 shrink-0 font-heading font-black text-emerald-400 tracking-wider">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" /> LIVE
           </span>
         )}
-        {m.status === "SCHEDULED" && m.scheduled_at && (
-          <span className="shrink-0">{formatDate(m.scheduled_at)}</span>
+        {m.status === "SCHEDULED" && (
+          <span className="shrink-0 text-slate-400 font-medium">
+            {m.scheduled_at ? formatDate(m.scheduled_at) : "UPCOMING"}
+          </span>
+        )}
+        {m.status === "POSTPONED" && (
+          <span className="shrink-0 text-amber-400 font-bold">POSTPONED</span>
+        )}
+        {done && (
+          <span className="shrink-0 text-emerald-400 font-bold">COMPLETED</span>
         )}
       </div>
       <div
@@ -666,22 +791,28 @@ export function BracketMatchCard({
         onMouseEnter={() => m.team_a_id != null && onHoverTeam?.(m.team_a_id)}
         onMouseLeave={() => m.team_a_id != null && onHoverTeam?.(null)}
         className={cn(
-          "mt-1 flex items-center justify-between rounded-lg px-2 py-0.5 transition-all",
+          "mt-0.5 flex items-center justify-between rounded px-1.5 py-0.5 transition-all min-w-0",
           done && m.winner_team_id === m.team_a_id
-            ? "font-extrabold text-white bg-emerald-950/40 ring-1 ring-emerald-500/30"
+            ? "font-extrabold text-white bg-emerald-950/60 ring-1 ring-emerald-500/40"
             : done && m.winner_team_id === m.team_b_id
             ? "text-slate-500 opacity-50 grayscale-[0.4]"
             : "text-slate-200 hover:bg-white/5",
         )}
       >
-        <span className="flex min-w-0 items-center gap-1.5 truncate cursor-pointer font-heading font-bold">
+        <span className="flex min-w-0 items-center gap-1.5 truncate cursor-pointer font-heading font-bold text-xs flex-1">
           <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: RED, boxShadow: `0 0 6px ${RED}66` }} />
+          {done && m.winner_team_id === m.team_a_id && (
+            <Trophy className="h-3 w-3 shrink-0 text-gold" />
+          )}
+          {live && m.team_a_score > m.team_b_score && (
+            <Flag className="h-2.5 w-2.5 shrink-0 text-emerald-400" />
+          )}
           <span className="truncate" title={m.team_a_name ?? "TBD"}>{m.team_a_name ?? "TBD"}</span>
         </span>
         {(live || done) && (
           <span
             key={m.team_a_score}
-            className="shrink-0 tabular-nums font-mono font-black text-white ml-2"
+            className="shrink-0 tabular-nums font-mono font-black text-white ml-2 text-xs"
             style={{ animation: "scorePop 0.35s ease-out" }}
           >
             {m.team_a_score}
@@ -701,42 +832,34 @@ export function BracketMatchCard({
         onMouseEnter={() => m.team_b_id != null && onHoverTeam?.(m.team_b_id)}
         onMouseLeave={() => m.team_b_id != null && onHoverTeam?.(null)}
         className={cn(
-          "flex items-center justify-between rounded-lg px-2 py-0.5 transition-all",
+          "flex items-center justify-between rounded px-1.5 py-0.5 transition-all min-w-0",
           done && m.winner_team_id === m.team_b_id
-            ? "font-extrabold text-white bg-emerald-950/40 ring-1 ring-emerald-500/30"
+            ? "font-extrabold text-white bg-emerald-950/60 ring-1 ring-emerald-500/40"
             : done && m.winner_team_id === m.team_a_id
             ? "text-slate-500 opacity-50 grayscale-[0.4]"
             : "text-slate-200 hover:bg-white/5",
         )}
       >
-        <span className="flex min-w-0 items-center gap-1.5 truncate cursor-pointer font-heading font-bold">
+        <span className="flex min-w-0 items-center gap-1.5 truncate cursor-pointer font-heading font-bold text-xs flex-1">
           <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: BLUE, boxShadow: `0 0 6px ${BLUE}66` }} />
+          {done && m.winner_team_id === m.team_b_id && (
+            <Trophy className="h-3 w-3 shrink-0 text-gold" />
+          )}
+          {live && m.team_b_score > m.team_a_score && (
+            <Flag className="h-2.5 w-2.5 shrink-0 text-emerald-400" />
+          )}
           <span className="truncate" title={m.team_b_name ?? "TBD"}>{m.team_b_name ?? "TBD"}</span>
         </span>
         {(live || done) && (
           <span
             key={m.team_b_score}
-            className="shrink-0 tabular-nums font-mono font-black text-white ml-2"
+            className="shrink-0 tabular-nums font-mono font-black text-white ml-2 text-xs"
             style={{ animation: "scorePop 0.35s ease-out" }}
           >
             {m.team_b_score}
           </span>
         )}
       </div>
-      {done && m.winner_team_name && (
-        <div
-          className={cn(
-            "mt-1 flex items-center gap-1 text-[11px] font-heading font-black pt-1 border-t border-white/5",
-            isFinal ? "text-gold" : "text-emerald-400",
-          )}
-        >
-          <Trophy className="h-3 w-3 shrink-0" />
-          <span className="truncate">
-            {isFinal ? "CHAMPION: " : "Winner: "}
-            {m.winner_team_name}
-          </span>
-        </div>
-      )}
     </div>
   );
 }
@@ -1194,9 +1317,14 @@ function PoolsSegment({
                   })}
                   {p.teams.length === 0 && <li className="text-slate-500">No teams yet</li>}
                 </ol>
-                <p className="mt-2.5 text-[11px] text-slate-400 font-mono border-t border-white/5 pt-1.5">
-                  {p.team_count} teams · {p.match_count} matches
-                </p>
+                <div className="mt-2.5 flex items-center justify-between text-[11px] text-slate-400 font-mono border-t border-white/5 pt-1.5 min-w-0">
+                  <span className="truncate">{p.team_count} teams · {p.match_count} matches</span>
+                  {p.pending_count > 0 ? (
+                    <span className="text-amber-400 font-semibold shrink-0 ml-1">({p.pending_count} pending)</span>
+                  ) : p.match_count > 0 ? (
+                    <span className="text-emerald-400 font-semibold shrink-0 ml-1">(Done)</span>
+                  ) : null}
+                </div>
               </Link>
             );
           })}

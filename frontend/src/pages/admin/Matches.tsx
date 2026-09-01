@@ -21,6 +21,8 @@ import {
   Calendar,
   Layers,
   ArrowRight,
+  Check,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -1708,6 +1710,10 @@ function LiveConsole({
   const [m, setM] = useState<MatchT | null>(null);
   const [loading, setLoading] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
+  // 2-step scoring: tapping a value only stages it — nothing hits the server
+  // (or the official score) until it's explicitly confirmed. Catches misclicks
+  // during fast live-raid scoring instead of committing on the very first tap.
+  const [pendingScore, setPendingScore] = useState<{ a: number | null; b: number | null }>({ a: null, b: null });
 
   const load = () =>
     api
@@ -1716,6 +1722,7 @@ function LiveConsole({
       .finally(() => setLoading(false));
   useEffect(() => {
     load();
+    setPendingScore({ a: null, b: null });
   }, [matchId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -1744,6 +1751,20 @@ function LiveConsole({
       toast.error(e?.response?.data?.detail ?? "Could not update score");
     }
   };
+  // Step 1: stage a value (or clear it, tapping the same one again). Nothing
+  // is submitted yet.
+  const pickScore = (side: "a" | "b", n: number) => {
+    setPendingScore((p) => ({ ...p, [side]: p[side] === n ? null : n }));
+  };
+  // Step 2: actually submit the staged value.
+  const confirmScore = (side: "a" | "b") => {
+    const n = pendingScore[side];
+    if (n == null) return;
+    setPendingScore((p) => ({ ...p, [side]: null }));
+    score(side, n);
+  };
+  const cancelScore = (side: "a" | "b") => setPendingScore((p) => ({ ...p, [side]: null }));
+
   const act = async (action: "pause" | "resume" | "cancel", label: string) => {
     try {
       await api.post(`/matches/${matchId}/${action}`);
@@ -1753,6 +1774,10 @@ function LiveConsole({
     } catch (e: any) {
       toast.error(e?.response?.data?.detail ?? `Could not ${action} match`);
     }
+  };
+  const cancelMatch = () => {
+    if (!confirm("Cancel this match? It won't count toward standings and this can't be undone.")) return;
+    act("cancel", "Match cancelled");
   };
   const complete = async () => {
     if (!m) return;
@@ -1833,17 +1858,46 @@ function LiveConsole({
               {m.team_a_score}
             </div>
             {canEdit && m.status === "ONGOING" && (
-              <div className="flex justify-center gap-2 pt-2 sm:pt-4">
-                {[1, 2, 3].map((n) => (
-                  <Button
-                    key={n}
-                    variant="outline"
-                    className="text-base sm:text-lg font-black px-4 sm:px-6 py-3 sm:py-4 border-red-500/40 hover:bg-red-500/20"
-                    onClick={() => score("a", n)}
-                  >
-                    +{n}
-                  </Button>
-                ))}
+              <div className="flex flex-col items-center gap-2 pt-2 sm:pt-4">
+                {pendingScore.a == null ? (
+                  <div className="flex justify-center gap-2">
+                    {[1, 2, 3].map((n) => (
+                      <Button
+                        key={n}
+                        variant="outline"
+                        className="text-base sm:text-lg font-black px-4 sm:px-6 py-3 sm:py-4 border-red-500/40 hover:bg-red-500/20"
+                        onClick={() => pickScore("a", n)}
+                      >
+                        +{n}
+                      </Button>
+                    ))}
+                    <Button
+                      variant="outline"
+                      className="text-base sm:text-lg font-black px-4 sm:px-6 py-3 sm:py-4 border-white/15 text-slate-400 hover:bg-white/10"
+                      onClick={() => pickScore("a", -1)}
+                      title="Correct a scoring mistake"
+                    >
+                      −1
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2.5" data-testid="score-a-confirm-row">
+                    <span className="font-heading text-lg font-black text-gold">
+                      {pendingScore.a > 0 ? `+${pendingScore.a}` : pendingScore.a}?
+                    </span>
+                    <Button
+                      variant="gold"
+                      className="font-black px-5 py-3"
+                      onClick={() => confirmScore("a")}
+                      data-testid="confirm-score-a"
+                    >
+                      <Check className="h-4 w-4" /> Confirm
+                    </Button>
+                    <Button variant="outline" className="px-3 py-3" onClick={() => cancelScore("a")}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1872,17 +1926,46 @@ function LiveConsole({
               {m.team_b_score}
             </div>
             {canEdit && m.status === "ONGOING" && (
-              <div className="flex justify-center gap-2 pt-4">
-                {[1, 2, 3].map((n) => (
-                  <Button
-                    key={n}
-                    variant="outline"
-                    className="text-lg font-black px-6 py-4 border-blue-500/40 hover:bg-blue-500/20"
-                    onClick={() => score("b", n)}
-                  >
-                    +{n}
-                  </Button>
-                ))}
+              <div className="flex flex-col items-center gap-2 pt-4">
+                {pendingScore.b == null ? (
+                  <div className="flex justify-center gap-2">
+                    {[1, 2, 3].map((n) => (
+                      <Button
+                        key={n}
+                        variant="outline"
+                        className="text-lg font-black px-6 py-4 border-blue-500/40 hover:bg-blue-500/20"
+                        onClick={() => pickScore("b", n)}
+                      >
+                        +{n}
+                      </Button>
+                    ))}
+                    <Button
+                      variant="outline"
+                      className="text-lg font-black px-6 py-4 border-white/15 text-slate-400 hover:bg-white/10"
+                      onClick={() => pickScore("b", -1)}
+                      title="Correct a scoring mistake"
+                    >
+                      −1
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2.5" data-testid="score-b-confirm-row">
+                    <span className="font-heading text-lg font-black text-gold">
+                      {pendingScore.b > 0 ? `+${pendingScore.b}` : pendingScore.b}?
+                    </span>
+                    <Button
+                      variant="gold"
+                      className="font-black px-5 py-3"
+                      onClick={() => confirmScore("b")}
+                      data-testid="confirm-score-b"
+                    >
+                      <Check className="h-4 w-4" /> Confirm
+                    </Button>
+                    <Button variant="outline" className="px-3 py-3" onClick={() => cancelScore("b")}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1985,20 +2068,55 @@ function LiveConsole({
                     {value}
                   </span>
                   {canEdit && m.status === "ONGOING" && (
-                    <div className="flex gap-1.5">
-                      {[1, 2, 3].map((n) => (
+                    pendingScore[side] == null ? (
+                      <div className="flex gap-1.5">
+                        {[1, 2, 3].map((n) => (
+                          <Button
+                            key={n}
+                            size="sm"
+                            variant="outline"
+                            className="font-bold text-xs h-9 w-9 px-0 hover:bg-white/10"
+                            onClick={() => pickScore(side, n)}
+                            data-testid={`score-${side}-plus-${n}`}
+                          >
+                            +{n}
+                          </Button>
+                        ))}
                         <Button
-                          key={n}
                           size="sm"
                           variant="outline"
-                          className="font-bold text-xs h-9 w-9 px-0 hover:bg-white/10"
-                          onClick={() => score(side, n)}
-                          data-testid={`score-${side}-plus-${n}`}
+                          className="font-bold text-xs h-9 w-9 px-0 text-slate-400 hover:bg-white/10"
+                          onClick={() => pickScore(side, -1)}
+                          data-testid={`score-${side}-minus-1`}
+                          title="Correct a scoring mistake"
                         >
-                          +{n}
+                          −1
                         </Button>
-                      ))}
-                    </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5" data-testid={`score-${side}-confirm-row`}>
+                        <span className="font-heading text-sm font-black text-gold">
+                          {pendingScore[side]! > 0 ? `+${pendingScore[side]}` : pendingScore[side]}?
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="gold"
+                          className="h-9 px-2.5 font-bold text-xs"
+                          onClick={() => confirmScore(side)}
+                          data-testid={`confirm-score-${side}`}
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-9 w-9 px-0"
+                          onClick={() => cancelScore(side)}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    )
                   )}
                 </div>
               </div>
@@ -2030,7 +2148,7 @@ function LiveConsole({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => act("cancel", "Match cancelled")}
+                  onClick={cancelMatch}
                 >
                   <Ban className="h-4 w-4" /> Cancel
                 </Button>
