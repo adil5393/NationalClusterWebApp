@@ -81,6 +81,7 @@ def _tournament_dict(t: models.Tournament, db: Session, with_rounds: bool = Fals
         "status": t.status,
         "notes": t.notes,
         "min_present_players": t.min_present_players,
+        "league_advance_count": t.league_advance_count,
         "round_count": len(t.rounds),
         "match_count": sum(len(r.matches) for r in t.rounds),
     }
@@ -491,19 +492,27 @@ def _standings_key(row: dict) -> tuple:
     return (row["points"],)
 
 
+def _round_format(round_: models.Round) -> "str | None":
+    """round_.format, falling back to inferring it from a sample match for a
+    legacy round created before that column existed — the one place both
+    _compute_advancing_teams and buckets.py's pool-mirror seeding tell
+    knockout and league rounds apart."""
+    fmt = round_.format
+    if fmt is None:
+        sample = round_.matches[0] if round_.matches else None
+        fmt = sample.match_type if sample else None
+    return fmt
+
+
 def _compute_advancing_teams(db: Session, round_: models.Round) -> dict:
     """What teams would form the next round's bucket, given this round's
     format. KNOCKOUT: every completed match's winner (bye matches already
-    auto-complete with one — see _create_bye_match). LEAGUE: top 2 per pool
-    by standings, grouping teams tied on points (see _standings_key) so a
-    genuine tie for a qualifying spot surfaces for the organizer to break
-    instead of being silently resolved by row order."""
-    fmt = round_.format
-    if fmt is None:
-        # Legacy round with no explicit format — infer it the same way the
-        # rest of the app already tells knockout and league matches apart.
-        sample = round_.matches[0] if round_.matches else None
-        fmt = sample.match_type if sample else None
+    auto-complete with one — see _create_bye_match). LEAGUE: top N per pool
+    (Tournament.league_advance_count) by standings, grouping teams tied on
+    points (see _standings_key) so a genuine tie for a qualifying spot
+    surfaces for the organizer to break instead of being silently resolved
+    by row order."""
+    fmt = _round_format(round_)
 
     if fmt == "LEAGUE":
         from .pools import compute_standings  # local import: avoids a hard import-order dependency between routers
@@ -534,7 +543,7 @@ def _compute_advancing_teams(db: Session, round_: models.Round) -> dict:
             # soon as it's finalized and every one of its matches completes.
             pool_ready = p.status == "finalized" and bool(p.matches) and all(m.status in ("COMPLETED", "CANCELLED") for m in p.matches)
             standings = compute_standings(p) if pool_ready else []
-            need = min(2, len(p.teams))
+            need = min(round_.tournament.league_advance_count, len(p.teams))
             qualifiers: list[dict] = []
             tie_candidates: list[dict] = []
             tie_need = 0

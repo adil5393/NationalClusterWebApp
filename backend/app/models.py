@@ -456,6 +456,12 @@ class Tournament(TimestampMixin, Base):
     # age group, a team needs before it's eligible to be placed into a match or
     # pool (routers/matches.py _check_team_playable) — 0 disables the check.
     min_present_players = Column(Integer, nullable=False, default=10)
+    # How many teams qualify out of EACH pool in a League round, tournament-
+    # wide (1 = winner only, 2 = winner + runner-up). Drives both how many
+    # qualifiers _compute_advancing_teams pulls per pool and the pool-mirror
+    # seeding routers/buckets.py _seed_league_pool_pairs uses when building
+    # the next Knockout round from them.
+    league_advance_count = Column(Integer, nullable=False, default=2)
 
     rounds = relationship(
         "Round", back_populates="tournament", cascade="all, delete-orphan", order_by="Round.sequence"

@@ -572,12 +572,21 @@ class TournamentCreate(BaseModel):
     # Minimum checked-in players (in this tournament's age group) a team needs
     # to be eligible for a match/pool — 0 disables the check.
     min_present_players: int = 10
+    # How many teams qualify out of EACH League pool, tournament-wide.
+    league_advance_count: int = 2
 
     @field_validator("status")
     @classmethod
     def valid_status(cls, v):
         if v not in TOURNAMENT_STATUSES:
             raise ValueError(f"status must be one of {TOURNAMENT_STATUSES}")
+        return v
+
+    @field_validator("league_advance_count")
+    @classmethod
+    def valid_league_advance_count(cls, v):
+        if v not in (1, 2):
+            raise ValueError("league_advance_count must be 1 or 2")
         return v
 
 
@@ -588,12 +597,20 @@ class TournamentUpdate(BaseModel):
     status: Optional[str] = None
     notes: Optional[str] = None
     min_present_players: Optional[int] = None
+    league_advance_count: Optional[int] = None
 
     @field_validator("status")
     @classmethod
     def valid_status(cls, v):
         if v is not None and v not in TOURNAMENT_STATUSES:
             raise ValueError(f"status must be one of {TOURNAMENT_STATUSES}")
+        return v
+
+    @field_validator("league_advance_count")
+    @classmethod
+    def valid_league_advance_count(cls, v):
+        if v is not None and v not in (1, 2):
+            raise ValueError("league_advance_count must be 1 or 2")
         return v
 
 

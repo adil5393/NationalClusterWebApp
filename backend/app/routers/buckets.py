@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..database import get_db
-from .matches import _compute_advancing_teams, _create_one_knockout_round, _round_dict
+from .matches import _compute_advancing_teams, _create_one_knockout_round, _round_dict, _round_format
 
 router = APIRouter(prefix="/api", tags=["buckets"])
 
@@ -265,6 +265,54 @@ def _seed_bucket_teams(entries: list[models.BucketTeam]) -> list[int]:
     return result
 
 
+def _seed_league_pool_pairs(
+    pools_in_order: list[models.Pool],
+    available: list[models.BucketTeam],
+    advance_count: int,
+) -> tuple[list[int], list[int]]:
+    """Pool-1-vs-pool-N seeding for building a Knockout round straight out of
+    a League round: pools are paired by mirrored position (1st vs last, 2nd
+    vs 2nd-last, ...) and a pair only contributes matches once BOTH its pools
+    have been pulled into the bucket — an unpaired pool's teams are simply
+    left out of the result (they stay "pulled", not pushed, until their
+    mirror partner is pulled too), so e.g. pool 1 and the last pool can start
+    their knockout match the moment they're both done, with no need to wait
+    on every pool in between.
+
+    advance_count == 1: one match per ready pair, winner vs winner.
+    advance_count == 2: two matches per ready pair — winner(A) vs runner-up(B)
+    and winner(B) vs runner-up(A), so the same two schools never meet twice
+    and every pair's 4 qualifiers get used. Byes (source_pool_id is None,
+    e.g. Round 1's Generate Bracket picks) aren't part of any pool pairing —
+    returned separately, in their existing order, unchanged."""
+    by_pool: dict[int, list[models.BucketTeam]] = {}
+    byes: list[models.BucketTeam] = []
+    for e in available:
+        if e.source_pool_id is None:
+            byes.append(e)
+        else:
+            by_pool.setdefault(e.source_pool_id, []).append(e)
+    for entries in by_pool.values():
+        entries.sort(key=lambda e: e.seed_rank or 0)
+
+    pool_ids_in_order = [p.id for p in pools_in_order]
+    n = len(pool_ids_in_order)
+    result: list[int] = []
+    for i in range(n // 2):
+        a_entries = by_pool.get(pool_ids_in_order[i])
+        b_entries = by_pool.get(pool_ids_in_order[n - 1 - i])
+        if not a_entries or not b_entries:
+            continue  # this mirrored pair isn't ready yet
+        a_winner, b_winner = a_entries[0], b_entries[0]
+        if advance_count == 1 or len(a_entries) < 2 or len(b_entries) < 2:
+            result += [a_winner.team_id, b_winner.team_id]
+        else:
+            a_runner, b_runner = a_entries[1], b_entries[1]
+            result += [a_winner.team_id, b_runner.team_id, b_winner.team_id, a_runner.team_id]
+
+    return result, [e.team_id for e in byes]
+
+
 @router.post("/buckets/{bucket_id}/create-round", status_code=201)
 def create_round_from_bucket(bucket_id: int, payload: schemas.BucketCreateRoundRequest, db: Session = Depends(get_db)):
     bucket = _get_bucket(db, bucket_id)
@@ -295,7 +343,19 @@ def create_round_from_bucket(bucket_id: int, payload: schemas.BucketCreateRoundR
         db.add(round_)
         db.flush()
 
-    team_ids = _seed_bucket_teams(available)
+    source_fmt = _round_format(bucket.source_round)
+    if fmt == "KNOCKOUT" and source_fmt == "LEAGUE":
+        pools_in_order = sorted(bucket.source_round.pools, key=lambda p: p.id)
+        paired_ids, bye_ids = _seed_league_pool_pairs(pools_in_order, available, bucket.tournament.league_advance_count)
+        if not paired_ids and not bye_ids:
+            raise HTTPException(
+                400,
+                "No mirrored pool pair is ready yet — pull both pools' qualifiers for at least one pair "
+                "(e.g. the 1st and last pool) before building the knockout round",
+            )
+        team_ids = paired_ids + bye_ids
+    else:
+        team_ids = _seed_bucket_teams(available)
 
     if fmt == "KNOCKOUT":
         placed = _create_one_knockout_round(db, bucket.tournament_id, round_.id, team_ids, payload.bye_team_ids)
