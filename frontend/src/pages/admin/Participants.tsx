@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Pencil, Trash2, CheckCircle2, Circle, Upload, Download, Users, Search, Filter, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea, Select } from "@/components/ui/input";
 import { Table, THead, TH, TR, TD, TBody } from "@/components/ui/table";
@@ -167,14 +167,14 @@ export default function Participants() {
             </Button>
           )}
           <a
-            href={`${import.meta.env.REACT_APP_BACKEND_URL ?? ""}/api/export/participants.csv`}
+            href={`${BASE_URL}/api/export/participants.csv`}
             className="inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors"
             data-testid="export-participants-btn"
           >
             <Download className="h-3.5 w-3.5 text-slate-400" /> Export CSV
           </a>
           <a
-            href={`${import.meta.env.REACT_APP_BACKEND_URL ?? ""}/api/export/participants.xlsx`}
+            href={`${BASE_URL}/api/export/participants.xlsx`}
             className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 transition-colors"
             data-testid="export-participants-xlsx-btn"
           >

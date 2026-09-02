@@ -98,6 +98,7 @@ interface TournamentT {
   status: string;
   notes?: string | null;
   min_present_players?: number;
+  league_advance_count?: number;
   round_count: number;
   match_count: number;
   rounds?: RoundT[];
@@ -448,6 +449,7 @@ export default function Matches() {
     status: string;
     notes: string;
     min_present_players: string;
+    league_advance_count: string;
   }>({
     name: "",
     sport: "",
@@ -455,6 +457,7 @@ export default function Matches() {
     status: "draft",
     notes: "",
     min_present_players: "10",
+    league_advance_count: "2",
   });
 
   const [rOpen, setROpen] = useState(false);
@@ -591,6 +594,7 @@ export default function Matches() {
         status: tForm.status,
         notes: tForm.notes || null,
         min_present_players: Number(tForm.min_present_players) || 0,
+        league_advance_count: Number(tForm.league_advance_count) === 1 ? 1 : 2,
       };
       if (tForm.id) await api.put(`/tournaments/${tForm.id}`, payload);
       else {
@@ -781,6 +785,7 @@ export default function Matches() {
                 status: "draft",
                 notes: "",
                 min_present_players: "10",
+                league_advance_count: "2",
               });
               setTOpen(true);
             }}
@@ -944,6 +949,9 @@ export default function Matches() {
                 <span className="text-xs text-slate-400 font-mono">
                   · Min {detail.min_present_players ?? 10} players present
                 </span>
+                <span className="text-xs text-slate-400 font-mono">
+                  · {detail.league_advance_count ?? 2} advance per League pool
+                </span>
               </div>
 
               {canEdit && (
@@ -960,6 +968,7 @@ export default function Matches() {
                         status: detail.status,
                         notes: detail.notes ?? "",
                         min_present_players: String(detail.min_present_players ?? 10),
+                        league_advance_count: String(detail.league_advance_count ?? 2),
                       });
                       setTOpen(true);
                     }}
@@ -1323,6 +1332,22 @@ export default function Matches() {
             />
             <p className="mt-1 text-xs text-slate-400 font-mono">
               Squads need this many checked-in athletes to start a match. Set to 0 to disable.
+            </p>
+          </div>
+          <div>
+            <Label>League Pool Qualifiers</Label>
+            <Select
+              value={tForm.league_advance_count}
+              onChange={(e) => setTForm((f) => ({ ...f, league_advance_count: e.target.value }))}
+              data-testid="tournament-league-advance-select"
+            >
+              <option value="1">1 team per pool (winner only)</option>
+              <option value="2">2 teams per pool (winner + runner-up)</option>
+            </Select>
+            <p className="mt-1 text-xs text-slate-400 font-mono">
+              How many teams advance from each League pool into the next Knockout round. Pools are
+              paired 1st-vs-last, 2nd-vs-2nd-last, etc. — with 2 qualifiers, winners cross against the
+              mirrored pool's runner-up.
             </p>
           </div>
           <div>

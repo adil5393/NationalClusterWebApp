@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Download, FileSpreadsheet, Trash2, Layers, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, THead, TH, TR, TD, TBody } from "@/components/ui/table";
@@ -10,7 +10,7 @@ import { useModuleAccess } from "@/lib/permissions";
 import { formatDate } from "@/lib/meta";
 import { cn } from "@/lib/utils";
 
-const BACKEND = import.meta.env.REACT_APP_BACKEND_URL ?? "";
+const BACKEND = BASE_URL;
 
 interface RoundT {
   id: number;

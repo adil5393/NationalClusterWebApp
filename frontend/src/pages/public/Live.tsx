@@ -1008,6 +1008,37 @@ function getRoundProgression(rounds: RoundT[]): Record<number, "completed" | "cu
   return result;
 }
 
+/** A connector <path> whose "draw itself in" stroke-dasharray is measured
+ * from the path's own real length (getTotalLength()) instead of a hardcoded
+ * guess — a fixed guess only "reaches" when the actual path happens to be
+ * shorter than it; a longer one (e.g. a pools-round-to-Knockout boundary
+ * line spanning a tall stack of pools) just runs out of dash partway and
+ * looks like it stops short of the target. Re-measures whenever `pathD`
+ * changes, which matters once a path's DOM node is kept alive across
+ * re-renders (stable key) rather than remounted — the geometry can change
+ * (e.g. more matches pushed into the target round later) without a fresh
+ * mount to hang a one-time measurement off of. drawIn=false clears the dash
+ * pattern entirely (solid line, no reveal effect) instead of measuring. */
+function DrawPath({
+  pathD,
+  drawIn,
+  ...rest
+}: { pathD: string; drawIn: boolean } & React.SVGProps<SVGPathElement>) {
+  const ref = useRef<SVGPathElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (drawIn) {
+      const len = Math.ceil(el.getTotalLength());
+      el.style.strokeDasharray = `${len}`;
+      el.style.setProperty("--path-length", String(len));
+    } else {
+      el.style.strokeDasharray = "";
+    }
+  }, [pathD, drawIn]);
+  return <path ref={ref} d={pathD} {...rest} />;
+}
+
 function BracketSegment({
   rounds,
   onSelectMatch,
@@ -1082,11 +1113,11 @@ function BracketSegment({
           return (
             <g key={i}>
               {/* Base connector path: slowly connects to appropriate card */}
-              <path
-                d={c.d}
+              <DrawPath
+                pathD={c.d}
+                drawIn={!hasInitialRevealed}
                 stroke={strokeColor}
                 strokeWidth={strokeWidth}
-                strokeDasharray={!hasInitialRevealed ? 350 : undefined}
                 fill="none"
                 opacity={pathOpacity}
                 filter={isHighlighted ? "url(#glow-gold)" : undefined}
@@ -1095,7 +1126,6 @@ function BracketSegment({
                     ? `bracketDrawConnector 0.85s cubic-bezier(0.4, 0, 0.2, 1) ${drawDelay}ms forwards`
                     : undefined,
                   // @ts-expect-error custom CSS variable
-                  "--path-length": "350",
                   "--final-opacity": String(pathOpacity),
                 }}
               />
@@ -1569,7 +1599,14 @@ function TournamentFlow({
       }
     }
     setBoundaryPaths(paths);
-  }, [activeSegments, wrapperWidth, isPagedView, hasInitialRevealed]);
+    // naturalHeight isn't read above, but it's exactly what the ResizeObserver
+    // on containerRef tracks — a round gaining more matches later (e.g. a
+    // second pool-pair pushed into an already-built Knockout round, per the
+    // League "advance N per pool" feature) changes the container's height
+    // without necessarily changing activeSegments/wrapperWidth, which
+    // otherwise left an already-drawn line pointing at a stale anchor
+    // position once the layout below it shifted — "connects, then breaks".
+  }, [activeSegments, wrapperWidth, naturalHeight, isPagedView, hasInitialRevealed]);
 
   useLayoutEffect(() => {
     recomputeBoundaries();
@@ -1767,7 +1804,7 @@ function TournamentFlow({
                 </feMerge>
               </filter>
             </defs>
-            {boundaryPaths.map((p, i) => {
+            {boundaryPaths.map((p) => {
               const isHighlighted = highlightedTeamId != null && p.teamId === highlightedTeamId;
               const isDimmed = highlightedTeamId != null && !isHighlighted;
               const strokeColor = isHighlighted ? (p.color !== NEUTRAL ? p.color : "#F59E0B") : p.color;
@@ -1775,19 +1812,25 @@ function TournamentFlow({
               const pathOpacity = isDimmed ? 0.12 : isHighlighted ? 1 : 0.85;
 
               return (
-                <path
-                  key={i}
-                  d={p.d}
+                <DrawPath
+                  // Stable per-team key, not array index — boundaryPaths can grow
+                  // (e.g. a second League pool-pair pushed into an already-built
+                  // Knockout round later) and reorder as roundTeamIds re-enumerates,
+                  // which under an index key would silently hand an existing,
+                  // already-settled <path> DOM node a brand new team's coordinates
+                  // instead of animating a fresh one in — the "connects, then
+                  // breaks" symptom.
+                  key={`${p.sourceRoundId}-${p.targetRoundId}-${p.teamId}`}
+                  pathD={p.d}
+                  drawIn
                   stroke={strokeColor}
                   strokeWidth={strokeWidth}
-                  strokeDasharray={350}
                   fill="none"
                   opacity={pathOpacity}
                   filter={isHighlighted ? "url(#glow-gold-boundary)" : undefined}
                   style={{
                     animation: "bracketDrawConnector 0.85s cubic-bezier(0.4, 0, 0.2, 1) forwards",
                     // @ts-expect-error custom CSS variable
-                    "--path-length": "350",
                     "--final-opacity": String(pathOpacity),
                   }}
                 />

@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 import { Trash2, Send, Paperclip, Upload, Link2, Download, FileText, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api, BASE_URL } from "@/lib/api";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea, Label } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/meta";
 
-const BACKEND = import.meta.env.REACT_APP_BACKEND_URL ?? "";
+const BACKEND = BASE_URL;
 
 interface KItem {
   id: number;

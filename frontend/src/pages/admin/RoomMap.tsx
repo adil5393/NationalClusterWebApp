@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { Download, BedDouble, Building, Layers, CheckCircle2, FileSpreadsheet } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, BASE_URL } from "@/lib/api";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-const BACKEND = import.meta.env.REACT_APP_BACKEND_URL ?? "";
+const BACKEND = BASE_URL;
 
 interface Bed {
   id: number;
