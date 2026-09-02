@@ -180,6 +180,53 @@ def _propagate_winner(db: Session, match: models.Match) -> None:
             dep.team_a_id = match.winner_team_id
         if dep.source_match_b_id == match.id and dep.team_b_id is None:
             dep.team_b_id = match.winner_team_id
+        _try_walkover(db, dep)
+
+
+def _try_walkover(db: Session, dep: models.Match) -> None:
+    """A cancelled knockout match voids the slot it was going to fill — the
+    team on the *other* side of whatever match it was feeding simply advances
+    without playing, same as a Round 1 bye (see _create_bye_match). Fires
+    from both directions: right after cancel_match cancels a match (see
+    _propagate_cancellation below), and right after _propagate_winner fills
+    the surviving slot in later (the cancel may well have happened first,
+    before the other side even had a winner yet). No-op unless dep has
+    exactly one team seated and the empty slot's source match is CANCELLED
+    with no winner coming."""
+    if dep.status != "SCHEDULED":
+        return
+    if dep.team_a_id and dep.team_b_id:
+        return
+    winner = None
+    if dep.team_a_id and dep.team_b_id is None and dep.source_match_b_id is not None:
+        src = db.get(models.Match, dep.source_match_b_id)
+        if src and src.status == "CANCELLED":
+            winner = dep.team_a_id
+    elif dep.team_b_id and dep.team_a_id is None and dep.source_match_a_id is not None:
+        src = db.get(models.Match, dep.source_match_a_id)
+        if src and src.status == "CANCELLED":
+            winner = dep.team_b_id
+    if not winner:
+        return
+    dep.status = "COMPLETED"
+    dep.winner_team_id = winner
+    dep.ended_at = datetime.now(timezone.utc)
+    dep.notes = "Bye"
+    _propagate_winner(db, dep)
+
+
+def _propagate_cancellation(db: Session, match: models.Match) -> None:
+    """The cancel-side trigger for _try_walkover — mirrors _propagate_winner
+    but for a match that was voided instead of decided. Only relevant for a
+    knockout match with a real dependent (source_match_a/b_id); a league pool
+    match's cancellation is instead handled by _propagate_pool_qualifiers."""
+    dependents = (
+        db.query(models.Match)
+        .filter((models.Match.source_match_a_id == match.id) | (models.Match.source_match_b_id == match.id))
+        .all()
+    )
+    for dep in dependents:
+        _try_walkover(db, dep)
 
 
 def _propagate_pool_qualifiers(db: Session, pool: models.Pool) -> None:
@@ -998,6 +1045,8 @@ def cancel_match(match_id: int, db: Session = Depends(get_db), current: models.O
     _free_pushed_bucket_entries(db, m.round_id, [m.team_a_id, m.team_b_id])
     if m.pool_id:
         _propagate_pool_qualifiers(db, m.pool)
+    else:
+        _propagate_cancellation(db, m)
     db.commit()
     db.refresh(m)
     broadcast_match_event_sync(m, "match_cancelled")
