@@ -24,6 +24,7 @@ import {
   Check,
   X,
   UserX,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -255,13 +256,20 @@ function RoundMatchesList({
                 )}
                 {(m.status === "ONGOING" ||
                   m.status === "PAUSED" ||
-                  (m.status === "SCHEDULED" && m.team_a_id && m.team_b_id)) && (
+                  (m.status === "SCHEDULED" && m.team_a_id && m.team_b_id) ||
+                  (canEdit && (m.status === "COMPLETED" || m.status === "CANCELLED"))) && (
                   <Button
                     variant="outline"
                     size="icon-sm"
                     className="text-emerald-400 hover:bg-emerald-500/10"
                     onClick={() => onOpenConsole(m.id)}
-                    title={m.status === "SCHEDULED" ? "Manage match (forfeit, etc.)" : "Open live console"}
+                    title={
+                      m.status === "COMPLETED" || m.status === "CANCELLED"
+                        ? "Manage match (reset, etc.)"
+                        : m.status === "SCHEDULED"
+                        ? "Manage match (forfeit, etc.)"
+                        : "Open live console"
+                    }
                   >
                     <Radio className="h-3.5 w-3.5" />
                   </Button>
@@ -374,12 +382,19 @@ function RoundMatchesList({
                     )}
                     {(m.status === "ONGOING" ||
                       m.status === "PAUSED" ||
-                      (m.status === "SCHEDULED" && m.team_a_id && m.team_b_id)) && (
+                      (m.status === "SCHEDULED" && m.team_a_id && m.team_b_id) ||
+                      (canEdit && (m.status === "COMPLETED" || m.status === "CANCELLED"))) && (
                       <Button
                         variant="ghost"
                         size="icon-sm"
                         onClick={() => onOpenConsole(m.id)}
-                        title={m.status === "SCHEDULED" ? "Manage match (forfeit, etc.)" : "Open live console"}
+                        title={
+                          m.status === "COMPLETED" || m.status === "CANCELLED"
+                            ? "Manage match (reset, etc.)"
+                            : m.status === "SCHEDULED"
+                            ? "Manage match (forfeit, etc.)"
+                            : "Open live console"
+                        }
                       >
                         <Radio className="h-4 w-4 text-emerald-400" />
                       </Button>
@@ -1780,6 +1795,7 @@ export default function Matches() {
         <LiveConsole
           matchId={consoleMatchId}
           canEdit={canEdit}
+          teams={teams}
           onClose={() => setConsoleMatchId(null)}
           onChanged={() => {
             refreshLive();
@@ -1807,11 +1823,13 @@ export default function Matches() {
 function LiveConsole({
   matchId,
   canEdit,
+  teams,
   onClose,
   onChanged,
 }: {
   matchId: number;
   canEdit: boolean;
+  teams: Team[];
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -1822,6 +1840,10 @@ function LiveConsole({
   // (or the official score) until it's explicitly confirmed. Catches misclicks
   // during fast live-raid scoring instead of committing on the very first tap.
   const [pendingScore, setPendingScore] = useState<{ a: number | null; b: number | null }>({ a: null, b: null });
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetTeamA, setResetTeamA] = useState<string>("");
+  const [resetTeamB, setResetTeamB] = useState<string>("");
+  const [resetting, setResetting] = useState(false);
 
   const load = () =>
     api
@@ -1831,6 +1853,7 @@ function LiveConsole({
   useEffect(() => {
     load();
     setPendingScore({ a: null, b: null });
+    setResetOpen(false);
   }, [matchId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -1896,6 +1919,32 @@ function LiveConsole({
       onChanged();
     } catch (e: any) {
       toast.error(e?.response?.data?.detail ?? "Could not record forfeit");
+    }
+  };
+
+  const openReset = () => {
+    if (!m) return;
+    setResetTeamA(m.team_a_id ? String(m.team_a_id) : "");
+    setResetTeamB(m.team_b_id ? String(m.team_b_id) : "");
+    setResetOpen(true);
+  };
+  const confirmReset = async () => {
+    if (!m) return;
+    if (!confirm("Reset this match? Its result, score, and status all clear and it goes back to in-progress. This can't be undone.")) return;
+    setResetting(true);
+    try {
+      await api.post(`/matches/${matchId}/reset`, {
+        team_a_id: resetTeamA ? Number(resetTeamA) : null,
+        team_b_id: resetTeamB ? Number(resetTeamB) : null,
+      });
+      toast.success("Match reset");
+      setResetOpen(false);
+      load();
+      onChanged();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not reset match");
+    } finally {
+      setResetting(false);
     }
   };
   const complete = async () => {
@@ -2291,6 +2340,14 @@ function LiveConsole({
                     </Button>
                   </>
                 )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={openReset}
+                  data-testid="open-reset-match-btn"
+                >
+                  <RotateCcw className="h-4 w-4" /> Reset
+                </Button>
               </div>
               <Button
                 variant="gold"
@@ -2301,6 +2358,62 @@ function LiveConsole({
               >
                 <Flag className="h-4 w-4" /> Conclude Match
               </Button>
+            </div>
+          )}
+
+          {/* RESET PANEL — result reset always available; team reassignment
+              (which breaks the flow line on whichever slot changes) only
+              for knockout matches, since a pool match's fixtures are fixed
+              by its round-robin schedule. */}
+          {canEdit && resetOpen && m && (
+            <div
+              className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 space-y-3"
+              data-testid="reset-match-panel"
+            >
+              <p className="text-xs font-semibold text-amber-400">
+                Reset this match — score, result, and status all clear back to in-progress.
+                {!m.pool_id && " You can also swap out either team below."}
+              </p>
+              {!m.pool_id && (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div>
+                    <Label className="text-[11px]">Team A</Label>
+                    <Select value={resetTeamA} onChange={(e) => setResetTeamA(e.target.value)}>
+                      <option value="">— TBD —</option>
+                      {teams.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-[11px]">Team B</Label>
+                    <Select value={resetTeamB} onChange={(e) => setResetTeamB(e.target.value)}>
+                      <option value="">— TBD —</option>
+                      {teams.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                </div>
+              )}
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => setResetOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="gold"
+                  size="sm"
+                  disabled={resetting || (!m.pool_id && resetTeamA !== "" && resetTeamA === resetTeamB)}
+                  onClick={confirmReset}
+                  data-testid="confirm-reset-match-btn"
+                >
+                  {resetting ? "Resetting…" : "Confirm Reset"}
+                </Button>
+              </div>
             </div>
           )}
         </div>
@@ -3727,7 +3840,8 @@ function PoolDetailDialog({
                             )}
                             {(m.status === "ONGOING" ||
                               m.status === "PAUSED" ||
-                              (m.status === "SCHEDULED" && m.team_a_id && m.team_b_id)) && (
+                              (m.status === "SCHEDULED" && m.team_a_id && m.team_b_id) ||
+                              (canEdit && (m.status === "COMPLETED" || m.status === "CANCELLED"))) && (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -3735,7 +3849,7 @@ function PoolDetailDialog({
                                 className="text-xs text-emerald-400"
                               >
                                 <Radio className="h-3 w-3" />
-                                {m.status === "SCHEDULED" ? "Manage" : "Live"}
+                                {m.status === "ONGOING" || m.status === "PAUSED" ? "Live" : "Manage"}
                               </Button>
                             )}
                           </div>

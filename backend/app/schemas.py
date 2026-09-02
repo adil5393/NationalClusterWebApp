@@ -560,7 +560,7 @@ class OrganizerUserRead(ORMModel):
 # venue, round/tournament names) that don't live on the Match row itself.
 TOURNAMENT_STATUSES = ["draft", "active", "completed"]
 MATCH_STATUSES = ["SCHEDULED", "ONGOING", "PAUSED", "COMPLETED", "CANCELLED", "POSTPONED"]
-MATCH_EVENT_TYPES = ["SCORE", "START", "PAUSE", "RESUME", "COMPLETE", "CANCEL", "POSTPONE", "WINNER_SET", "RESCHEDULE", "FORFEIT"]
+MATCH_EVENT_TYPES = ["SCORE", "START", "PAUSE", "RESUME", "COMPLETE", "CANCEL", "POSTPONE", "WINNER_SET", "RESCHEDULE", "FORFEIT", "RESET"]
 
 
 class TournamentCreate(BaseModel):
@@ -702,6 +702,16 @@ class MatchCompleteRequest(BaseModel):
 
 class MatchForfeitRequest(BaseModel):
     forfeiting_team_id: int
+
+
+class MatchResetRequest(BaseModel):
+    # Always sent explicitly (even when unchanged) — the frontend's reset
+    # panel pre-fills both with the match's current teams, so "leave as-is"
+    # and "pick a different team" look the same on the wire. null clears a
+    # slot back to TBD. Ignored (must match current teams) for a League pool
+    # match — its fixtures are fixed by the pool's round-robin schedule.
+    team_a_id: Optional[int] = None
+    team_b_id: Optional[int] = None
 
 
 class ResolveTiebreakRequest(BaseModel):
