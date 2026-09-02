@@ -462,6 +462,13 @@ class Tournament(TimestampMixin, Base):
     # seeding routers/buckets.py _seed_league_pool_pairs uses when building
     # the next Knockout round from them.
     league_advance_count = Column(Integer, nullable=False, default=2)
+    # How this tournament's bracket was produced by generate_bracket:
+    # "AUTO" (whole_season=True — every round pre-wired, advances on its own,
+    # no Bucket needed) or "MANUAL" (whole_season=False — each later round is
+    # built one at a time via routers/buckets.py). NULL for a tournament that
+    # never used Generate Bracket (built the old way, plain POST /rounds) —
+    # treated like MANUAL everywhere this is checked.
+    bracket_mode = Column(String(10))
 
     rounds = relationship(
         "Round", back_populates="tournament", cascade="all, delete-orphan", order_by="Round.sequence"
@@ -582,11 +589,19 @@ class Pool(TimestampMixin, Base):
     round_id = Column(Integer, ForeignKey("rounds.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(80), nullable=False)
     status = Column(String(20), nullable=False, default="draft")
+    # Set once an organizer directly resolves a standings tie for this pool's
+    # qualifying spot (routers/pools.py resolve_pool_tiebreak) instead of
+    # picking tie_candidates through the Bucket flow — the final qualifier
+    # team ids, in rank order (index 0 = winner). Overrides
+    # routers/matches.py _compute_advancing_teams's own tie detection for
+    # this pool once set. NULL means no override — the normal standings-based
+    # computation (and its tie detection) applies.
+    manual_qualifier_ids = Column(JSON)
 
     tournament = relationship("Tournament")
     round = relationship("Round", back_populates="pools")
     teams = relationship("Team", secondary=pool_teams, backref="pools")
-    matches = relationship("Match", back_populates="pool")
+    matches = relationship("Match", back_populates="pool", foreign_keys="Match.pool_id")
 
 
 class Match(TimestampMixin, Base):
@@ -611,6 +626,15 @@ class Match(TimestampMixin, Base):
     # If a slot isn't filled by a known team yet, it's fed by another match's winner.
     source_match_a_id = Column(Integer, ForeignKey("matches.id", ondelete="SET NULL"))
     source_match_b_id = Column(Integer, ForeignKey("matches.id", ondelete="SET NULL"))
+    # ...or, for the Knockout round built straight off a League round's pools
+    # (whole-season League generation), by a specific pool's qualifier at a
+    # specific rank (1 = winner, 2 = runner-up) — the pool-stage equivalent of
+    # source_match_a/b_id, filled in by routers/matches.py
+    # _propagate_pool_qualifiers once that pool's standings are final.
+    source_pool_a_id = Column(Integer, ForeignKey("pools.id", ondelete="SET NULL"))
+    source_pool_a_rank = Column(Integer)
+    source_pool_b_id = Column(Integer, ForeignKey("pools.id", ondelete="SET NULL"))
+    source_pool_b_rank = Column(Integer)
 
     venue_id = Column(Integer, ForeignKey("venues.id", ondelete="SET NULL"))
     scheduled_at = Column(DateTime(timezone=True))
@@ -619,6 +643,11 @@ class Match(TimestampMixin, Base):
     team_a_score = Column(Integer, nullable=False, default=0)
     team_b_score = Column(Integer, nullable=False, default=0)
     winner_team_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"))
+    # Set when this match was decided by forfeit rather than played out — the
+    # team that forfeited (the *other* team is winner_team_id, same as any
+    # other completed match). Purely informational: status stays COMPLETED so
+    # every existing "is this match decided" check keeps working unchanged.
+    forfeited_team_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"))
 
     started_at = Column(DateTime(timezone=True))
     ended_at = Column(DateTime(timezone=True))
@@ -626,13 +655,16 @@ class Match(TimestampMixin, Base):
 
     tournament = relationship("Tournament")
     round = relationship("Round", back_populates="matches", foreign_keys=[round_id])
-    pool = relationship("Pool", back_populates="matches")
+    pool = relationship("Pool", back_populates="matches", foreign_keys=[pool_id])
     team_a = relationship("Team", foreign_keys=[team_a_id])
     team_b = relationship("Team", foreign_keys=[team_b_id])
     winner_team = relationship("Team", foreign_keys=[winner_team_id])
+    forfeited_team = relationship("Team", foreign_keys=[forfeited_team_id])
     venue = relationship("Venue")
     source_match_a = relationship("Match", remote_side=[id], foreign_keys=[source_match_a_id])
     source_match_b = relationship("Match", remote_side=[id], foreign_keys=[source_match_b_id])
+    source_pool_a = relationship("Pool", foreign_keys=[source_pool_a_id])
+    source_pool_b = relationship("Pool", foreign_keys=[source_pool_b_id])
     events = relationship(
         "MatchEvent", back_populates="match", cascade="all, delete-orphan", order_by="MatchEvent.id"
     )

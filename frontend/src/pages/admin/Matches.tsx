@@ -23,6 +23,7 @@ import {
   ArrowRight,
   Check,
   X,
+  UserX,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -77,6 +78,8 @@ interface MatchT {
   team_b_score: number;
   winner_team_id?: number | null;
   winner_team_name?: string | null;
+  forfeited_team_id?: number | null;
+  forfeited_team_name?: string | null;
   started_at?: string | null;
   ended_at?: string | null;
   notes?: string | null;
@@ -99,6 +102,7 @@ interface TournamentT {
   notes?: string | null;
   min_present_players?: number;
   league_advance_count?: number;
+  bracket_mode?: string | null;
   round_count: number;
   match_count: number;
   rounds?: RoundT[];
@@ -113,6 +117,13 @@ interface BucketPoolStatusT {
   pool_name: string;
   ready: boolean;
   pulled: boolean;
+  qualifiers: TeamBrief[];
+  needs_tiebreak: boolean;
+  tie_candidates: TeamBrief[];
+  tie_need: number;
+}
+interface PoolQualifierInfoT {
+  ready: boolean;
   qualifiers: TeamBrief[];
   needs_tiebreak: boolean;
   tie_candidates: TeamBrief[];
@@ -163,6 +174,11 @@ const STATUS_TONE: Record<string, "neutral" | "coral" | "green" | "blue" | "ambe
   CANCELLED: "red",
   POSTPONED: "amber",
 };
+// A forfeited match is still COMPLETED (see backend/app/models.py
+// Match.forfeited_team_id) — flagged here purely for display so it stays
+// visually distinct from a normally decided result.
+const matchStatusTone = (m: MatchT) => (m.forfeited_team_id ? "amber" : STATUS_TONE[m.status]);
+const matchStatusLabel = (m: MatchT) => (m.status === "COMPLETED" && m.forfeited_team_id ? "WALKOVER" : m.status);
 
 const RED = "#ef4444";
 const BLUE = "#3b82f6";
@@ -223,8 +239,8 @@ function RoundMatchesList({
                 <p className="font-heading font-bold text-white text-sm break-words">{matchLabel(m)}</p>
               </div>
               <div className="flex items-center gap-1 shrink-0">
-                <Badge tone={STATUS_TONE[m.status]} size="sm">
-                  {m.status}
+                <Badge tone={matchStatusTone(m)} size="sm">
+                  {matchStatusLabel(m)}
                 </Badge>
                 {canEdit && m.status === "SCHEDULED" && m.team_a_id && m.team_b_id && (
                   <Button
@@ -237,13 +253,15 @@ function RoundMatchesList({
                     <Play className="h-3.5 w-3.5" />
                   </Button>
                 )}
-                {(m.status === "ONGOING" || m.status === "PAUSED") && (
+                {(m.status === "ONGOING" ||
+                  m.status === "PAUSED" ||
+                  (m.status === "SCHEDULED" && m.team_a_id && m.team_b_id)) && (
                   <Button
                     variant="outline"
                     size="icon-sm"
                     className="text-emerald-400 hover:bg-emerald-500/10"
                     onClick={() => onOpenConsole(m.id)}
-                    title="Open live console"
+                    title={m.status === "SCHEDULED" ? "Manage match (forfeit, etc.)" : "Open live console"}
                   >
                     <Radio className="h-3.5 w-3.5" />
                   </Button>
@@ -332,8 +350,8 @@ function RoundMatchesList({
                   {m.scheduled_at ? formatDate(m.scheduled_at) : "—"}
                 </TD>
                 <TD>
-                  <Badge tone={STATUS_TONE[m.status]} size="sm">
-                    {m.status}
+                  <Badge tone={matchStatusTone(m)} size="sm">
+                    {matchStatusLabel(m)}
                   </Badge>
                 </TD>
                 <TD className="font-heading font-bold text-white text-sm">
@@ -354,12 +372,14 @@ function RoundMatchesList({
                         <Play className="h-4 w-4 text-emerald-400" />
                       </Button>
                     )}
-                    {(m.status === "ONGOING" || m.status === "PAUSED") && (
+                    {(m.status === "ONGOING" ||
+                      m.status === "PAUSED" ||
+                      (m.status === "SCHEDULED" && m.team_a_id && m.team_b_id)) && (
                       <Button
                         variant="ghost"
                         size="icon-sm"
                         onClick={() => onOpenConsole(m.id)}
-                        title="Open live console"
+                        title={m.status === "SCHEDULED" ? "Manage match (forfeit, etc.)" : "Open live console"}
                       >
                         <Radio className="h-4 w-4 text-emerald-400" />
                       </Button>
@@ -481,6 +501,7 @@ export default function Matches() {
   const [bgShuffle, setBgShuffle] = useState(true);
   const [bgWholeSeason, setBgWholeSeason] = useState(true);
   const [bgFormat, setBgFormat] = useState<"KNOCKOUT" | "LEAGUE">("KNOCKOUT");
+  const [bgTeamsPerPool, setBgTeamsPerPool] = useState("4");
   const [bgSaving, setBgSaving] = useState(false);
 
   const [bucketRoundId, setBucketRoundId] = useState<number | null>(null);
@@ -646,6 +667,7 @@ export default function Matches() {
     setBgShuffle(true);
     setBgWholeSeason(true);
     setBgFormat("KNOCKOUT");
+    setBgTeamsPerPool("4");
     setBgOpen(true);
   };
   const toggleBgTeam = (id: number) => {
@@ -654,7 +676,8 @@ export default function Matches() {
   };
   const bgNumByes =
     bgFormat === "KNOCKOUT" && bgTeamIds.length >= 2 ? bracketSizeFor(bgTeamIds.length) - bgTeamIds.length : 0;
-  const bgMaxByes = bgFormat === "LEAGUE" ? Math.max(0, bgTeamIds.length - 2) : bgNumByes;
+  const bgMaxByes =
+    bgFormat === "LEAGUE" ? (bgWholeSeason ? 0 : Math.max(0, bgTeamIds.length - 2)) : bgNumByes;
   useEffect(() => {
     if (bgFormat !== "KNOCKOUT") return;
     setBgByeTeamIds((ids) => {
@@ -665,6 +688,9 @@ export default function Matches() {
       return [...valid, ...remaining.slice(0, bgNumByes - valid.length)];
     });
   }, [bgTeamIds, bgNumByes, bgFormat]);
+  useEffect(() => {
+    if (bgMaxByes === 0) setBgByeTeamIds([]);
+  }, [bgMaxByes]);
   const toggleBgByeTeam = (id: number) => {
     setBgByeTeamIds((ids) => {
       if (ids.includes(id)) return ids.filter((x) => x !== id);
@@ -679,6 +705,10 @@ export default function Matches() {
       return toast.error(`Select exactly ${bgNumByes} team(s) for the Round 1 bye`);
     if (bgFormat === "LEAGUE" && bgTeamIds.length - bgByeTeamIds.length < 2)
       return toast.error("At least 2 teams must play Round 1 — pick fewer byes");
+    const leagueWholeSeason = bgFormat === "LEAGUE" && bgWholeSeason;
+    const teamsPerPoolN = Number(bgTeamsPerPool);
+    if (leagueWholeSeason && (!Number.isFinite(teamsPerPoolN) || teamsPerPoolN < 2))
+      return toast.error("Enter a valid number of teams per pool (at least 2)");
     const order = bgShuffle ? [...bgTeamIds].sort(() => Math.random() - 0.5) : bgTeamIds;
     setBgSaving(true);
     try {
@@ -688,9 +718,12 @@ export default function Matches() {
         bye_team_ids: bgByeTeamIds,
         whole_season: bgWholeSeason,
         format: bgFormat,
+        ...(leagueWholeSeason ? { teams_per_pool: teamsPerPoolN } : {}),
       });
       toast.success(
-        bgFormat === "LEAGUE"
+        leagueWholeSeason
+          ? "League season generated"
+          : bgFormat === "LEAGUE"
           ? "Round 1 generated"
           : bgWholeSeason
           ? "Bracket generated"
@@ -834,8 +867,8 @@ export default function Matches() {
                       className="w-full min-w-0 rounded-xl border border-emerald-500/40 bg-obsidian-950 p-3.5 text-left transition-all hover:border-emerald-400 hover:shadow-lg hover:shadow-emerald-500/10 space-y-2 group"
                     >
                       <div className="flex items-center justify-between text-xs">
-                        <Badge tone={STATUS_TONE[m.status]} size="sm">
-                          {m.status}
+                        <Badge tone={matchStatusTone(m)} size="sm">
+                          {matchStatusLabel(m)}
                         </Badge>
                         <span className="truncate text-slate-400 font-mono text-[11px]">
                           {m.tournament_name ?? m.round_name}
@@ -897,6 +930,19 @@ export default function Matches() {
                     : "text-slate-400 hover:text-white hover:bg-white/5",
                 )}
               >
+                {t.bracket_mode && (
+                  <span
+                    className={cn(
+                      "h-1.5 w-1.5 shrink-0 rounded-full",
+                      t.bracket_mode === "AUTO" ? "bg-cyan-400" : "bg-slate-400",
+                    )}
+                    title={
+                      t.bracket_mode === "AUTO"
+                        ? "Auto-generated — whole tournament tree, advances on its own"
+                        : "Manual — built round-by-round via the Bucket"
+                    }
+                  />
+                )}
                 <span>{t.name}</span>
                 {t.age_group && (
                   <span
@@ -938,6 +984,19 @@ export default function Matches() {
                 >
                   {detail.status.toUpperCase()}
                 </Badge>
+                {detail.bracket_mode && (
+                  <Badge
+                    tone={detail.bracket_mode === "AUTO" ? "cyan" : "slate"}
+                    size="sm"
+                    title={
+                      detail.bracket_mode === "AUTO"
+                        ? "Auto-generated — whole tournament tree, advances on its own"
+                        : "Manual — built round-by-round via the Bucket"
+                    }
+                  >
+                    {detail.bracket_mode === "AUTO" ? "Auto" : "Manual"}
+                  </Badge>
+                )}
                 {detail.age_group && (
                   <Badge tone="gold" size="sm">
                     {detail.age_group}
@@ -1127,7 +1186,7 @@ export default function Matches() {
                               >
                                 <Plus className="h-3.5 w-3.5 text-gold" /> Match
                               </Button>
-                              {!hasPlaceholderNext && (
+                              {detail.bracket_mode !== "AUTO" && !hasPlaceholderNext && (
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -1497,6 +1556,8 @@ export default function Matches() {
           <p className="text-xs text-slate-300">
             {bgFormat === "KNOCKOUT"
               ? "Round 1 pairs up the squads. If the count doesn't land on a power of two, select which seed(s) receive a Round 1 bye."
+              : bgWholeSeason
+              ? "Round 1 splits the squads into league pools. Once you choose how many teams advance per pool, the entire knockout tree through the Final is planned out — pool qualifiers fill in the bracket automatically as pools finish."
               : "Round 1 is generated as a league pool stage. Qualified teams will be pulled into subsequent knockout rounds."}
           </p>
 
@@ -1527,43 +1588,60 @@ export default function Matches() {
             </div>
           </div>
 
-          {bgFormat === "KNOCKOUT" && (
-            <div>
-              <Label>Bracket Structure Scope</Label>
-              <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={() => setBgWholeSeason(true)}
-                  data-testid="bracket-scope-whole"
-                  className={cn(
-                    "rounded-xl border p-3 text-left text-xs transition-all",
-                    bgWholeSeason
-                      ? "border-gold bg-gold/10 ring-1 ring-gold"
-                      : "border-white/10 bg-obsidian-950 hover:bg-white/5",
-                  )}
-                >
-                  <p className="font-heading font-bold text-white">Full Tournament Tree</p>
-                  <p className="mt-0.5 text-slate-400">
-                    Auto-generates every round through the Final, auto-advancing winners as matches conclude.
-                  </p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBgWholeSeason(false)}
-                  data-testid="bracket-scope-first-round"
-                  className={cn(
-                    "rounded-xl border p-3 text-left text-xs transition-all",
-                    !bgWholeSeason
-                      ? "border-gold bg-gold/10 ring-1 ring-gold"
-                      : "border-white/10 bg-obsidian-950 hover:bg-white/5",
-                  )}
-                >
-                  <p className="font-heading font-bold text-white">Round 1 Only</p>
-                  <p className="mt-0.5 text-slate-400">
-                    Creates Round 1 only — later stages are advanced round-by-round through the Bucket.
-                  </p>
-                </button>
-              </div>
+          <div>
+            <Label>Bracket Structure Scope</Label>
+            <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setBgWholeSeason(true)}
+                data-testid="bracket-scope-whole"
+                className={cn(
+                  "rounded-xl border p-3 text-left text-xs transition-all",
+                  bgWholeSeason
+                    ? "border-gold bg-gold/10 ring-1 ring-gold"
+                    : "border-white/10 bg-obsidian-950 hover:bg-white/5",
+                )}
+              >
+                <p className="font-heading font-bold text-white">Full Tournament Tree</p>
+                <p className="mt-0.5 text-slate-400">
+                  {bgFormat === "LEAGUE"
+                    ? "Auto-generates the pool stage plus every knockout round through the Final, auto-filling pool qualifiers and match winners as they're decided."
+                    : "Auto-generates every round through the Final, auto-advancing winners as matches conclude."}
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setBgWholeSeason(false)}
+                data-testid="bracket-scope-first-round"
+                className={cn(
+                  "rounded-xl border p-3 text-left text-xs transition-all",
+                  !bgWholeSeason
+                    ? "border-gold bg-gold/10 ring-1 ring-gold"
+                    : "border-white/10 bg-obsidian-950 hover:bg-white/5",
+                )}
+              >
+                <p className="font-heading font-bold text-white">Round 1 Only</p>
+                <p className="mt-0.5 text-slate-400">
+                  Creates Round 1 only — later stages are advanced round-by-round through the Bucket.
+                </p>
+              </button>
+            </div>
+          </div>
+
+          {bgFormat === "LEAGUE" && bgWholeSeason && (
+            <div className="flex items-center gap-2">
+              <Label className="mb-0 whitespace-nowrap">Teams per Pool</Label>
+              <Input
+                type="number"
+                min={2}
+                value={bgTeamsPerPool}
+                onChange={(e) => setBgTeamsPerPool(e.target.value)}
+                className="h-8 w-20 text-center text-xs font-mono"
+                data-testid="bracket-teams-per-pool-input"
+              />
+              <span className="text-[11px] text-slate-400">
+                Pool count must land on a power of two (2, 4, 8…) for the knockout tree to pair up.
+              </span>
             </div>
           )}
 
@@ -1628,7 +1706,9 @@ export default function Matches() {
             <span>Shuffle seed positions (Random Draw)</span>
           </label>
 
-          {(bgFormat === "KNOCKOUT" ? bgNumByes > 0 : bgTeamIds.length >= 2) && (
+          {(bgFormat === "KNOCKOUT"
+            ? bgNumByes > 0
+            : !bgWholeSeason && bgTeamIds.length >= 2) && (
             <div>
               <Label>
                 {bgFormat === "KNOCKOUT"
@@ -1682,7 +1762,10 @@ export default function Matches() {
                 bgTeamIds.length < 2 ||
                 (bgFormat === "KNOCKOUT"
                   ? bgByeTeamIds.length !== bgNumByes
-                  : bgTeamIds.length - bgByeTeamIds.length < 2)
+                  : bgTeamIds.length - bgByeTeamIds.length < 2) ||
+                (bgFormat === "LEAGUE" &&
+                  bgWholeSeason &&
+                  (!Number.isFinite(Number(bgTeamsPerPool)) || Number(bgTeamsPerPool) < 2))
               }
               data-testid="save-generate-bracket-btn"
             >
@@ -1804,6 +1887,17 @@ function LiveConsole({
     if (!confirm("Cancel this match? It won't count toward standings and this can't be undone.")) return;
     act("cancel", "Match cancelled");
   };
+  const forfeitMatch = async (forfeitingTeamId: number, forfeitingTeamName: string, winningTeamName: string) => {
+    if (!confirm(`${forfeitingTeamName} forfeits — ${winningTeamName} will be declared the winner. Continue?`)) return;
+    try {
+      await api.post(`/matches/${matchId}/forfeit`, { forfeiting_team_id: forfeitingTeamId });
+      toast.success(`${forfeitingTeamName} forfeited — ${winningTeamName} wins`);
+      load();
+      onChanged();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not record forfeit");
+    }
+  };
   const complete = async () => {
     if (!m) return;
     if (m.team_a_score === m.team_b_score)
@@ -1843,8 +1937,8 @@ function LiveConsole({
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <Badge tone={STATUS_TONE[m.status]} size="md">
-              {m.status}
+            <Badge tone={matchStatusTone(m)} size="md">
+              {matchStatusLabel(m)}
             </Badge>
             <Button
               variant="outline"
@@ -2040,8 +2134,8 @@ function LiveConsole({
           {/* HEADER */}
           <div className="flex items-center justify-between border-b border-white/10 pb-3">
             <div className="flex items-center gap-2">
-              <Badge tone={STATUS_TONE[m.status]} size="sm">
-                {m.status === "ONGOING" ? "● LIVE IN PROGRESS" : m.status}
+              <Badge tone={matchStatusTone(m)} size="sm">
+                {m.status === "ONGOING" ? "● LIVE IN PROGRESS" : matchStatusLabel(m)}
               </Badge>
               <span className="text-xs text-slate-400 font-mono">{m.round_name}</span>
             </div>
@@ -2177,6 +2271,26 @@ function LiveConsole({
                 >
                   <Ban className="h-4 w-4" /> Cancel
                 </Button>
+                {m.status !== "COMPLETED" && m.status !== "CANCELLED" && m.team_a_id && m.team_b_id && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-red-400 hover:bg-red-500/10"
+                      onClick={() => forfeitMatch(m.team_a_id!, m.team_a_name ?? "Team A", m.team_b_name ?? "Team B")}
+                    >
+                      <UserX className="h-4 w-4" /> Forfeit: {m.team_a_name}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-red-400 hover:bg-red-500/10"
+                      onClick={() => forfeitMatch(m.team_b_id!, m.team_b_name ?? "Team B", m.team_a_name ?? "Team A")}
+                    >
+                      <UserX className="h-4 w-4" /> Forfeit: {m.team_b_name}
+                    </Button>
+                  </>
+                )}
               </div>
               <Button
                 variant="gold"
@@ -3344,6 +3458,9 @@ function PoolDetailDialog({
   const [pool, setPool] = useState<PoolT | null>(null);
   const [matches, setMatches] = useState<MatchT[]>([]);
   const [standings, setStandings] = useState<StandingRow[]>([]);
+  const [qualifierInfo, setQualifierInfo] = useState<PoolQualifierInfoT | null>(null);
+  const [tiePicks, setTiePicks] = useState<number[]>([]);
+  const [resolvingTie, setResolvingTie] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const load = (silent = false) => {
@@ -3352,15 +3469,39 @@ function PoolDetailDialog({
       api.get<PoolT>(`/pools/${poolId}`),
       api.get<MatchT[]>(`/pools/${poolId}/matches`),
       api.get<StandingRow[]>(`/pools/${poolId}/standings`),
+      api.get<PoolQualifierInfoT>(`/pools/${poolId}/qualifiers`),
     ])
-      .then(([p, m, s]) => {
+      .then(([p, m, s, q]) => {
         setPool(p.data);
         setMatches(m.data);
         setStandings(s.data);
+        setQualifierInfo(q.data);
+        setTiePicks([]);
       })
       .finally(() => setLoading(false));
   };
   useEffect(() => load(), [poolId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleTiePick = (teamId: number, need: number) => {
+    setTiePicks((prev) => {
+      if (prev.includes(teamId)) return prev.filter((x) => x !== teamId);
+      if (prev.length >= need) return prev;
+      return [...prev, teamId];
+    });
+  };
+  const resolveTie = async (teamIds: number[]) => {
+    setResolvingTie(true);
+    try {
+      await api.post(`/pools/${poolId}/resolve-tiebreak`, { team_ids: teamIds });
+      toast.success("Qualifier(s) confirmed");
+      load(true);
+      onChanged();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not resolve tie");
+    } finally {
+      setResolvingTie(false);
+    }
+  };
 
   const startMatch = async (id: number) => {
     try {
@@ -3474,6 +3615,66 @@ function PoolDetailDialog({
             )}
           </div>
 
+          {/* TIE-BREAK — organizer resolves a tied qualifying spot directly,
+              no Bucket required (see routers/pools.py resolve_pool_tiebreak) */}
+          {canEdit && qualifierInfo?.needs_tiebreak && (
+            <div
+              className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 space-y-2"
+              data-testid="pool-tiebreak-panel"
+            >
+              <p className="text-xs font-semibold text-amber-400">
+                Tie for the qualifying spot — {qualifierInfo.tie_need === 1
+                  ? "select who won it"
+                  : `pick ${qualifierInfo.tie_need} of ${qualifierInfo.tie_candidates.length}`}
+              </p>
+              {qualifierInfo.tie_need === 1 ? (
+                <div className="flex flex-wrap gap-2">
+                  {qualifierInfo.tie_candidates.map((t) => (
+                    <Button
+                      key={t.id}
+                      size="sm"
+                      variant="outline"
+                      disabled={resolvingTie}
+                      onClick={() => resolveTie([t.id])}
+                      className="text-xs font-bold text-emerald-400 hover:bg-emerald-500/10"
+                      data-testid={`tiebreak-mark-won-${t.id}`}
+                    >
+                      <Check className="h-3.5 w-3.5" /> {t.name} Won
+                    </Button>
+                  ))}
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-wrap gap-2">
+                    {qualifierInfo.tie_candidates.map((t) => (
+                      <label
+                        key={t.id}
+                        className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-obsidian-950 px-2.5 py-1 text-xs text-slate-200 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={tiePicks.includes(t.id)}
+                          disabled={!tiePicks.includes(t.id) && tiePicks.length >= qualifierInfo.tie_need}
+                          onChange={() => toggleTiePick(t.id, qualifierInfo.tie_need)}
+                          className="rounded border-white/20 text-gold focus:ring-gold"
+                        />
+                        {t.name}
+                      </label>
+                    ))}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="gold"
+                    disabled={resolvingTie || tiePicks.length !== qualifierInfo.tie_need}
+                    onClick={() => resolveTie(tiePicks)}
+                  >
+                    Confirm Qualifiers
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
+
           {/* FIXTURES */}
           <div>
             <h4 className="text-xs font-heading font-bold uppercase tracking-wider text-slate-400">
@@ -3503,8 +3704,8 @@ function PoolDetailDialog({
                           {m.team_a_name} vs {m.team_b_name}
                         </TD>
                         <TD>
-                          <Badge tone={STATUS_TONE[m.status]} size="sm">
-                            {m.status}
+                          <Badge tone={matchStatusTone(m)} size="sm">
+                            {matchStatusLabel(m)}
                           </Badge>
                         </TD>
                         <TD className="font-mono text-xs font-bold text-slate-200">
@@ -3524,14 +3725,17 @@ function PoolDetailDialog({
                                 <Play className="h-3 w-3 text-emerald-400" /> Start
                               </Button>
                             )}
-                            {(m.status === "ONGOING" || m.status === "PAUSED") && (
+                            {(m.status === "ONGOING" ||
+                              m.status === "PAUSED" ||
+                              (m.status === "SCHEDULED" && m.team_a_id && m.team_b_id)) && (
                               <Button
                                 size="sm"
                                 variant="outline"
                                 onClick={() => onOpenConsole(m.id)}
                                 className="text-xs text-emerald-400"
                               >
-                                <Radio className="h-3 w-3" /> Live
+                                <Radio className="h-3 w-3" />
+                                {m.status === "SCHEDULED" ? "Manage" : "Live"}
                               </Button>
                             )}
                           </div>

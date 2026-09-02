@@ -94,3 +94,5 @@ credentials.json
 .claude/
 
 /backend/tests/*
+
+test*.py

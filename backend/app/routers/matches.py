@@ -46,6 +46,12 @@ def _match_dict(m: models.Match, db: Session) -> dict:
         "team_b_name": _team_name(db, m.team_b_id),
         "source_match_a_id": m.source_match_a_id,
         "source_match_b_id": m.source_match_b_id,
+        "source_pool_a_id": m.source_pool_a_id,
+        "source_pool_a_name": m.source_pool_a.name if m.source_pool_a else None,
+        "source_pool_a_rank": m.source_pool_a_rank,
+        "source_pool_b_id": m.source_pool_b_id,
+        "source_pool_b_name": m.source_pool_b.name if m.source_pool_b else None,
+        "source_pool_b_rank": m.source_pool_b_rank,
         "venue_id": m.venue_id,
         "venue_name": venue.name if venue else None,
         "scheduled_at": m.scheduled_at.isoformat() if m.scheduled_at else None,
@@ -54,6 +60,8 @@ def _match_dict(m: models.Match, db: Session) -> dict:
         "team_b_score": m.team_b_score,
         "winner_team_id": m.winner_team_id,
         "winner_team_name": _team_name(db, m.winner_team_id),
+        "forfeited_team_id": m.forfeited_team_id,
+        "forfeited_team_name": _team_name(db, m.forfeited_team_id),
         "started_at": m.started_at.isoformat() if m.started_at else None,
         "ended_at": m.ended_at.isoformat() if m.ended_at else None,
         "notes": m.notes,
@@ -82,6 +90,7 @@ def _tournament_dict(t: models.Tournament, db: Session, with_rounds: bool = Fals
         "notes": t.notes,
         "min_present_players": t.min_present_players,
         "league_advance_count": t.league_advance_count,
+        "bracket_mode": t.bracket_mode,
         "round_count": len(t.rounds),
         "match_count": sum(len(r.matches) for r in t.rounds),
     }
@@ -171,6 +180,37 @@ def _propagate_winner(db: Session, match: models.Match) -> None:
             dep.team_a_id = match.winner_team_id
         if dep.source_match_b_id == match.id and dep.team_b_id is None:
             dep.team_b_id = match.winner_team_id
+
+
+def _propagate_pool_qualifiers(db: Session, pool: models.Pool) -> None:
+    """The League-round equivalent of _propagate_winner: once a pool's
+    standings are final (every match COMPLETED/CANCELLED) and unambiguous
+    (no tie for the qualifying spot — see _compute_advancing_teams), fill in
+    any pre-planned Knockout match slot waiting on this pool's qualifier at a
+    given rank (1 = winner, 2 = runner-up; see Match.source_pool_a/b_id, set
+    up by generate_bracket's whole-season League planning). A tied pool is
+    simply left alone here — nothing fires until the organizer resolves it
+    (same tie-break UI the manual bucket flow already uses), same as this
+    function just not running yet rather than guessing."""
+    dependents = (
+        db.query(models.Match)
+        .filter((models.Match.source_pool_a_id == pool.id) | (models.Match.source_pool_b_id == pool.id))
+        .all()
+    )
+    if not dependents:
+        return  # not a whole-season League pool — nothing pre-wired to it
+
+    advancing = _compute_advancing_teams(db, pool.round)
+    pool_info = next((p for p in advancing["pools"] if p["pool_id"] == pool.id), None)
+    if not pool_info or not pool_info["ready"] or pool_info["needs_tiebreak"]:
+        return
+    qualifier_by_rank = {i + 1: q["id"] for i, q in enumerate(pool_info["qualifiers"])}
+
+    for dep in dependents:
+        if dep.source_pool_a_id == pool.id and dep.team_a_id is None:
+            dep.team_a_id = qualifier_by_rank.get(dep.source_pool_a_rank)
+        if dep.source_pool_b_id == pool.id and dep.team_b_id is None:
+            dep.team_b_id = qualifier_by_rank.get(dep.source_pool_b_rank)
 
 
 # ---------- Tournaments ----------
@@ -343,69 +383,20 @@ def _bracket_round_name(match_count: int) -> str:
     return f"Round of {match_count * 2}"
 
 
-@router.post("/api/tournaments/{tournament_id}/generate-bracket", status_code=201)
-def generate_bracket(tournament_id: int, payload: schemas.GenerateBracketRequest, db: Session = Depends(get_db)):
-    """Builds Round 1 from a flat team list. format == "KNOCKOUT" (default):
-    Round 1 always pairs the teams up right away. If `whole_season` (default
-    True), every later round is auto-created too, with placeholder slots
-    (source_match_a/b_id) wired to the two matches that feed it, all the way
-    down to a 1-match Final — so completing a match later fills the next
-    round's slot automatically (see _propagate_winner). If False, only Round 1
-    is created; later rounds get built one at a time via the bucket flow
-    once each round finishes. If the team count isn't a power of two,
-    `bye_team_ids` must name exactly the teams that get a Round 1 bye — the
-    organizer's call, not an automatic pick — spread out so no two byes land
-    on the same pairing.
-
-    format == "LEAGUE": Round 1 is created with the non-bye teams as its
-    entrant roster (pools built afterward by hand, same as any League round);
-    `bye_team_ids` here is entirely optional and any count — those teams skip
-    Round 1's pools altogether and are immediately pullable into a bucket for
-    Round 2 via _compute_advancing_teams's bye_teams. whole_season doesn't
-    apply — a pool stage can't plan its later rounds upfront."""
-    t = db.get(models.Tournament, tournament_id)
-    if not t:
-        raise HTTPException(404, "Tournament not found")
-
-    team_ids = list(dict.fromkeys(payload.team_ids))  # de-dupe, keep order
-    if len(team_ids) < 2:
-        raise HTTPException(400, "Pick at least 2 teams to generate a bracket")
-    for team_id in team_ids:
-        if not db.get(models.Team, team_id):
-            raise HTTPException(404, f"Team {team_id} not found")
-        _check_team_age_group(db, team_id, t.age_group)
-        _check_team_playable(db, team_id, t)
-
-    existing_rounds = db.query(models.Round).filter(models.Round.tournament_id == tournament_id).count()
-    if existing_rounds > 0 and not payload.replace:
-        raise HTTPException(409, "This tournament already has fixtures — confirm to delete them and regenerate")
-    if existing_rounds > 0:
-        db.query(models.Round).filter(models.Round.tournament_id == tournament_id).delete()
-        db.flush()
-
-    if payload.format == "LEAGUE":
-        bye_ids = list(dict.fromkeys(payload.bye_team_ids))
-        for bid in bye_ids:
-            if bid not in team_ids:
-                raise HTTPException(400, f"Bye team {bid} isn't in the selected team list")
-        playing_ids = [tid for tid in team_ids if tid not in set(bye_ids)]
-        if len(playing_ids) < 2:
-            raise HTTPException(400, "At least 2 teams must play Round 1 — pick fewer byes")
-
-        round_ = models.Round(tournament_id=tournament_id, name="Round 1", sequence=1, format="LEAGUE")
-        db.add(round_)
-        db.flush()
-        round_.entrants = [db.get(models.Team, tid) for tid in playing_ids]
-        for bid in bye_ids:
-            _create_bye_match(db, tournament_id, round_.id, bid)
-        db.commit()
-        return _tournament_dict(t, db, with_rounds=True)
-
-    current: list[tuple[str, int | None]] = _place_byes(team_ids, payload.bye_team_ids)
-
-    round_index = 0
+def _plan_knockout_rounds(
+    db: Session, tournament_id: int, start_index: int, current: list[tuple[str, int | None]], whole_season: bool,
+) -> None:
+    """Builds Round `start_index`, `start_index + 1`, ... through the Final by
+    repeatedly pairing up `current` two at a time — each entry either
+    ("team", id) (already known), ("bye", id), or ("match", match_id) (a
+    placeholder resolved once that match completes, via _propagate_winner) —
+    stopping after the first round built unless whole_season. Shared by
+    generate_bracket's own Round-1-onward Knockout tree (current seeded from
+    _place_byes) and its whole-season League planning (current seeded from
+    Round 2's pool-pair matches, already created by the caller with
+    source_pool_a/b_id wiring instead of source_match_a/b_id)."""
+    round_index = start_index
     while len(current) > 1:
-        round_index += 1
         pairs = [current[i:i + 2] for i in range(0, len(current), 2)]
         round_ = models.Round(tournament_id=tournament_id, name=_bracket_round_name(len(pairs)), sequence=round_index, format="KNOCKOUT")
         db.add(round_)
@@ -413,11 +404,6 @@ def generate_bracket(tournament_id: int, payload: schemas.GenerateBracketRequest
 
         next_round: list[tuple[str, int | None]] = []
         for (kind_a, val_a), (kind_b, val_b) in pairs:
-            # A bye still gets a real, visible match row — auto-completed with
-            # the lone team as winner — so the round isn't silently missing
-            # slots and the next round's already-known team is traceable back
-            # to something ("Bye") instead of looking like it appeared from
-            # nowhere.
             if kind_a == "bye":
                 _create_bye_match(db, tournament_id, round_.id, val_b)
                 next_round.append(("team", val_b))
@@ -438,8 +424,152 @@ def generate_bracket(tournament_id: int, payload: schemas.GenerateBracketRequest
             db.flush()
             next_round.append(("match", m.id))
         current = next_round
+        round_index += 1
+        if not whole_season:
+            break  # this round only — later rounds get built via the advance flow, once it finishes
+
+
+@router.post("/api/tournaments/{tournament_id}/generate-bracket", status_code=201)
+def generate_bracket(tournament_id: int, payload: schemas.GenerateBracketRequest, db: Session = Depends(get_db)):
+    """Builds Round 1 from a flat team list. format == "KNOCKOUT" (default):
+    Round 1 always pairs the teams up right away. If `whole_season` (default
+    True), every later round is auto-created too, with placeholder slots
+    (source_match_a/b_id) wired to the two matches that feed it, all the way
+    down to a 1-match Final — so completing a match later fills the next
+    round's slot automatically (see _propagate_winner). If False, only Round 1
+    is created; later rounds get built one at a time via the bucket flow
+    once each round finishes. If the team count isn't a power of two,
+    `bye_team_ids` must name exactly the teams that get a Round 1 bye — the
+    organizer's call, not an automatic pick — spread out so no two byes land
+    on the same pairing.
+
+    format == "LEAGUE", whole_season False (or omitted): Round 1 is created
+    with the non-bye teams as its entrant roster (pools built afterward by
+    hand, same as any League round); bye_team_ids is optional and any count —
+    those teams skip Round 1's pools entirely and are immediately pullable
+    into a bucket for Round 2 via _compute_advancing_teams's bye_teams.
+
+    format == "LEAGUE", whole_season True: the whole season, League Round 1
+    through the Knockout Final, planned in one shot — every selected team
+    plays Round 1's pools (byes aren't supported here, see below), pools
+    auto-distributed by teams_per_pool the same way auto-create-pools does,
+    Round 2 pre-built with each match wired to a specific pool pair's
+    qualifier(s) (source_pool_a/b_id — Tournament.league_advance_count decides
+    1 or 2 qualifiers per pool and how they cross, see
+    routers/buckets.py's _seed_league_pool_pairs for the same math applied
+    live instead of upfront), and Round 3 through the Final pre-built exactly
+    like the pure-Knockout case above. _propagate_pool_qualifiers fills in
+    Round 2's slots automatically once a pool's standings are final and
+    unambiguous — no manual bucket step needed unless a pool ties. Requires
+    the pool count itself to land on a power of two, for the same reason
+    Round 1 of a pure Knockout tree does."""
+    t = db.get(models.Tournament, tournament_id)
+    if not t:
+        raise HTTPException(404, "Tournament not found")
+
+    team_ids = list(dict.fromkeys(payload.team_ids))  # de-dupe, keep order
+    if len(team_ids) < 2:
+        raise HTTPException(400, "Pick at least 2 teams to generate a bracket")
+    for team_id in team_ids:
+        if not db.get(models.Team, team_id):
+            raise HTTPException(404, f"Team {team_id} not found")
+        _check_team_age_group(db, team_id, t.age_group)
+        _check_team_playable(db, team_id, t)
+
+    existing_rounds = db.query(models.Round).filter(models.Round.tournament_id == tournament_id).count()
+    if existing_rounds > 0 and not payload.replace:
+        raise HTTPException(409, "This tournament already has fixtures — confirm to delete them and regenerate")
+    if existing_rounds > 0:
+        db.query(models.Round).filter(models.Round.tournament_id == tournament_id).delete()
+        db.flush()
+
+    t.bracket_mode = "AUTO" if payload.whole_season else "MANUAL"
+
+    if payload.format == "LEAGUE":
+        bye_ids = list(dict.fromkeys(payload.bye_team_ids))
+        for bid in bye_ids:
+            if bid not in team_ids:
+                raise HTTPException(400, f"Bye team {bid} isn't in the selected team list")
+        playing_ids = [tid for tid in team_ids if tid not in set(bye_ids)]
+        if len(playing_ids) < 2:
+            raise HTTPException(400, "At least 2 teams must play Round 1 — pick fewer byes")
+
+        round_ = models.Round(tournament_id=tournament_id, name="Round 1", sequence=1, format="LEAGUE")
+        db.add(round_)
+        db.flush()
+
         if not payload.whole_season:
-            break  # Round 1 only — later rounds get built via the advance flow, once this one finishes
+            round_.entrants = [db.get(models.Team, tid) for tid in playing_ids]
+            for bid in bye_ids:
+                _create_bye_match(db, tournament_id, round_.id, bid)
+            db.commit()
+            return _tournament_dict(t, db, with_rounds=True)
+
+        if bye_ids:
+            raise HTTPException(400, "Byes aren't supported for a whole-season League plan — every team plays Round 1's pools")
+
+        from ..pool_logic import MIN_POOL_SIZE, distribute_pool_sizes
+        from .pools import _generate_pool_matches
+
+        try:
+            sizes = distribute_pool_sizes(len(playing_ids), payload.teams_per_pool or MIN_POOL_SIZE)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        pool_count = len(sizes)
+        if pool_count < 2 or (pool_count & (pool_count - 1)) != 0:
+            raise HTTPException(
+                400,
+                f"{pool_count} pools isn't a power of two — adjust the team count or teams-per-pool "
+                "so Round 1 lands on 2, 4, 8, etc. pools",
+            )
+
+        round_.entrants = [db.get(models.Team, tid) for tid in playing_ids]
+        pools: list[models.Pool] = []
+        cursor = 0
+        for i, size in enumerate(sizes):
+            chunk = playing_ids[cursor:cursor + size]
+            cursor += size
+            pool = models.Pool(tournament_id=tournament_id, round_id=round_.id, name=f"Pool {chr(65 + i)}")
+            db.add(pool)
+            db.flush()
+            pool.teams = [db.get(models.Team, tid) for tid in chunk]
+            db.flush()
+            _generate_pool_matches(db, pool)
+            pool.status = "finalized"
+            pools.append(pool)
+
+        bracket_size = pool_count * t.league_advance_count
+        round2 = models.Round(
+            tournament_id=tournament_id, name=_bracket_round_name(bracket_size // 2), sequence=2, format="KNOCKOUT",
+            source_round_id=round_.id,
+        )
+        db.add(round2)
+        db.flush()
+
+        current: list[tuple[str, int | None]] = []
+        for i in range(pool_count // 2):
+            pool_a, pool_b = pools[i], pools[pool_count - 1 - i]
+            pairs_for_this_pool_pair = (
+                [(pool_a, 1, pool_b, 1)]
+                if t.league_advance_count == 1
+                else [(pool_a, 1, pool_b, 2), (pool_b, 1, pool_a, 2)]
+            )
+            for src_a, rank_a, src_b, rank_b in pairs_for_this_pool_pair:
+                m = models.Match(
+                    tournament_id=tournament_id, round_id=round2.id,
+                    source_pool_a_id=src_a.id, source_pool_a_rank=rank_a,
+                    source_pool_b_id=src_b.id, source_pool_b_rank=rank_b,
+                )
+                db.add(m)
+                db.flush()
+                current.append(("match", m.id))
+
+        _plan_knockout_rounds(db, tournament_id, 3, current, whole_season=True)
+        db.commit()
+        return _tournament_dict(t, db, with_rounds=True)
+
+    current: list[tuple[str, int | None]] = _place_byes(team_ids, payload.bye_team_ids)
+    _plan_knockout_rounds(db, tournament_id, 1, current, payload.whole_season)
 
     db.commit()
     return _tournament_dict(t, db, with_rounds=True)
@@ -547,21 +677,28 @@ def _compute_advancing_teams(db: Session, round_: models.Round) -> dict:
             qualifiers: list[dict] = []
             tie_candidates: list[dict] = []
             tie_need = 0
-            i = 0
-            while pool_ready and i < len(standings) and len(qualifiers) < need:
-                key = _standings_key(standings[i])
-                group = [standings[i]]
-                j = i + 1
-                while j < len(standings) and _standings_key(standings[j]) == key:
-                    group.append(standings[j])
-                    j += 1
-                if len(qualifiers) + len(group) <= need:
-                    qualifiers.extend(group)
-                    i = j
-                else:
-                    tie_candidates = group
-                    tie_need = need - len(qualifiers)
-                    break
+            if pool_ready and p.manual_qualifier_ids:
+                # Organizer already resolved this pool's tie directly (see
+                # routers/pools.py resolve_pool_tiebreak) — use their picks
+                # instead of re-detecting the tie every time.
+                name_by_id = {row["team_id"]: row["team_name"] for row in standings}
+                qualifiers = [{"team_id": tid, "team_name": name_by_id.get(tid)} for tid in p.manual_qualifier_ids]
+            else:
+                i = 0
+                while pool_ready and i < len(standings) and len(qualifiers) < need:
+                    key = _standings_key(standings[i])
+                    group = [standings[i]]
+                    j = i + 1
+                    while j < len(standings) and _standings_key(standings[j]) == key:
+                        group.append(standings[j])
+                        j += 1
+                    if len(qualifiers) + len(group) <= need:
+                        qualifiers.extend(group)
+                        i = j
+                    else:
+                        tie_candidates = group
+                        tie_need = need - len(qualifiers)
+                        break
             needs_tiebreak = len(tie_candidates) > 0
             if pool_ready:
                 pools_ready += 1
@@ -841,6 +978,8 @@ def complete_match(match_id: int, payload: schemas.MatchCompleteRequest, db: Ses
     m.ended_at = datetime.now(timezone.utc)
     _log_event(db, m, "COMPLETE", current, team_id=winner_id)
     _propagate_winner(db, m)
+    if m.pool_id:
+        _propagate_pool_qualifiers(db, m.pool)
     db.commit()
     db.refresh(m)
     broadcast_match_event_sync(m, "match_completed")
@@ -857,9 +996,42 @@ def cancel_match(match_id: int, db: Session = Depends(get_db), current: models.O
     m.status = "CANCELLED"
     _log_event(db, m, "CANCEL", current)
     _free_pushed_bucket_entries(db, m.round_id, [m.team_a_id, m.team_b_id])
+    if m.pool_id:
+        _propagate_pool_qualifiers(db, m.pool)
     db.commit()
     db.refresh(m)
     broadcast_match_event_sync(m, "match_cancelled")
+    return _match_dict(m, db)
+
+
+@router.post("/api/matches/{match_id}/forfeit")
+def forfeit_match(match_id: int, payload: schemas.MatchForfeitRequest, db: Session = Depends(get_db), current: models.OrganizerUser = Depends(require_auth)):
+    """Unlike cancel (voids the match for both teams, no winner), a forfeit
+    still produces a winner — the *other* team — so it completes the match
+    exactly like a normally decided one (same propagation), just tagged with
+    which team forfeited."""
+    m = db.get(models.Match, match_id)
+    if not m:
+        raise HTTPException(404, "Match not found")
+    if m.status in ("COMPLETED", "CANCELLED"):
+        raise HTTPException(409, f"Match is {m.status} — can't be forfeited")
+    if payload.forfeiting_team_id not in (m.team_a_id, m.team_b_id):
+        raise HTTPException(400, "forfeiting_team_id must be one of the two teams in this match")
+    winner_id = m.team_b_id if payload.forfeiting_team_id == m.team_a_id else m.team_a_id
+    if winner_id is None:
+        raise HTTPException(400, "The opposing team slot is still empty")
+
+    m.status = "COMPLETED"
+    m.winner_team_id = winner_id
+    m.forfeited_team_id = payload.forfeiting_team_id
+    m.ended_at = datetime.now(timezone.utc)
+    _log_event(db, m, "FORFEIT", current, team_id=payload.forfeiting_team_id)
+    _propagate_winner(db, m)
+    if m.pool_id:
+        _propagate_pool_qualifiers(db, m.pool)
+    db.commit()
+    db.refresh(m)
+    broadcast_match_event_sync(m, "match_forfeited")
     return _match_dict(m, db)
 
 

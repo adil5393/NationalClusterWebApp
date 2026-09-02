@@ -560,7 +560,7 @@ class OrganizerUserRead(ORMModel):
 # venue, round/tournament names) that don't live on the Match row itself.
 TOURNAMENT_STATUSES = ["draft", "active", "completed"]
 MATCH_STATUSES = ["SCHEDULED", "ONGOING", "PAUSED", "COMPLETED", "CANCELLED", "POSTPONED"]
-MATCH_EVENT_TYPES = ["SCORE", "START", "PAUSE", "RESUME", "COMPLETE", "CANCEL", "POSTPONE", "WINNER_SET", "RESCHEDULE"]
+MATCH_EVENT_TYPES = ["SCORE", "START", "PAUSE", "RESUME", "COMPLETE", "CANCEL", "POSTPONE", "WINNER_SET", "RESCHEDULE", "FORFEIT"]
 
 
 class TournamentCreate(BaseModel):
@@ -700,6 +700,17 @@ class MatchCompleteRequest(BaseModel):
     winner_team_id: Optional[int] = None
 
 
+class MatchForfeitRequest(BaseModel):
+    forfeiting_team_id: int
+
+
+class ResolveTiebreakRequest(BaseModel):
+    # The pool's final qualifier(s) for its tied spot(s) — exactly tie_need
+    # ids, each one of that pool's tie_candidates (see
+    # routers/matches.py _compute_advancing_teams).
+    team_ids: List[int]
+
+
 class GenerateBracketRequest(BaseModel):
     team_ids: List[int]
     replace: bool = False  # required to be true if the tournament already has rounds
@@ -720,6 +731,12 @@ class GenerateBracketRequest(BaseModel):
     # plan its later rounds upfront the way a knockout tree can.
     whole_season: bool = True
     format: str = "KNOCKOUT"
+    # LEAGUE + whole_season only: teams-per-pool target for auto-distributing
+    # Round 1's pools (same meaning as AutoCreatePoolsRequest.teams_per_pool),
+    # falling back to pool_logic.MIN_POOL_SIZE if omitted. The resulting pool
+    # count must land on a power of two — whole-season mirror-crossing pairs
+    # pools 1st-vs-last the same way a Knockout Round 1 must land on one.
+    teams_per_pool: Optional[int] = None
 
     @field_validator("format")
     @classmethod

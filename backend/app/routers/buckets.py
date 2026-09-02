@@ -39,6 +39,15 @@ def _get_bucket(db: Session, bucket_id: int) -> models.Bucket:
     return b
 
 
+def _ensure_manual(tournament: models.Tournament) -> None:
+    if tournament.bracket_mode == "AUTO":
+        raise HTTPException(
+            400,
+            "This tournament's bracket was fully auto-generated — rounds advance "
+            "automatically, there's nothing to pull into a bucket.",
+        )
+
+
 def _bucket_dict(db: Session, bucket: models.Bucket) -> dict:
     try:
         advancing = _compute_advancing_teams(db, bucket.source_round) if bucket.source_round else None
@@ -121,6 +130,7 @@ def get_or_create_bucket(tournament_id: int, round_id: int, db: Session = Depend
     t = db.get(models.Tournament, tournament_id)
     if not t:
         raise HTTPException(404, "Tournament not found")
+    _ensure_manual(t)
     r = db.get(models.Round, round_id)
     if not r or r.tournament_id != tournament_id:
         raise HTTPException(404, "Round not found for this tournament")
@@ -158,6 +168,7 @@ def get_bucket(bucket_id: int, db: Session = Depends(get_db)):
 @router.post("/buckets/{bucket_id}/pull", status_code=201)
 def pull_into_bucket(bucket_id: int, payload: schemas.BucketPullRequest, db: Session = Depends(get_db)):
     bucket = _get_bucket(db, bucket_id)
+    _ensure_manual(bucket.tournament)
 
     team_ids = list(dict.fromkeys(payload.team_ids))
     if not team_ids:
@@ -316,6 +327,7 @@ def _seed_league_pool_pairs(
 @router.post("/buckets/{bucket_id}/create-round", status_code=201)
 def create_round_from_bucket(bucket_id: int, payload: schemas.BucketCreateRoundRequest, db: Session = Depends(get_db)):
     bucket = _get_bucket(db, bucket_id)
+    _ensure_manual(bucket.tournament)
     available = [e for e in bucket.entries if e.pushed_round_id is None]
 
     if payload.target_round_id is not None:

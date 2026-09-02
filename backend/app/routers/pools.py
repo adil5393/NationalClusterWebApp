@@ -14,7 +14,14 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..database import get_db
 from ..pool_logic import MIN_POOL_SIZE, distribute_pool_sizes, round_robin_pairs
-from .matches import _check_team_age_group, _check_team_playable, _match_dict, _team_unplayable_reason
+from .matches import (
+    _check_team_age_group,
+    _check_team_playable,
+    _compute_advancing_teams,
+    _match_dict,
+    _propagate_pool_qualifiers,
+    _team_unplayable_reason,
+)
 
 router = APIRouter(tags=["pools"])
 
@@ -449,3 +456,47 @@ def compute_standings(pool: models.Pool) -> list[dict]:
 @router.get("/api/pools/{pool_id}/standings")
 def pool_standings(pool_id: int, db: Session = Depends(get_db)):
     return compute_standings(_get_pool(db, pool_id))
+
+
+def _pool_qualifier_info(db: Session, pool: models.Pool) -> dict:
+    """This pool's own slice of _compute_advancing_teams — readiness,
+    qualifiers, and (if the standings are genuinely tied for the qualifying
+    spot) the tie_candidates/tie_need an organizer needs to resolve it
+    directly via resolve_pool_tiebreak below."""
+    advancing = _compute_advancing_teams(db, pool.round)
+    info = next((p for p in advancing["pools"] if p["pool_id"] == pool.id), None)
+    if not info:
+        raise HTTPException(404, "Pool not found in its round")
+    return info
+
+
+@router.get("/api/pools/{pool_id}/qualifiers")
+def pool_qualifiers(pool_id: int, db: Session = Depends(get_db)):
+    return _pool_qualifier_info(db, _get_pool(db, pool_id))
+
+
+@router.post("/api/pools/{pool_id}/resolve-tiebreak")
+def resolve_pool_tiebreak(pool_id: int, payload: schemas.ResolveTiebreakRequest, db: Session = Depends(get_db)):
+    """Direct alternative to picking tie_candidates through the Bucket flow —
+    the organizer selects who wins the tie right here, on the pool itself, no
+    bucket required. Works for any League pool, but it's the only way to
+    resolve a tie in a whole-season auto-generated tournament, since that
+    tournament has no Bucket to use (see routers/buckets.py _ensure_manual)."""
+    pool = _get_pool(db, pool_id)
+    info = _pool_qualifier_info(db, pool)
+    if not info["ready"]:
+        raise HTTPException(409, "This pool isn't finished yet")
+    if not info["needs_tiebreak"]:
+        raise HTTPException(409, "This pool doesn't have an unresolved tie")
+
+    picked = list(dict.fromkeys(payload.team_ids))
+    allowed = {t["id"] for t in info["tie_candidates"]}
+    if len(picked) != info["tie_need"] or any(tid not in allowed for tid in picked):
+        raise HTTPException(400, f"Choose exactly {info['tie_need']} team(s) from the tied candidates")
+
+    pool.manual_qualifier_ids = [q["id"] for q in info["qualifiers"]] + picked
+    db.flush()
+    _propagate_pool_qualifiers(db, pool)
+    db.commit()
+    db.refresh(pool)
+    return _pool_dict(pool)
