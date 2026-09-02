@@ -1822,6 +1822,14 @@ function LiveConsole({
   // (or the official score) until it's explicitly confirmed. Catches misclicks
   // during fast live-raid scoring instead of committing on the very first tap.
   const [pendingScore, setPendingScore] = useState<{ a: number | null; b: number | null }>({ a: null, b: null });
+<<<<<<< Updated upstream
+=======
+  const [forfeitHoverSide, setForfeitHoverSide] = useState<"a" | "b" | null>(null);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetTeamA, setResetTeamA] = useState<string>("");
+  const [resetTeamB, setResetTeamB] = useState<string>("");
+  const [resetting, setResetting] = useState(false);
+>>>>>>> Stashed changes
 
   const load = () =>
     api
@@ -2165,7 +2173,9 @@ function LiveConsole({
                     ? "border-red-500/30 bg-red-950/20"
                     : "border-blue-500/30 bg-blue-950/20",
                   isLeader && "ring-1 ring-gold border-gold/60",
+                  forfeitHoverSide === side && "ring-2 ring-red-500 border-red-500/80 bg-red-950/40",
                 )}
+                data-testid={`console-team-panel-${side}`}
               >
                 <div className="flex items-center gap-2.5 truncate">
                   <span
@@ -2176,6 +2186,11 @@ function LiveConsole({
                   <span className="truncate font-heading font-bold text-white text-base">
                     {name}
                   </span>
+                  {forfeitHoverSide === side && (
+                    <Badge tone="red" size="sm" className="shrink-0">
+                      Will Forfeit
+                    </Badge>
+                  )}
                 </div>
                 <div className="flex items-center gap-3">
                   <span
@@ -2277,17 +2292,29 @@ function LiveConsole({
                       variant="outline"
                       size="sm"
                       className="text-red-400 hover:bg-red-500/10"
+                      onMouseEnter={() => setForfeitHoverSide("a")}
+                      onMouseLeave={() => setForfeitHoverSide(null)}
+                      onFocus={() => setForfeitHoverSide("a")}
+                      onBlur={() => setForfeitHoverSide(null)}
                       onClick={() => forfeitMatch(m.team_a_id!, m.team_a_name ?? "Team A", m.team_b_name ?? "Team B")}
+                      title={`${m.team_a_name ?? "Team A"} forfeits`}
+                      data-testid="forfeit-team-a-btn"
                     >
-                      <UserX className="h-4 w-4" /> Forfeit: {m.team_a_name}
+                      <UserX className="h-4 w-4" /> Forfeit
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
                       className="text-red-400 hover:bg-red-500/10"
+                      onMouseEnter={() => setForfeitHoverSide("b")}
+                      onMouseLeave={() => setForfeitHoverSide(null)}
+                      onFocus={() => setForfeitHoverSide("b")}
+                      onBlur={() => setForfeitHoverSide(null)}
                       onClick={() => forfeitMatch(m.team_b_id!, m.team_b_name ?? "Team B", m.team_a_name ?? "Team A")}
+                      title={`${m.team_b_name ?? "Team B"} forfeits`}
+                      data-testid="forfeit-team-b-btn"
                     >
-                      <UserX className="h-4 w-4" /> Forfeit: {m.team_b_name}
+                      <UserX className="h-4 w-4" /> Forfeit
                     </Button>
                   </>
                 )}
