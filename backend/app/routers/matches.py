@@ -54,6 +54,8 @@ def _match_dict(m: models.Match, db: Session) -> dict:
         "source_pool_b_rank": m.source_pool_b_rank,
         "venue_id": m.venue_id,
         "venue_name": venue.name if venue else None,
+        "mat_id": m.mat_id,
+        "mat_name": m.mat.name if m.mat else None,
         "scheduled_at": m.scheduled_at.isoformat() if m.scheduled_at else None,
         "status": m.status,
         "team_a_score": m.team_a_score,
@@ -132,12 +134,26 @@ def _check_team_age_group(db: Session, team_id: int, age_group: str | None) -> N
 
 def _team_unplayable_reason(db: Session, team: models.Team, tournament: models.Tournament) -> str | None:
     """None if the team can be placed into a match/pool in this tournament,
-    otherwise the reason it can't — either benched manually (Team.is_active)
-    or automatically, because too few of its players in this tournament's age
-    group have checked in (Tournament.min_present_players; 0 disables this
-    half of the check)."""
+    otherwise the reason it can't — benched manually, either wholesale
+    (Team.is_active) or for just this tournament's age group
+    (TeamInactiveAgeGroup — an organizer withdrawing e.g. a school's Under 14
+    squad without touching its Under 17 eligibility), or automatically,
+    because too few of its players in this tournament's age group have
+    checked in (Tournament.min_present_players; 0 disables this half of the
+    check)."""
     if not team.is_active:
         return f"{team.name} is marked inactive"
+    if tournament.age_group:
+        inactive_here = (
+            db.query(models.TeamInactiveAgeGroup)
+            .filter(
+                models.TeamInactiveAgeGroup.team_id == team.id,
+                models.TeamInactiveAgeGroup.age_group == tournament.age_group,
+            )
+            .first()
+        )
+        if inactive_here:
+            return f"{team.name} is marked inactive for {tournament.age_group}"
     if tournament.min_present_players > 0 and tournament.age_group:
         present = (
             db.query(models.Participant.id)
@@ -879,6 +895,24 @@ def update_match(match_id: int, payload: schemas.MatchUpdate, db: Session = Depe
         setattr(m, k, v)
     if m.status == "POSTPONED" and "scheduled_at" in data:
         m.status = "SCHEDULED"  # rescheduling a postponed match puts it back on the calendar
+    db.commit()
+    db.refresh(m)
+    return _match_dict(m, db)
+
+
+@router.put("/api/matches/{match_id}/mat")
+def set_match_mat(match_id: int, payload: schemas.MatchMatUpdate, db: Session = Depends(get_db), current: models.OrganizerUser = Depends(require_auth)):
+    """Which physical mat/ground this match is on — unlike update_match above,
+    deliberately works at ANY status, since assigning a mat to an
+    already-ONGOING match (the primary use case — see the new Mat / Ground
+    admin page) is exactly what update_match's SCHEDULED/POSTPONED-only guard
+    would block. Pure logistics metadata: no event log, no broadcast."""
+    m = db.get(models.Match, match_id)
+    if not m:
+        raise HTTPException(404, "Match not found")
+    if payload.mat_id is not None and not db.get(models.Mat, payload.mat_id):
+        raise HTTPException(404, f"Mat/ground {payload.mat_id} not found")
+    m.mat_id = payload.mat_id
     db.commit()
     db.refresh(m)
     return _match_dict(m, db)

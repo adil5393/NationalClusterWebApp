@@ -48,7 +48,7 @@ class TeamCreate(TeamBase):
 
 class LastYearAwardEntry(ORMModel):
     age_group: str
-    award: Literal["winner", "runner"]
+    award: Literal["winner", "runner", "third", "fourth"]
 
 
 class TeamUpdate(BaseModel):
@@ -64,6 +64,9 @@ class TeamUpdate(BaseModel):
     # Toggled directly from the Teams table (see PUT /teams/{id}), never part
     # of the main edit form.
     is_active: Optional[bool] = None
+    # Also toggled directly from the Teams table — purely informational, see
+    # models.py Team.has_arrived.
+    has_arrived: Optional[bool] = None
     # When present, REPLACES this team's whole set of last-year awards (one
     # entry per age group it holds an award in). Exclusivity/pool-conflict
     # rules enforced in the router.
@@ -92,9 +95,27 @@ class TeamRead(ORMModel, TeamBase):
     age_group_counts: dict[str, int] = {}  # e.g. {"Under 14": 10, "Under 17": 8}
     present_counts: dict[str, int] = {}  # same keys, count of is_present participants
     is_active: bool = True
+    has_arrived: bool = False
+    # Age groups this team is specifically marked inactive for (see
+    # models.TeamInactiveAgeGroup) — on top of, not instead of, is_active.
+    inactive_age_groups: List[str] = []
     last_year_awards: List[LastYearAwardEntry] = []
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("inactive_age_groups", mode="before")
+    @classmethod
+    def flatten_inactive_age_groups(cls, v):
+        # Team.inactive_age_groups is the real ORM relationship (a list of
+        # TeamInactiveAgeGroup rows) — flatten to just the age_group strings
+        # the frontend actually wants, same pattern as KnowledgeRead.split_tags.
+        if v and hasattr(v[0], "age_group"):
+            return [row.age_group for row in v]
+        return v or []
+
+
+class TeamAgeGroupActiveUpdate(BaseModel):
+    is_active: bool
 
 
 class TeamPhotoPublic(BaseModel):
@@ -702,6 +723,26 @@ class MatchCompleteRequest(BaseModel):
 
 class MatchForfeitRequest(BaseModel):
     forfeiting_team_id: int
+
+
+class MatchMatUpdate(BaseModel):
+    mat_id: Optional[int] = None
+
+
+class MatBase(BaseModel):
+    name: str
+
+
+class MatCreate(MatBase):
+    pass
+
+
+class MatUpdate(BaseModel):
+    name: Optional[str] = None
+
+
+class MatRead(ORMModel, MatBase):
+    id: int
 
 
 class ResolveTiebreakRequest(BaseModel):

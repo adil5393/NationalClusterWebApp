@@ -43,6 +43,7 @@ interface Team {
   id: number;
   name: string;
   is_active?: boolean;
+  inactive_age_groups?: string[];
   present_counts?: Record<string, number>;
 }
 interface Venue {
@@ -73,6 +74,8 @@ interface MatchT {
   source_match_b_id?: number | null;
   venue_id?: number | null;
   venue_name?: string | null;
+  mat_id?: number | null;
+  mat_name?: string | null;
   scheduled_at?: string | null;
   status: string;
   team_a_score: number;
@@ -291,6 +294,11 @@ function RoundMatchesList({
               <span className="rounded bg-white/5 px-2 py-0.5 text-slate-300">
                 {m.venue_name ?? "No court assigned"}
               </span>
+              {m.mat_name && (
+                <span className="rounded bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-emerald-400 font-bold">
+                  {m.mat_name}
+                </span>
+              )}
               <span className="rounded bg-white/5 px-2 py-0.5 text-slate-300">
                 {m.scheduled_at ? formatDate(m.scheduled_at) : "Unscheduled"}
               </span>
@@ -353,7 +361,10 @@ function RoundMatchesList({
                     </div>
                   )}
                 </TD>
-                <TD className="text-slate-300 font-body text-xs">{m.venue_name ?? "—"}</TD>
+                <TD className="text-slate-300 font-body text-xs">
+                  {m.venue_name ?? "—"}
+                  {m.mat_name && <span className="ml-1.5 text-emerald-400 font-bold">· {m.mat_name}</span>}
+                </TD>
                 <TD className="text-slate-400 font-mono text-xs">
                   {m.scheduled_at ? formatDate(m.scheduled_at) : "—"}
                 </TD>
@@ -434,6 +445,9 @@ function bracketRoundName(matchCount: number) {
 
 function teamUnplayableReason(t: Team, tournament: TournamentT | null | undefined): string | null {
   if (t.is_active === false) return "Inactive";
+  if (tournament?.age_group && t.inactive_age_groups?.includes(tournament.age_group)) {
+    return `Inactive for ${tournament.age_group}`;
+  }
   if (!tournament?.age_group) return null;
   const threshold = tournament.min_present_players ?? 10;
   if (threshold <= 0) return null;
@@ -599,14 +613,20 @@ export default function Matches() {
 
   const presentCounts = useMemo(() => {
     const map: Record<number, { present: number; total: number }> = {};
-    for (const p of participants) {
+    // Scoped to the selected tournament's own age group — a school's squad in
+    // an unrelated age group shouldn't inflate/deflate the present/absent
+    // count shown for a match card here (mirrors eligibleTeams above).
+    const scoped = detail?.age_group
+      ? participants.filter((p) => p.age_group === detail.age_group)
+      : participants;
+    for (const p of scoped) {
       const row = map[p.team_id] ?? { present: 0, total: 0 };
       row.total += 1;
       if (p.is_present) row.present += 1;
       map[p.team_id] = row;
     }
     return map;
-  }, [participants]);
+  }, [participants, detail?.age_group]);
 
   const liveByAgeGroup = useMemo(() => {
     const groups: Record<string, MatchT[]> = {};
@@ -903,7 +923,10 @@ export default function Matches() {
                       </div>
                       <div className="flex items-center justify-between text-[10px] text-emerald-400 font-mono border-t border-white/5 pt-1.5">
                         <span>Click to open scoring desk →</span>
-                        {m.venue_name && <span className="text-slate-400">{m.venue_name}</span>}
+                        <span className="text-slate-400">
+                          {m.mat_name && <span className="text-emerald-400 font-bold">{m.mat_name} </span>}
+                          {m.venue_name}
+                        </span>
                       </div>
                     </button>
                   ))}

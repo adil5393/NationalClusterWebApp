@@ -120,6 +120,7 @@ def _public_match_dict(m: models.Match, db: Session) -> dict:
         "source_pool_b_name": m.source_pool_b.name if m.source_pool_b else None,
         "source_pool_b_rank": m.source_pool_b_rank,
         "venue_name": venue.name if venue else None,
+        "mat_name": m.mat.name if m.mat else None,
         "scheduled_at": m.scheduled_at.isoformat() if m.scheduled_at else None,
         "status": m.status,
         "team_a_score": m.team_a_score,

@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Download, FileSpreadsheet, Trash2, Layers, RefreshCw } from "lucide-react";
+import { AlertTriangle, Download, FileSpreadsheet, Trash2, Layers, RefreshCw, CheckSquare, Bus, ShieldCheck, UserCog } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, THead, TH, TR, TD, TBody } from "@/components/ui/table";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
-import { useModuleAccess } from "@/lib/permissions";
+import { useModuleAccess, useMe } from "@/lib/permissions";
 import { formatDate } from "@/lib/meta";
 import { cn } from "@/lib/utils";
 
@@ -42,8 +42,45 @@ function roundFormat(r: RoundT): "KNOCKOUT" | "LEAGUE" | null {
   return (r.matches[0]?.match_type as "KNOCKOUT" | "LEAGUE" | undefined) ?? null;
 }
 
+function ReportDownloadCard({
+  icon: Icon,
+  title,
+  description,
+  href,
+  testId,
+}: {
+  icon: React.ElementType;
+  title: string;
+  description: string;
+  href: string;
+  testId: string;
+}) {
+  return (
+    <a
+      href={href}
+      data-testid={testId}
+      className="flex items-start gap-3 rounded-xl border border-white/10 bg-obsidian-950 p-4 shadow-sm hover:border-gold/40 hover:bg-white/[0.02] transition-colors"
+    >
+      <div className="shrink-0 rounded-lg bg-gold/10 p-2">
+        <Icon className="h-5 w-5 text-gold" />
+      </div>
+      <div className="min-w-0">
+        <p className="font-heading font-bold text-white text-sm">{title}</p>
+        <p className="mt-0.5 text-xs text-slate-400 font-body">{description}</p>
+        <span className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-heading font-bold text-gold">
+          <Download className="h-3 w-3" /> Download .xlsx
+        </span>
+      </div>
+    </a>
+  );
+}
+
 export default function Reports() {
   const { canEdit } = useModuleAccess("matches");
+  const me = useMe();
+  const attendanceAccess = useModuleAccess("attendance");
+  const teamsAccess = useModuleAccess("teams");
+  const staffAccess = useModuleAccess("staff");
   const [tournaments, setTournaments] = useState<TournamentT[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<TournamentT | null>(null);
@@ -116,6 +153,53 @@ export default function Reports() {
           Generate official Excel scorecards and standings per round, or download complete multi-sheet tournament workbooks.
         </p>
       </div>
+
+      {/* OPERATIONAL REPORTS — event-wide, not scoped to one tournament */}
+      {(attendanceAccess.canView || teamsAccess.canView || staffAccess.canView || me?.is_admin) && (
+        <div className="space-y-3">
+          <h2 className="font-heading text-xs font-bold uppercase tracking-wider text-slate-400">
+            Operational Reports
+          </h2>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {attendanceAccess.canView && (
+              <ReportDownloadCard
+                icon={CheckSquare}
+                title="Attendance Report"
+                description="Present/absent status for every registered participant."
+                href={`${BACKEND}/api/export/attendance.xlsx`}
+                testId="download-attendance-report-btn"
+              />
+            )}
+            {teamsAccess.canView && (
+              <ReportDownloadCard
+                icon={Bus}
+                title="Arrival Report"
+                description="Which school delegations have arrived at the venue."
+                href={`${BACKEND}/api/export/arrival.xlsx`}
+                testId="download-arrival-report-btn"
+              />
+            )}
+            {staffAccess.canView && (
+              <ReportDownloadCard
+                icon={ShieldCheck}
+                title="Duty Report"
+                description="Staff duty assignments across every building & room."
+                href={`${BACKEND}/api/export/duties.xlsx`}
+                testId="download-duty-report-btn"
+              />
+            )}
+            {me?.is_admin && (
+              <ReportDownloadCard
+                icon={UserCog}
+                title="User Report"
+                description="Organizer Portal accounts, roles & module permissions."
+                href={`${BACKEND}/api/export/organizer-users.xlsx`}
+                testId="download-user-report-btn"
+              />
+            )}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="rounded-xl border border-white/10 bg-obsidian-900 py-16">

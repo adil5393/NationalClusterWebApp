@@ -78,83 +78,86 @@ def _teams_already_in_round(db: Session, round_id: int, exclude_pool_id: int | N
     return result
 
 
-_AWARD_LABEL = {"winner": "winner", "runner": "runner-up"}
+_AWARD_LABEL = {"winner": "winner", "runner": "runner-up", "third": "3rd place", "fourth": "4th place"}
 
 
 def _check_last_year_conflict(pool_teams: list[models.Team], team: models.Team) -> None:
-    """Last year's winner and runner-up, in the SAME age group, can never
-    share a pool — a team holding an award in one age group doesn't conflict
-    with a pool teammate's award in a different one."""
-    opposite = {"winner": "runner", "runner": "winner"}
+    """Last year's top-4 finishers, in the SAME age group, can never share a
+    pool with one another — all six pairs among the four are mutually
+    exclusive, not just winner-vs-runner. A team holding an award in one age
+    group doesn't conflict with a pool teammate's award in a different one."""
     for award in team.last_year_awards:
         conflict = next(
             (
                 t for t in pool_teams
                 if t.id != team.id
-                and any(a.age_group == award.age_group and a.award == opposite[award.award] for a in t.last_year_awards)
+                and any(a.age_group == award.age_group for a in t.last_year_awards)
             ),
             None,
         )
         if conflict:
+            conflict_award = next(a for a in conflict.last_year_awards if a.age_group == award.age_group)
             raise HTTPException(
                 409,
                 f"{team.name} (last year's {_AWARD_LABEL[award.award]} in {award.age_group}) can't share a pool "
-                f"with {conflict.name}, who holds the other award in the same age group",
+                f"with {conflict.name} (last year's {_AWARD_LABEL[conflict_award.award]}) — last year's top 4 "
+                f"finishers in the same age group must all be kept apart",
             )
 
 
 def _awards_conflict(a: models.Team, b: models.Team) -> bool:
-    opposite = {"winner": "runner", "runner": "winner"}
-    return any(
-        x.age_group == y.age_group and y.award == opposite[x.award]
-        for x in a.last_year_awards for y in b.last_year_awards
-    )
+    return any(x.age_group == y.age_group for x in a.last_year_awards for y in b.last_year_awards)
 
 
 def _repair_last_year_conflicts(breakdown: list[dict], teams_by_id: dict[int, models.Team]) -> None:
     """Unlike a manual add-to-pool (which just blocks so the organizer can pick
     someone else), auto-create chunks unassigned teams by size/order alone with
-    no awareness of the winner/runner-up rule — so a conflict here would only
-    ever surface as a confusing 409 mid-commit, after the organizer already
-    approved the preview. A team can hold at most one award per age group and
-    an age group has at most one winner and one runner-up (unique constraints
-    on TeamLastYearAward), and a tournament is itself scoped to one age group,
-    so there's at most a single conflicting pair to fix per call — swap one of
-    them into whichever other pool can take it without recreating the
-    conflict there."""
-    for pool in breakdown:
-        ids = pool["team_ids"]
-        pair = next(
-            (
-                (x, y) for i, x in enumerate(ids) for y in ids[i + 1:]
-                if _awards_conflict(teams_by_id[x], teams_by_id[y])
-            ),
-            None,
-        )
-        if not pair:
-            continue
-        _, b_id = pair
-        for other in breakdown:
-            if other is pool:
-                continue
-            other_ids = other["team_ids"]
-            swap_target = next(
+    no awareness of the top-4 rule — so a conflict here would only ever surface
+    as a confusing 409 mid-commit, after the organizer already approved the
+    preview. Up to 4 top-4 finishers from the same age group could all land in
+    one pool together (6 possible conflicting pairs, not just 1), so this
+    repeatedly resolves one pair at a time — swap one team into whichever
+    other pool can take it without recreating the conflict there — doing full
+    passes over every pool until a pass fixes nothing (either everything's
+    clean, or no safe swap exists anywhere for what's left)."""
+    for _pass in range(20):  # generous bound; a real run converges in a couple of passes
+        changed = False
+        for pool in breakdown:
+            ids = pool["team_ids"]
+            pair = next(
                 (
-                    c_id for c_id in other_ids
-                    if all(not _awards_conflict(teams_by_id[c_id], teams_by_id[t]) for t in ids if t != b_id)
-                    and all(not _awards_conflict(teams_by_id[b_id], teams_by_id[t]) for t in other_ids if t != c_id)
+                    (x, y) for i, x in enumerate(ids) for y in ids[i + 1:]
+                    if _awards_conflict(teams_by_id[x], teams_by_id[y])
                 ),
                 None,
             )
-            if swap_target is not None:
-                ids[ids.index(b_id)] = swap_target
-                other_ids[other_ids.index(swap_target)] = b_id
-                for entry in (pool, other):
-                    entry["teams"] = [{"id": t, "name": teams_by_id[t].name} for t in entry["team_ids"]]
-                break
-        # If no safe swap exists anywhere (e.g. only one pool total), leave it —
-        # the commit-time _check_last_year_conflict call still catches it and
-        # raises a clear error instead of silently creating an invalid pool.
+            if not pair:
+                continue
+            _, b_id = pair
+            for other in breakdown:
+                if other is pool:
+                    continue
+                other_ids = other["team_ids"]
+                swap_target = next(
+                    (
+                        c_id for c_id in other_ids
+                        if all(not _awards_conflict(teams_by_id[c_id], teams_by_id[t]) for t in ids if t != b_id)
+                        and all(not _awards_conflict(teams_by_id[b_id], teams_by_id[t]) for t in other_ids if t != c_id)
+                    ),
+                    None,
+                )
+                if swap_target is not None:
+                    ids[ids.index(b_id)] = swap_target
+                    other_ids[other_ids.index(swap_target)] = b_id
+                    for entry in (pool, other):
+                        entry["teams"] = [{"id": t, "name": teams_by_id[t].name} for t in entry["team_ids"]]
+                    changed = True
+                    break
+            # If no safe swap exists anywhere (e.g. only one pool total), leave it —
+            # the commit-time _check_last_year_conflict call still catches it and
+            # raises a clear error instead of silently creating an invalid pool.
+        if not changed:
+            break
 
 
 def _get_round(db: Session, tournament_id: int, round_id: int) -> models.Round:

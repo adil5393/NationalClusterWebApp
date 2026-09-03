@@ -54,6 +54,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/admin", label: "Dashboard", icon: LayoutDashboard, end: true },
       { to: "/admin/matches", label: "Matches & Fixtures", icon: Radio, moduleKey: "matches" },
+      { to: "/admin/mat-ground", label: "Mat / Ground", icon: Activity, moduleKey: "matches" },
       { to: "/admin/schedule", label: "Schedule", icon: CalendarDays, moduleKey: "schedule" },
       { to: "/admin/reports", label: "Reports & Export", icon: FileSpreadsheet, moduleKey: "matches" },
     ],

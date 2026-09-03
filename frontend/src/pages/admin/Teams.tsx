@@ -17,9 +17,23 @@ import { driveThumbnail } from "@/lib/meta";
 import { cn } from "@/lib/utils";
 import { TeamAvatar } from "@/components/ui/team-badge";
 
+type AwardPosition = "winner" | "runner" | "third" | "fourth";
+const AWARD_LABEL: Record<AwardPosition, string> = {
+  winner: "Winner",
+  runner: "Runner-up",
+  third: "3rd Place",
+  fourth: "4th Place",
+};
+const AWARD_TONE: Record<AwardPosition, string> = {
+  winner: "border border-gold/40 bg-gold/15 text-gold shadow-sm",
+  runner: "border border-blue-500/40 bg-blue-500/15 text-blue-300",
+  third: "border border-purple-500/40 bg-purple-500/15 text-purple-300",
+  fourth: "border border-coral/40 bg-coral/15 text-coral",
+};
+
 interface LastYearAward {
   age_group: string;
-  award: "winner" | "runner";
+  award: AwardPosition;
 }
 
 interface Team {
@@ -40,6 +54,8 @@ interface Team {
   age_group_counts?: Record<string, number>;
   present_counts?: Record<string, number>;
   is_active?: boolean;
+  has_arrived?: boolean;
+  inactive_age_groups?: string[];
   last_year_awards?: LastYearAward[];
   photos?: { id: number; url: string }[];
 }
@@ -97,12 +113,10 @@ function LastYearAwardsCell({
             key={a.age_group}
             className={cn(
               "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-heading font-bold",
-              a.award === "winner"
-                ? "border border-gold/40 bg-gold/15 text-gold shadow-sm"
-                : "border border-blue-500/40 bg-blue-500/15 text-blue-300",
+              AWARD_TONE[a.award],
             )}
           >
-            <Trophy className="h-3 w-3 shrink-0" /> {a.award === "winner" ? "Winner" : "Runner-up"} · {a.age_group}
+            <Trophy className="h-3 w-3 shrink-0" /> {AWARD_LABEL[a.award]} · {a.age_group}
           </span>
         ))}
       </div>
@@ -148,6 +162,82 @@ function ActiveCell({
   );
 }
 
+function ArrivedCell({
+  team,
+  canEdit,
+  onToggle,
+}: {
+  team: Team;
+  canEdit: boolean;
+  onToggle: (team: Team) => void;
+}) {
+  const arrived = team.has_arrived === true;
+  const badge = (
+    <Badge tone={arrived ? "green" : "slate"} size="sm">
+      {arrived ? "Arrived" : "Not Arrived"}
+    </Badge>
+  );
+  if (!canEdit) return badge;
+  return (
+    <button
+      onClick={() => onToggle(team)}
+      data-testid={`arrived-toggle-${team.id}`}
+      title={arrived ? "Mark not arrived" : "Mark arrived"}
+      className="hover:opacity-80 transition-opacity"
+    >
+      {badge}
+    </button>
+  );
+}
+
+function AgeGroupActiveCell({
+  team,
+  canEdit,
+  onToggle,
+}: {
+  team: Team;
+  canEdit: boolean;
+  onToggle: (team: Team, ageGroup: string, active: boolean) => void;
+}) {
+  const groups = Object.keys(team.age_group_counts ?? {}).sort(
+    (a, b) => ageGroupRank(a) - ageGroupRank(b) || a.localeCompare(b),
+  );
+  if (groups.length === 0) return <span className="text-slate-500">—</span>;
+  const inactive = new Set(team.inactive_age_groups ?? []);
+  return (
+    <div className="flex flex-wrap gap-1 max-w-full">
+      {groups.map((g) => {
+        const active = !inactive.has(g);
+        const pill = (
+          <span
+            key={g}
+            className={cn(
+              "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-heading font-bold",
+              active
+                ? "border border-emerald-500/40 bg-emerald-500/15 text-emerald-400"
+                : "border border-red-500/40 bg-red-500/15 text-red-400",
+            )}
+          >
+            {g}
+          </span>
+        );
+        if (!canEdit) return pill;
+        return (
+          <button
+            key={g}
+            onClick={() => onToggle(team, g, !active)}
+            data-testid={`age-group-active-toggle-${team.id}-${g}`}
+            title={active ? `Mark inactive for ${g}` : `Mark active for ${g}`}
+            className="hover:opacity-80 transition-opacity"
+          >
+            {pill}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function AwardsDialog({
   team,
   onClose,
@@ -160,7 +250,7 @@ function AwardsDialog({
   const groups = Object.keys(team.age_group_counts ?? {}).sort(
     ([a], [b]) => ageGroupRank(a) - ageGroupRank(b) || a.localeCompare(b),
   );
-  const initial: Record<string, "" | "winner" | "runner"> = {};
+  const initial: Record<string, "" | AwardPosition> = {};
   for (const g of groups) {
     initial[g] = (team.last_year_awards ?? []).find((a) => a.age_group === g)?.award ?? "";
   }
@@ -194,7 +284,7 @@ function AwardsDialog({
               <div key={g} className="flex items-center justify-between gap-2 rounded-lg border border-white/5 bg-white/[0.02] p-2.5">
                 <span className="text-xs font-heading font-bold text-white">{g}</span>
                 <div className="flex gap-1">
-                  {(["", "winner", "runner"] as const).map((opt) => (
+                  {(["", "winner", "runner", "third", "fourth"] as const).map((opt) => (
                     <button
                       key={opt || "none"}
                       type="button"
@@ -207,7 +297,7 @@ function AwardsDialog({
                       )}
                       data-testid={`award-pick-${g}-${opt || "none"}`}
                     >
-                      {opt === "" ? "None" : opt === "winner" ? "Winner" : "Runner-up"}
+                      {opt === "" ? "None" : AWARD_LABEL[opt]}
                     </button>
                   ))}
                 </div>
@@ -390,6 +480,24 @@ export default function AdminTeams() {
     }
   };
 
+  const toggleArrived = async (t: Team) => {
+    try {
+      await api.put(`/teams/${t.id}`, { has_arrived: t.has_arrived !== true });
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not update arrival status");
+    }
+  };
+
+  const toggleAgeGroupActive = async (t: Team, ageGroup: string, active: boolean) => {
+    try {
+      await api.put(`/teams/${t.id}/age-groups/${encodeURIComponent(ageGroup)}/active`, { is_active: active });
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? `Could not update ${ageGroup} status`);
+    }
+  };
+
   const emptyTeamCount = teams.filter((t) => (t.participant_count ?? 0) === 0).length;
 
   const removeEmptyTeams = async () => {
@@ -537,8 +645,9 @@ export default function AdminTeams() {
                           {t.school_code && <p className="font-mono text-[10px] text-slate-500 truncate">Code: {t.school_code}</p>}
                         </div>
                       </div>
-                      <div className="shrink-0 pt-0.5">
+                      <div className="shrink-0 pt-0.5 flex flex-col items-end gap-1">
                         <ActiveCell team={t} canEdit={canEdit} onToggle={toggleActive} />
+                        <ArrivedCell team={t} canEdit={canEdit} onToggle={toggleArrived} />
                       </div>
                     </div>
 
@@ -587,6 +696,8 @@ export default function AdminTeams() {
                         ))}
                       </div>
                     )}
+
+                    <AgeGroupActiveCell team={t} canEdit={canEdit} onToggle={toggleAgeGroupActive} />
 
                     {t.contact_name && (
                       <p className="text-xs text-slate-400 truncate font-body">
@@ -643,11 +754,13 @@ export default function AdminTeams() {
                     <TH className="w-12">#</TH>
                     <TH>Team & School</TH>
                     <TH>Status</TH>
+                    <TH>Arrived</TH>
                     <TH>Last Year Awards</TH>
                     <TH>Region</TH>
                     <TH>Country</TH>
                     <TH className="text-right">Athletes</TH>
                     <TH>Squad by Age</TH>
+                    <TH>Active by Age Group</TH>
                     <TH>Accommodation</TH>
                     <TH>Contact</TH>
                     <TH className="text-right">Actions</TH>
@@ -673,6 +786,9 @@ export default function AdminTeams() {
                           <ActiveCell team={t} canEdit={canEdit} onToggle={toggleActive} />
                         </TD>
                         <TD>
+                          <ArrivedCell team={t} canEdit={canEdit} onToggle={toggleArrived} />
+                        </TD>
+                        <TD>
                           <LastYearAwardsCell
                             team={t}
                             canEdit={canEdit}
@@ -690,6 +806,9 @@ export default function AdminTeams() {
                         </TD>
                         <TD>
                           <AgeGroupCountsCell counts={t.age_group_counts} />
+                        </TD>
+                        <TD>
+                          <AgeGroupActiveCell team={t} canEdit={canEdit} onToggle={toggleAgeGroupActive} />
                         </TD>
                         <TD>
                           <AccommodationCell t={t} />

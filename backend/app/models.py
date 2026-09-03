@@ -65,6 +65,10 @@ class Team(TimestampMixin, Base):
     # team visible everywhere (never filtered out of a select list), just
     # blocked from being placed into a match/pool and visually flagged.
     is_active = Column(Boolean, nullable=False, default=True)
+    # Whether the school's delegation has physically arrived at the venue —
+    # purely informational (organizer confirmed: no effect on match/pool
+    # eligibility), unlike is_active/TeamInactiveAgeGroup below.
+    has_arrived = Column(Boolean, nullable=False, default=False)
 
     participants = relationship("Participant", back_populates="team", cascade="all, delete-orphan")
     coaches = relationship("Coach", back_populates="team", cascade="all, delete-orphan")
@@ -72,6 +76,7 @@ class Team(TimestampMixin, Base):
     accommodation = relationship("AccommodationAssignment", back_populates="team")
     transport = relationship("TransportAssignment", back_populates="team")
     last_year_awards = relationship("TeamLastYearAward", back_populates="team", cascade="all, delete-orphan")
+    inactive_age_groups = relationship("TeamInactiveAgeGroup", back_populates="team", cascade="all, delete-orphan")
 
 
 class TeamPhoto(TimestampMixin, Base):
@@ -91,12 +96,16 @@ class TeamPhoto(TimestampMixin, Base):
 
 class TeamLastYearAward(Base):
     """A team's last-year result, scoped to one age group — a school can have
-    won one age group and been runner-up in another, so this isn't a single
-    tournament-wide flag. Enforced in routers/teams.py: at most one team per
-    (age_group, award) — the DB-level unique constraint backs that up — and a
-    team never holds both awards in the same age group (unique on team_id +
-    age_group). Winner/runner in the same age group are also never allowed to
-    share a pool (routers/pools.py _check_last_year_conflict)."""
+    finished top-4 in one age group and not another, so this isn't a single
+    tournament-wide flag. Four possible finishes: "winner" | "runner" |
+    "third" | "fourth" — last year's top 4 in a given age group, each
+    tracked separately per age group. Enforced in routers/teams.py: at most
+    one team per (age_group, award) — the DB-level unique constraint backs
+    that up — and a team holds at most one of the four in the same age group
+    (unique on team_id + age_group). Any two of last year's top-4 finishers
+    in the same age group are also never allowed to share a pool this year
+    (routers/pools.py _check_last_year_conflict) — not just winner-vs-runner,
+    all six pairs among the four are mutually exclusive."""
     __tablename__ = "team_last_year_awards"
     __table_args__ = (
         UniqueConstraint("team_id", "age_group", name="uq_team_last_year_award_team_group"),
@@ -105,9 +114,28 @@ class TeamLastYearAward(Base):
     id = Column(Integer, primary_key=True)
     team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
     age_group = Column(String(40), nullable=False)
-    award = Column(String(10), nullable=False)  # "winner" | "runner"
+    award = Column(String(10), nullable=False)  # "winner" | "runner" | "third" | "fourth"
 
     team = relationship("Team", back_populates="last_year_awards")
+
+
+class TeamInactiveAgeGroup(Base):
+    """Per-age-group companion to Team.is_active — that column still benches a
+    school across every age group at once (a deliberate "deactivate
+    everywhere" convenience); this table lets an organizer deactivate just
+    one of a school's squads (e.g. its Under 14 team withdrew) without
+    touching its Under 17 eligibility. Row existence = inactive for that age
+    group; no row = active — an opt-out model, same shape as
+    TeamLastYearAward, so no backfill is needed for every existing
+    team x age_group pair. Enforced in routers/matches.py
+    _team_unplayable_reason, alongside Team.is_active."""
+    __tablename__ = "team_inactive_age_groups"
+    __table_args__ = (UniqueConstraint("team_id", "age_group", name="uq_team_inactive_age_group"),)
+    id = Column(Integer, primary_key=True)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    age_group = Column(String(40), nullable=False)
+
+    team = relationship("Team", back_populates="inactive_age_groups")
 
 
 class Participant(TimestampMixin, Base):
@@ -223,6 +251,18 @@ class Venue(TimestampMixin, Base):
     capacity = Column(Integer)
     location = Column(String(300))
     description = Column(Text)
+
+
+class Mat(Base):
+    """A named mat/ground ("Mat 1", "Ground A") an organizer registers once
+    from the Mat / Ground admin page, then assigns matches to via a dropdown
+    (Match.mat_id) — deliberately separate from Venue, which models the
+    whole-event location (campus, dining hall) rather than which of several
+    parallel playing surfaces a specific match is on right now."""
+    __tablename__ = "mats"
+    __table_args__ = (UniqueConstraint("name", name="uq_mats_name"),)
+    id = Column(Integer, primary_key=True)
+    name = Column(String(60), nullable=False)
 
 
 class ScheduleEvent(TimestampMixin, Base):
@@ -638,6 +678,12 @@ class Match(TimestampMixin, Base):
 
     venue_id = Column(Integer, ForeignKey("venues.id", ondelete="SET NULL"))
     scheduled_at = Column(DateTime(timezone=True))
+    # Which physical mat/ground this match is on right now — a lightweight,
+    # organizer-managed registry (see Mat below), deliberately separate from
+    # venue_id/the Venue registry (that's the whole-event location; this is a
+    # fast-changing, per-match operational detail). Settable regardless of
+    # status via PUT /api/matches/{id}/mat — see routers/matches.py.
+    mat_id = Column(Integer, ForeignKey("mats.id", ondelete="SET NULL"))
 
     status = Column(String(20), nullable=False, default="SCHEDULED")  # schemas.MATCH_STATUSES
     team_a_score = Column(Integer, nullable=False, default=0)
@@ -661,6 +707,7 @@ class Match(TimestampMixin, Base):
     winner_team = relationship("Team", foreign_keys=[winner_team_id])
     forfeited_team = relationship("Team", foreign_keys=[forfeited_team_id])
     venue = relationship("Venue")
+    mat = relationship("Mat")
     source_match_a = relationship("Match", remote_side=[id], foreign_keys=[source_match_a_id])
     source_match_b = relationship("Match", remote_side=[id], foreign_keys=[source_match_b_id])
     source_pool_a = relationship("Pool", foreign_keys=[source_pool_a_id])

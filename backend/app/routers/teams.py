@@ -131,6 +131,9 @@ def list_teams(db: Session = Depends(get_db)):
         t.accommodation_locations = info["locations"]
         t.age_group_counts = age_group_counts.get(t.id, {})
         t.present_counts = present_counts.get(t.id, {})
+        # inactive_age_groups isn't batched here (unlike the maps above) — it's
+        # Team's own real relationship, so TeamRead's field_validator reads it
+        # straight off each `t` via normal (per-team lazy-loaded) attribute access.
     return teams
 
 
@@ -184,18 +187,17 @@ def _pool_teammates(db: Session, team_id: int) -> list[models.Team]:
     return db.query(models.Team).filter(models.Team.id.in_(teammate_ids)).all()
 
 
-_OPPOSITE_AWARD = {"winner": "runner", "runner": "winner"}
-
-
 def _replace_last_year_awards(db: Session, team: models.Team, awards: list[schemas.LastYearAwardEntry]) -> None:
     """Replaces this team's whole set of last-year awards (at most one per
-    age group — a team can be winner in one group and runner-up in another,
-    just never both in the same one). Steal-on-conflict is not allowed: if
-    another team already holds the same (age_group, award), this fails
-    loudly instead of silently reassigning it. Also rejects an award that
-    would collide with a pool teammate's opposite award in the same age
-    group. Validates everything before touching the DB, so a rejected
-    request leaves the team's existing awards untouched."""
+    age group — a team can be winner in one group and runner-up (or 3rd, or
+    4th) in another, just never two of the four in the same one). Steal-on-
+    conflict is not allowed: if another team already holds the same
+    (age_group, award), this fails loudly instead of silently reassigning
+    it. Also rejects an award that would collide with a pool teammate
+    already holding any of the OTHER three top-4 spots in the same age
+    group — all six pairs among the four are mutually exclusive. Validates
+    everything before touching the DB, so a rejected request leaves the
+    team's existing awards untouched."""
     seen_groups: set[str] = set()
     for entry in awards:
         if entry.age_group in seen_groups:
@@ -220,17 +222,14 @@ def _replace_last_year_awards(db: Session, team: models.Team, awards: list[schem
                 f"{other.name if other else 'Another team'} already holds last year's {entry.award} for {entry.age_group}",
             )
         conflict = next(
-            (
-                t for t in teammates
-                if any(a.age_group == entry.age_group and a.award == _OPPOSITE_AWARD[entry.award] for a in t.last_year_awards)
-            ),
+            (t for t in teammates if any(a.age_group == entry.age_group for a in t.last_year_awards)),
             None,
         )
         if conflict:
             raise HTTPException(
                 409,
-                f"{conflict.name} shares a pool with {team.name} and already holds the other award for "
-                f"{entry.age_group} — winner and runner-up can't be in the same pool",
+                f"{conflict.name} shares a pool with {team.name} and already holds a last year's top-4 award for "
+                f"{entry.age_group} — last year's top 4 finishers can't share a pool",
             )
 
     db.query(models.TeamLastYearAward).filter(models.TeamLastYearAward.team_id == team.id).delete()
@@ -254,6 +253,35 @@ def update_team(team_id: int, payload: schemas.TeamUpdate, db: Session = Depends
         setattr(team, key, value)
     db.commit()
     db.refresh(team)
+    team.present_counts = _present_counts_map(db, [team.id]).get(team.id, {})
+    return team
+
+
+@router.put("/{team_id}/age-groups/{age_group}/active", response_model=schemas.TeamRead)
+def set_team_age_group_active(team_id: int, age_group: str, payload: schemas.TeamAgeGroupActiveUpdate, db: Session = Depends(get_db)):
+    """Direct alternative to Team.is_active (which benches a school across
+    every age group at once) — deactivates/reactivates just this one age
+    group's squad. See models.TeamInactiveAgeGroup: row existence = inactive,
+    so this is a plain upsert-or-delete."""
+    team = db.get(models.Team, team_id)
+    if not team:
+        raise HTTPException(404, "Team not found")
+
+    existing = (
+        db.query(models.TeamInactiveAgeGroup)
+        .filter(models.TeamInactiveAgeGroup.team_id == team_id, models.TeamInactiveAgeGroup.age_group == age_group)
+        .first()
+    )
+    if payload.is_active:
+        if existing:
+            db.delete(existing)
+    elif not existing:
+        db.add(models.TeamInactiveAgeGroup(team_id=team_id, age_group=age_group))
+    db.commit()
+    db.refresh(team)
+    # team.inactive_age_groups is Team's real relationship — db.refresh()
+    # expires it, so the next access (inside TeamRead's field_validator)
+    # naturally re-queries and reflects the change made above.
     team.present_counts = _present_counts_map(db, [team.id]).get(team.id, {})
     return team
 

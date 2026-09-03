@@ -20,6 +20,7 @@ from .routers import (
     imports,
     knowledge,
     live_ws,
+    mats,
     matches,
     organizer_users,
     participants,
@@ -121,6 +122,7 @@ for router_module, module_key in (
     (pools, "matches"),
     (buckets, "matches"),
     (reports, "matches"),
+    (mats, "matches"),
     (attendance, "attendance"),
 ):
     app.include_router(router_module.router, dependencies=[Depends(require_module(module_key))])

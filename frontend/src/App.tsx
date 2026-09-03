@@ -35,6 +35,7 @@ const Procurement = lazy(() => import("@/pages/admin/Procurement"));
 const AdminAnnouncements = lazy(() => import("@/pages/admin/Announcements"));
 const Staff = lazy(() => import("@/pages/admin/Staff"));
 const Matches = lazy(() => import("@/pages/admin/Matches"));
+const MatGroundAssignment = lazy(() => import("@/pages/admin/MatGroundAssignment"));
 const Reports = lazy(() => import("@/pages/admin/Reports"));
 const Tasks = lazy(() => import("@/pages/admin/Tasks"));
 const Accounts = lazy(() => import("@/pages/admin/Accounts"));
@@ -116,6 +117,7 @@ export default function App() {
           <Route path="/admin/venues" element={<Venues />} />
           <Route path="/admin/schedule" element={<Schedule />} />
           <Route path="/admin/matches" element={<Matches />} />
+          <Route path="/admin/mat-ground" element={<MatGroundAssignment />} />
           <Route path="/admin/reports" element={<Reports />} />
           <Route path="/admin/tasks" element={<Tasks />} />
           <Route path="/admin/documents" element={<ComingSoon title="Documents" />} />
