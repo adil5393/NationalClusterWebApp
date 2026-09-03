@@ -213,6 +213,19 @@ class AccommodationRuleRead(ORMModel, AccommodationRuleBase):
     updated_at: datetime
 
 
+# --- Championship Photo Gallery ---
+class GalleryPhotoUpdate(BaseModel):
+    tag: Optional[str] = None
+
+
+class GalleryPhotoRead(ORMModel):
+    id: int
+    filename: str
+    url: str
+    tag: str
+    created_at: datetime
+
+
 # --- Knowledge Base ---
 class KnowledgeBase(BaseModel):
     title: str

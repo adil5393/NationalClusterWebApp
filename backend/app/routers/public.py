@@ -101,6 +101,18 @@ def public_accommodation(db: Session = Depends(get_db)):
     return result
 
 
+@router.get("/gallery", response_model=list[schemas.GalleryPhotoRead])
+def public_gallery(db: Session = Depends(get_db)):
+    """Day/group-tagged photos for the homepage's swiping card + full album
+    view — a richer sibling of public_about_images below (which stays a
+    flat untagged list, still used by the About page's flipbook)."""
+    return (
+        db.query(models.GalleryPhoto)
+        .order_by(models.GalleryPhoto.tag.asc(), models.GalleryPhoto.created_at.asc())
+        .all()
+    )
+
+
 @router.get("/accommodation-rules", response_model=list[schemas.AccommodationRuleRead])
 def public_accommodation_rules(db: Session = Depends(get_db)):
     return (
@@ -443,5 +455,8 @@ def public_about_images():
         if f.is_file() and f.suffix.lower() in VALID_IMAGE_EXTENSIONS and not f.name.startswith(".")
     ]
     images.sort(key=_natural_sort_key)
-    return [f"/assets/about/{img.name}" for img in images]
+    # /api/assets/..., not the bare /assets/... mount — production's nginx only
+    # proxies /api/* to the backend; a bare /assets/ request never leaves nginx
+    # (it tries to serve from the static frontend build and 404s there).
+    return [f"/api/assets/about/{img.name}" for img in images]
 

@@ -328,6 +328,23 @@ class FaqQuestion(TimestampMixin, Base):
     promoted_faq_id = Column(Integer, ForeignKey("faqs.id", ondelete="SET NULL"))
 
 
+class GalleryPhoto(TimestampMixin, Base):
+    """A Championship Photo Gallery upload (bulk from the admin panel, or
+    camera capture from the mobile app — see routers/gallery.py), tagged by
+    day/group so the public homepage's album can group photos together. The
+    actual image bytes live on disk at backend/assets/about/<filename> — this
+    row is just the metadata layer on top of what public.py's
+    public_about_images already scans directly from that folder."""
+    __tablename__ = "gallery_photos"
+    id = Column(Integer, primary_key=True)
+    filename = Column(String(255), nullable=False, unique=True)
+    tag = Column(String(60), nullable=False, default="General")
+
+    @property
+    def url(self) -> str:
+        return f"/api/assets/about/{self.filename}"
+
+
 class Driver(TimestampMixin, Base):
     __tablename__ = "drivers"
     id = Column(Integer, primary_key=True)
