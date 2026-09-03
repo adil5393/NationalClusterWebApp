@@ -119,11 +119,18 @@ export default function Home() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Fetch live matches
-    api
-      .get<LiveMatch[]>("/public/matches/live")
-      .then((r) => setLiveMatches(r.data))
-      .catch(() => {});
+    const loadLiveMatches = () => {
+      api
+        .get<LiveMatch[]>("/public/matches/live")
+        .then((r) => setLiveMatches(r.data))
+        .catch(() => {});
+    };
+
+    // Fetch live matches, then keep polling — this card has no single
+    // tournament to subscribe a WebSocket to (it's whichever match is live
+    // across ALL tournaments), so a lightweight interval is the right fit.
+    loadLiveMatches();
+    const interval = setInterval(loadLiveMatches, 15000);
 
     // Fetch announcements
     api
@@ -136,6 +143,8 @@ export default function Home() {
       .get<Team[]>("/public/teams")
       .then((r) => setTeams(r.data))
       .catch(() => {});
+
+    return () => clearInterval(interval);
   }, []);
 
   const handleQuickLookup = (e: React.FormEvent) => {

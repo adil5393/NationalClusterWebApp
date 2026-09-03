@@ -26,6 +26,33 @@ interface MatchT {
   mat_id?: number | null;
   mat_name?: string | null;
   venue_name?: string | null;
+  scheduled_at?: string | null;
+  scheduled_end_at?: string | null;
+}
+
+interface ScheduleDraft {
+  date: string;
+  start: string;
+  end: string;
+}
+
+// Split an ISO datetime into the <input type="date"> / <input type="time">
+// value strings it renders as, in local time.
+function splitIso(iso?: string | null): { date: string; time: string } {
+  if (!iso) return { date: "", time: "" };
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return { date: "", time: "" };
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return {
+    date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+  };
+}
+
+function combineIso(date: string, time: string): string | undefined {
+  if (!date || !time) return undefined;
+  const d = new Date(`${date}T${time}`);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
 }
 
 const STATUS_TONE: Record<string, "green" | "amber" | "blue"> = {
@@ -42,6 +69,8 @@ export default function MatGroundAssignment() {
   const [newMatName, setNewMatName] = useState("");
   const [creatingMat, setCreatingMat] = useState(false);
   const [assigningId, setAssigningId] = useState<number | null>(null);
+  const [scheduleDrafts, setScheduleDrafts] = useState<Record<number, ScheduleDraft>>({});
+  const [savingScheduleId, setSavingScheduleId] = useState<number | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -94,6 +123,42 @@ export default function MatGroundAssignment() {
       toast.error(e?.response?.data?.detail ?? "Could not update mat/ground");
     } finally {
       setAssigningId(null);
+    }
+  };
+
+  const draftFor = (m: MatchT): ScheduleDraft => {
+    if (scheduleDrafts[m.id]) return scheduleDrafts[m.id];
+    const { date, time: start } = splitIso(m.scheduled_at);
+    const { time: end } = splitIso(m.scheduled_end_at);
+    return { date, start, end };
+  };
+
+  const updateDraft = (matchId: number, patch: Partial<ScheduleDraft>) => {
+    const match = matches.find((m) => m.id === matchId);
+    if (!match) return;
+    setScheduleDrafts((prev) => ({ ...prev, [matchId]: { ...draftFor(match), ...patch } }));
+  };
+
+  const saveSchedule = async (matchId: number) => {
+    const draft = scheduleDrafts[matchId];
+    if (!draft) return;
+    const scheduled_at = combineIso(draft.date, draft.start);
+    const scheduled_end_at = combineIso(draft.date, draft.end);
+    if ((draft.start && !scheduled_at) || (draft.end && !scheduled_end_at) || (draft.start && draft.end && !draft.date)) {
+      toast.error("Pick a date along with the start/end time");
+      return;
+    }
+    setSavingScheduleId(matchId);
+    try {
+      const r = await api.put<MatchT>(`/matches/${matchId}/mat`, { scheduled_at: scheduled_at ?? null, scheduled_end_at: scheduled_end_at ?? null });
+      setMatches((prev) =>
+        prev.map((m) => (m.id === matchId ? { ...m, scheduled_at: r.data.scheduled_at, scheduled_end_at: r.data.scheduled_end_at } : m))
+      );
+      toast.success("Schedule saved");
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not save schedule — check for an overlap on this mat");
+    } finally {
+      setSavingScheduleId(null);
     }
   };
 
@@ -247,6 +312,52 @@ export default function MatGroundAssignment() {
                             </Select>
                           ) : (
                             <p className="text-xs text-slate-300 font-mono">{m.mat_name || "Not yet assigned"}</p>
+                          )}
+                          {canEdit ? (
+                            <div className="space-y-1.5" data-testid={`mat-schedule-${m.id}`}>
+                              <div className="flex gap-1.5">
+                                <Input
+                                  type="date"
+                                  value={draftFor(m).date}
+                                  onChange={(e) => updateDraft(m.id, { date: e.target.value })}
+                                  className="h-8 text-xs"
+                                  data-testid={`mat-schedule-date-${m.id}`}
+                                />
+                                <Input
+                                  type="time"
+                                  value={draftFor(m).start}
+                                  onChange={(e) => updateDraft(m.id, { start: e.target.value })}
+                                  className="h-8 text-xs"
+                                  title="Start time"
+                                  data-testid={`mat-schedule-start-${m.id}`}
+                                />
+                                <Input
+                                  type="time"
+                                  value={draftFor(m).end}
+                                  onChange={(e) => updateDraft(m.id, { end: e.target.value })}
+                                  className="h-8 text-xs"
+                                  title="End time"
+                                  data-testid={`mat-schedule-end-${m.id}`}
+                                />
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="w-full h-7 text-[11px] font-bold"
+                                disabled={savingScheduleId === m.id}
+                                onClick={() => saveSchedule(m.id)}
+                                data-testid={`save-mat-schedule-${m.id}`}
+                              >
+                                Save time slot
+                              </Button>
+                            </div>
+                          ) : (
+                            m.scheduled_at &&
+                            m.scheduled_end_at && (
+                              <p className="text-[11px] text-slate-400 font-mono">
+                                {splitIso(m.scheduled_at).date} · {splitIso(m.scheduled_at).time}–{splitIso(m.scheduled_end_at).time}
+                              </p>
+                            )
                           )}
                         </div>
                       ))}

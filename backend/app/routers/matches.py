@@ -57,6 +57,7 @@ def _match_dict(m: models.Match, db: Session) -> dict:
         "mat_id": m.mat_id,
         "mat_name": m.mat.name if m.mat else None,
         "scheduled_at": m.scheduled_at.isoformat() if m.scheduled_at else None,
+        "scheduled_end_at": m.scheduled_end_at.isoformat() if m.scheduled_end_at else None,
         "status": m.status,
         "team_a_score": m.team_a_score,
         "team_b_score": m.team_b_score,
@@ -935,17 +936,52 @@ def update_match(match_id: int, payload: schemas.MatchUpdate, db: Session = Depe
 
 @router.put("/api/matches/{match_id}/mat")
 def set_match_mat(match_id: int, payload: schemas.MatchMatUpdate, db: Session = Depends(get_db), current: models.OrganizerUser = Depends(require_auth)):
-    """Which physical mat/ground this match is on — unlike update_match above,
-    deliberately works at ANY status, since assigning a mat to an
-    already-ONGOING match (the primary use case — see the new Mat / Ground
-    admin page) is exactly what update_match's SCHEDULED/POSTPONED-only guard
-    would block. Pure logistics metadata: no event log, no broadcast."""
+    """Which physical mat/ground this match is on, and when — unlike
+    update_match above, deliberately works at ANY status, since assigning a
+    mat to an already-ONGOING match (the primary use case — see the Mat /
+    Ground admin page) is exactly what update_match's SCHEDULED/POSTPONED-only
+    guard would block. Pure logistics metadata: no event log, no broadcast.
+    Each field is only touched if the caller actually sent it, so the mat
+    dropdown and the date/time inputs can be saved independently."""
     m = db.get(models.Match, match_id)
     if not m:
         raise HTTPException(404, "Match not found")
-    if payload.mat_id is not None and not db.get(models.Mat, payload.mat_id):
-        raise HTTPException(404, f"Mat/ground {payload.mat_id} not found")
-    m.mat_id = payload.mat_id
+    data = payload.model_dump(exclude_unset=True)
+
+    mat_id = data.get("mat_id", m.mat_id)
+    scheduled_at = data.get("scheduled_at", m.scheduled_at)
+    scheduled_end_at = data.get("scheduled_end_at", m.scheduled_end_at)
+
+    if mat_id is not None and not db.get(models.Mat, mat_id):
+        raise HTTPException(404, f"Mat/ground {mat_id} not found")
+    if scheduled_at and scheduled_end_at and scheduled_end_at <= scheduled_at:
+        raise HTTPException(400, "End time must be after start time")
+
+    if mat_id is not None and scheduled_at and scheduled_end_at:
+        conflict = (
+            db.query(models.Match)
+            .filter(
+                models.Match.mat_id == mat_id,
+                models.Match.id != m.id,
+                models.Match.scheduled_at.isnot(None),
+                models.Match.scheduled_end_at.isnot(None),
+                models.Match.scheduled_at < scheduled_end_at,
+                models.Match.scheduled_end_at > scheduled_at,
+            )
+            .first()
+        )
+        if conflict:
+            mat_name = db.get(models.Mat, mat_id).name
+            raise HTTPException(
+                409,
+                f"{mat_name} is already booked for {_team_name(db, conflict.team_a_id) or 'TBD'} vs "
+                f"{_team_name(db, conflict.team_b_id) or 'TBD'} from {conflict.scheduled_at.isoformat()} "
+                f"to {conflict.scheduled_end_at.isoformat()} — pick a different time or mat",
+            )
+
+    for field in ("mat_id", "scheduled_at", "scheduled_end_at"):
+        if field in data:
+            setattr(m, field, data[field])
     db.commit()
     db.refresh(m)
     return _match_dict(m, db)
@@ -1148,6 +1184,127 @@ def forfeit_match(match_id: int, payload: schemas.MatchForfeitRequest, db: Sessi
     db.commit()
     db.refresh(m)
     broadcast_match_event_sync(m, "match_forfeited")
+    return _match_dict(m, db)
+
+
+def _downstream_blocking_reason(db: Session, m: models.Match) -> str | None:
+    """What a reset of this match would silently corrupt downstream, if
+    anything — None means it's safe. Deliberately doesn't cascade an undo
+    through further rounds itself: if something downstream already moved,
+    the organizer resets that first, one round at a time, same direction the
+    tournament actually progressed in."""
+    if m.pool_id:
+        pool = m.pool
+        dependents = (
+            db.query(models.Match)
+            .filter((models.Match.source_pool_a_id == pool.id) | (models.Match.source_pool_b_id == pool.id))
+            .all()
+        )
+        for d in dependents:
+            filled = (d.source_pool_a_id == pool.id and d.team_a_id) or (d.source_pool_b_id == pool.id and d.team_b_id)
+            if filled:
+                return f"{pool.name}'s qualifier has already advanced into {d.round.name} — undo that match first"
+        if db.query(models.BucketTeam).filter(models.BucketTeam.source_pool_id == pool.id).first():
+            return f"{pool.name}'s results have already been pulled into a Bucket — remove them there first"
+        return None
+
+    if not m.winner_team_id:
+        return None  # nothing decided yet on this match — nothing to have propagated
+
+    dependents = (
+        db.query(models.Match)
+        .filter((models.Match.source_match_a_id == m.id) | (models.Match.source_match_b_id == m.id))
+        .all()
+    )
+    for d in dependents:
+        if d.status != "SCHEDULED":
+            return f"This result has already advanced into {d.round.name} — undo that match first"
+
+    pulled = (
+        db.query(models.BucketTeam)
+        .join(models.Bucket, models.BucketTeam.bucket_id == models.Bucket.id)
+        .filter(models.Bucket.source_round_id == m.round_id, models.BucketTeam.team_id == m.winner_team_id)
+        .first()
+    )
+    if pulled:
+        return "This winner has already been pulled into a Bucket — remove them there first"
+    return None
+
+
+@router.post("/api/matches/{match_id}/reset")
+def reset_match(match_id: int, payload: schemas.MatchResetRequest, db: Session = Depends(get_db), current: models.OrganizerUser = Depends(require_auth)):
+    """Undo a match — result and, for a knockout match, optionally who's even
+    playing it — back to a fresh, re-playable state. Guarded by
+    _downstream_blocking_reason: if this match's result already advanced
+    somewhere that's no longer untouched, reset is refused rather than
+    silently rewriting a deeper chain of results."""
+    m = db.get(models.Match, match_id)
+    if not m:
+        raise HTTPException(404, "Match not found")
+    if m.pool_id and (payload.team_a_id != m.team_a_id or payload.team_b_id != m.team_b_id):
+        raise HTTPException(400, "Can't reassign teams on a League pool match — its fixtures are fixed by the pool's round-robin schedule")
+    if payload.team_a_id is not None and not db.get(models.Team, payload.team_a_id):
+        raise HTTPException(404, f"Team {payload.team_a_id} not found")
+    if payload.team_b_id is not None and not db.get(models.Team, payload.team_b_id):
+        raise HTTPException(404, f"Team {payload.team_b_id} not found")
+    if payload.team_a_id is not None and payload.team_a_id == payload.team_b_id:
+        raise HTTPException(400, "Team A and Team B can't be the same team")
+
+    blocking = _downstream_blocking_reason(db, m)
+    if blocking:
+        raise HTTPException(409, blocking)
+
+    # Retract this match's own forward propagation, now that the guard above
+    # has confirmed nothing downstream has actually moved yet.
+    if not m.pool_id and m.winner_team_id:
+        for d in db.query(models.Match).filter(
+            (models.Match.source_match_a_id == m.id) | (models.Match.source_match_b_id == m.id)
+        ):
+            if d.source_match_a_id == m.id:
+                d.team_a_id = None
+            if d.source_match_b_id == m.id:
+                d.team_b_id = None
+    if m.pool_id:
+        pool = m.pool
+        for d in db.query(models.Match).filter(
+            (models.Match.source_pool_a_id == pool.id) | (models.Match.source_pool_b_id == pool.id)
+        ):
+            if d.source_pool_a_id == pool.id:
+                d.team_a_id = None
+            if d.source_pool_b_id == pool.id:
+                d.team_b_id = None
+        pool.manual_qualifier_ids = None
+
+    _free_pushed_bucket_entries(db, m.round_id, [m.team_a_id, m.team_b_id])
+
+    # Team reassignment — knockout only. Breaks the flow line on any slot
+    # that's actually changing (clears its source_match/source_pool link) so
+    # a later upstream propagation won't silently overwrite the override.
+    if not m.pool_id:
+        if payload.team_a_id != m.team_a_id:
+            m.team_a_id = payload.team_a_id
+            m.source_match_a_id = None
+            m.source_pool_a_id = None
+            m.source_pool_a_rank = None
+        if payload.team_b_id != m.team_b_id:
+            m.team_b_id = payload.team_b_id
+            m.source_match_b_id = None
+            m.source_pool_b_id = None
+            m.source_pool_b_rank = None
+
+    m.status = "ONGOING" if m.team_a_id and m.team_b_id else "SCHEDULED"
+    m.team_a_score = 0
+    m.team_b_score = 0
+    m.winner_team_id = None
+    m.forfeited_team_id = None
+    m.started_at = datetime.now(timezone.utc) if m.status == "ONGOING" else None
+    m.ended_at = None
+    if m.notes == "Bye":
+        m.notes = None
+    _log_event(db, m, "RESET", current)
+    db.commit()
+    db.refresh(m)
+    broadcast_match_event_sync(m, "match_reset")
     return _match_dict(m, db)
 
 

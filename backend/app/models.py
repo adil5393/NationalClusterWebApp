@@ -678,6 +678,10 @@ class Match(TimestampMixin, Base):
 
     venue_id = Column(Integer, ForeignKey("venues.id", ondelete="SET NULL"))
     scheduled_at = Column(DateTime(timezone=True))
+    # End of the scheduled time slot — only meaningful together with
+    # scheduled_at, used to detect overlapping bookings on the same mat (see
+    # PUT /api/matches/{id}/mat's overlap check below).
+    scheduled_end_at = Column(DateTime(timezone=True))
     # Which physical mat/ground this match is on right now — a lightweight,
     # organizer-managed registry (see Mat below), deliberately separate from
     # venue_id/the Venue registry (that's the whole-event location; this is a
