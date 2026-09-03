@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Plus, Trash2, BedDouble, Building, Users, CheckCircle2, AlertTriangle, Layers } from "lucide-react";
+import { Plus, Trash2, Pencil, BedDouble, Building, Users, CheckCircle2, AlertTriangle, Layers, ScrollText } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Input, Label, Select } from "@/components/ui/input";
+import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { Table, THead, TH, TR, TD, TBody } from "@/components/ui/table";
+import { Dialog } from "@/components/ui/dialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -50,6 +51,16 @@ interface Participant {
   team_id: number;
 }
 
+interface RuleItem {
+  id: number;
+  title: string;
+  description: string;
+  sequence: number;
+  is_published: boolean;
+}
+
+const emptyRuleForm = { title: "", description: "", sequence: "0", is_published: "true" };
+
 type Mode = "team" | "participant";
 
 export default function Accommodation() {
@@ -70,6 +81,12 @@ export default function Accommodation() {
   });
   const [beds, setBeds] = useState<Bed[]>([]);
   const [newBed, setNewBed] = useState("");
+
+  const [rules, setRules] = useState<RuleItem[]>([]);
+  const [rulesLoading, setRulesLoading] = useState(true);
+  const [ruleDialogOpen, setRuleDialogOpen] = useState(false);
+  const [editRuleId, setEditRuleId] = useState<number | null>(null);
+  const [ruleForm, setRuleForm] = useState<Record<string, string>>(emptyRuleForm);
 
   const loadBeds = (roomId: string) => {
     if (!roomId) {
@@ -139,6 +156,58 @@ export default function Accommodation() {
     await api.delete(`/accommodation/assignments/${id}`);
     toast.success("Assignment removed");
     load();
+  };
+
+  const loadRules = () => {
+    setRulesLoading(true);
+    api
+      .get<RuleItem[]>("/accommodation/rules")
+      .then((r) => setRules(r.data))
+      .finally(() => setRulesLoading(false));
+  };
+  useEffect(loadRules, []);
+
+  const openNewRule = () => {
+    setRuleForm({ ...emptyRuleForm, sequence: String(rules.length) });
+    setEditRuleId(null);
+    setRuleDialogOpen(true);
+  };
+  const openEditRule = (r: RuleItem) => {
+    setRuleForm({
+      title: r.title,
+      description: r.description,
+      sequence: String(r.sequence),
+      is_published: String(r.is_published),
+    });
+    setEditRuleId(r.id);
+    setRuleDialogOpen(true);
+  };
+
+  const saveRule = async () => {
+    if (!ruleForm.title.trim() || !ruleForm.description.trim())
+      return toast.error("Title and description are required");
+    const payload = {
+      title: ruleForm.title,
+      description: ruleForm.description,
+      sequence: Number(ruleForm.sequence) || 0,
+      is_published: ruleForm.is_published === "true",
+    };
+    try {
+      if (editRuleId) await api.put(`/accommodation/rules/${editRuleId}`, payload);
+      else await api.post("/accommodation/rules", payload);
+      toast.success(editRuleId ? "Rule updated" : "Rule added");
+      setRuleDialogOpen(false);
+      loadRules();
+    } catch {
+      toast.error("Could not save rule");
+    }
+  };
+
+  const removeRule = async (id: number) => {
+    if (!confirm("Delete this rule?")) return;
+    await api.delete(`/accommodation/rules/${id}`);
+    toast.success("Rule deleted");
+    loadRules();
   };
 
   if (loading) {
@@ -566,6 +635,119 @@ export default function Accommodation() {
           </>
         )}
       </div>
+
+      {/* HOSTEL RULES & CURFEW PROTOCOL */}
+      <div className="border-t border-white/10 pt-6 space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="font-heading text-lg font-black tracking-tight text-white flex items-center gap-2">
+              <ScrollText className="h-4.5 w-4.5 text-gold" /> Hostel Rules & Curfew Protocol
+            </h2>
+            <p className="mt-1 text-xs sm:text-sm text-slate-400 font-body">
+              Shown on the public Accommodation page. Order controls display sequence (lowest first).
+            </p>
+          </div>
+          <Button variant="gold" size="sm" onClick={openNewRule} data-testid="add-rule-btn" className="text-xs font-extrabold shrink-0">
+            <Plus className="h-4 w-4" /> Add Rule
+          </Button>
+        </div>
+
+        {rulesLoading ? (
+          <div className="rounded-xl border border-white/10 bg-obsidian-900 py-12">
+            <Spinner label="Loading rules…" />
+          </div>
+        ) : rules.length === 0 ? (
+          <div className="rounded-xl border border-white/10 bg-obsidian-900 p-6">
+            <EmptyState title="No rules published yet" hint="Add curfew times, ID policies, and other hostel guidelines." />
+          </div>
+        ) : (
+          <div className="grid gap-2.5">
+            {rules.map((r) => (
+              <div
+                key={r.id}
+                data-testid={`rule-card-${r.id}`}
+                className="rounded-xl border border-white/10 bg-obsidian-900 p-4 flex items-start justify-between gap-3 shadow-sm"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono text-slate-500">#{r.sequence}</span>
+                    <h3 className="font-heading font-bold text-white text-sm">{r.title}</h3>
+                    {r.is_published ? (
+                      <Badge tone="live" size="sm">
+                        Published
+                      </Badge>
+                    ) : (
+                      <Badge tone="neutral" size="sm">
+                        Draft
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs text-slate-300 font-body leading-relaxed">{r.description}</p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button variant="ghost" size="icon-sm" onClick={() => openEditRule(r)} data-testid={`edit-rule-${r.id}`} title="Edit Rule">
+                    <Pencil className="h-3.5 w-3.5 text-slate-300" />
+                  </Button>
+                  <Button variant="ghost" size="icon-sm" onClick={() => removeRule(r.id)} data-testid={`delete-rule-${r.id}`} title="Delete Rule">
+                    <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ADD / EDIT RULE DIALOG */}
+      <Dialog open={ruleDialogOpen} onClose={() => setRuleDialogOpen(false)} title={editRuleId ? "Edit Rule" : "Add Rule"} testId="rule-dialog">
+        <div className="space-y-4">
+          <div>
+            <Label>Title *</Label>
+            <Input
+              value={ruleForm.title}
+              onChange={(e) => setRuleForm((f) => ({ ...f, title: e.target.value }))}
+              placeholder="e.g. Curfew"
+              data-testid="rule-title-input"
+            />
+          </div>
+          <div>
+            <Label>Description *</Label>
+            <Textarea
+              value={ruleForm.description}
+              onChange={(e) => setRuleForm((f) => ({ ...f, description: e.target.value }))}
+              placeholder="e.g. All participants must report to their respective hostel rooms by 21:30 hrs."
+              rows={3}
+              data-testid="rule-description-input"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Display Order</Label>
+              <Input
+                type="number"
+                value={ruleForm.sequence}
+                onChange={(e) => setRuleForm((f) => ({ ...f, sequence: e.target.value }))}
+                data-testid="rule-sequence-input"
+              />
+            </div>
+            <div>
+              <Label>Visibility</Label>
+              <Select value={ruleForm.is_published} onChange={(e) => setRuleForm((f) => ({ ...f, is_published: e.target.value }))}>
+                <option value="true">Published</option>
+                <option value="false">Draft</option>
+              </Select>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-3 border-t border-white/10">
+            <Button variant="outline" size="sm" onClick={() => setRuleDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="gold" size="sm" onClick={saveRule} data-testid="save-rule-btn">
+              {editRuleId ? "Update Rule" : "Add Rule"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }

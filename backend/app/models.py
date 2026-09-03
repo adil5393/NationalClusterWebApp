@@ -243,6 +243,18 @@ class AccommodationAssignment(TimestampMixin, Base):
     bed = relationship("Bed", back_populates="assignment")
 
 
+class AccommodationRule(TimestampMixin, Base):
+    """A hostel rule/policy line item (e.g. "Curfew" / "All participants must
+    report by 21:30 hrs") shown on the public /accommodation page's rules
+    list — organizer-managed instead of hardcoded, same pattern as Faq."""
+    __tablename__ = "accommodation_rules"
+    id = Column(Integer, primary_key=True)
+    title = Column(String(120), nullable=False)
+    description = Column(Text, nullable=False)
+    sequence = Column(Integer, nullable=False, default=0)
+    is_published = Column(Boolean, default=True)
+
+
 class Venue(TimestampMixin, Base):
     __tablename__ = "venues"
     id = Column(Integer, primary_key=True)

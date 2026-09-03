@@ -142,7 +142,49 @@ function VenuesSection() {
 /* ========================================================================== */
 /* ACCOMMODATION SECTION                                                     */
 /* ========================================================================== */
+interface AccommodationBuilding {
+  id: number;
+  name: string;
+  code?: string | null;
+  description?: string | null;
+  floor_count: number;
+  room_count: number;
+  capacity: number;
+  room_types: string[];
+}
+
+const BUILDING_ICONS = [Building, Shield, Trophy];
+const BUILDING_TONES = [
+  "bg-gold/15 text-gold",
+  "bg-coral/15 text-coral",
+  "bg-emerald-500/15 text-emerald-400",
+];
+
+interface AccommodationRule {
+  id: number;
+  title: string;
+  description: string;
+}
+
 function AccommodationSection() {
+  const [buildings, setBuildings] = useState<AccommodationBuilding[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [rules, setRules] = useState<AccommodationRule[]>([]);
+  const [rulesLoading, setRulesLoading] = useState(true);
+
+  useEffect(() => {
+    api
+      .get<AccommodationBuilding[]>("/public/accommodation")
+      .then((r) => setBuildings(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+    api
+      .get<AccommodationRule[]>("/public/accommodation-rules")
+      .then((r) => setRules(r.data))
+      .catch(() => {})
+      .finally(() => setRulesLoading(false));
+  }, []);
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-white/10 pb-6">
@@ -162,57 +204,57 @@ function AccommodationSection() {
         </Link>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-3">
-        <div className="rounded-xl border border-white/10 bg-obsidian-900 p-6 space-y-3">
-          <div className="grid h-10 w-10 place-items-center rounded-lg bg-gold/15 text-gold font-bold">
-            <Building className="h-5 w-5" />
-          </div>
-          <h3 className="font-heading text-base font-bold text-white">Boys Hostel Blocks (A & B)</h3>
-          <p className="text-xs text-slate-300 font-body leading-relaxed">
-            Spacious shared dormitories with bedding, study tables, secure lockers, and 24/7 hot water supply.
-          </p>
+      {loading ? (
+        <p className="text-sm text-slate-400 font-body">Loading…</p>
+      ) : buildings.length === 0 ? (
+        <p className="text-sm text-slate-400 font-body">Accommodation details will be published here soon.</p>
+      ) : (
+        <div className="grid gap-6 md:grid-cols-3">
+          {buildings.map((b, i) => {
+            const Icon = BUILDING_ICONS[i % BUILDING_ICONS.length];
+            const tone = BUILDING_TONES[i % BUILDING_TONES.length];
+            return (
+              <div key={b.id} className="rounded-xl border border-white/10 bg-obsidian-900 p-6 space-y-3">
+                <div className={`grid h-10 w-10 place-items-center rounded-lg font-bold ${tone}`}>
+                  <Icon className="h-5 w-5" />
+                </div>
+                <h3 className="font-heading text-base font-bold text-white">
+                  {b.name}
+                  {b.code && <span className="ml-2 text-xs font-mono text-slate-500">· {b.code}</span>}
+                </h3>
+                {b.description ? (
+                  <p className="text-xs text-slate-300 font-body leading-relaxed">{b.description}</p>
+                ) : (
+                  <p className="text-xs text-slate-500 font-body italic leading-relaxed">No description added yet.</p>
+                )}
+                <div className="flex flex-wrap gap-1.5 pt-2 border-t border-white/5 text-[11px] text-slate-400 font-mono">
+                  <span>{b.floor_count} floor{b.floor_count === 1 ? "" : "s"}</span>
+                  <span>· {b.room_count} room{b.room_count === 1 ? "" : "s"}</span>
+                  <span>· {b.capacity} beds</span>
+                </div>
+              </div>
+            );
+          })}
         </div>
+      )}
 
-        <div className="rounded-xl border border-white/10 bg-obsidian-900 p-6 space-y-3">
-          <div className="grid h-10 w-10 place-items-center rounded-lg bg-coral/15 text-coral font-bold">
-            <Shield className="h-5 w-5" />
-          </div>
-          <h3 className="font-heading text-base font-bold text-white">Girls Hostel Block (C)</h3>
-          <p className="text-xs text-slate-300 font-body leading-relaxed">
-            Dedicated secure block with restricted biometric/key entry, female resident wardens, and on-site medical attendants.
-          </p>
+      {!rulesLoading && rules.length > 0 && (
+        <div className="rounded-xl border border-white/10 bg-obsidian-900/80 p-6 space-y-3">
+          <h3 className="font-heading text-sm font-bold text-white uppercase tracking-wider text-gold">
+            Hostel Rules & Curfew Protocol
+          </h3>
+          <ul className="space-y-2 text-xs text-slate-300 font-body">
+            {rules.map((r) => (
+              <li key={r.id} className="flex items-start gap-2">
+                <span className="text-gold font-bold">•</span>
+                <span>
+                  <strong>{r.title}:</strong> {r.description}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
-
-        <div className="rounded-xl border border-white/10 bg-obsidian-900 p-6 space-y-3">
-          <div className="grid h-10 w-10 place-items-center rounded-lg bg-emerald-500/15 text-emerald-400 font-bold">
-            <Trophy className="h-5 w-5" />
-          </div>
-          <h3 className="font-heading text-base font-bold text-white">Guest House for Officials</h3>
-          <p className="text-xs text-slate-300 font-body leading-relaxed">
-            Executive guest rooms reserved for CBSE Sports Observers, Technical Jury, Chief Referees, and VIP dignitaries.
-          </p>
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-white/10 bg-obsidian-900/80 p-6 space-y-3">
-        <h3 className="font-heading text-sm font-bold text-white uppercase tracking-wider text-gold">
-          Hostel Rules & Curfew Protocol
-        </h3>
-        <ul className="space-y-2 text-xs text-slate-300 font-body">
-          <li className="flex items-start gap-2">
-            <span className="text-gold font-bold">•</span>
-            <span><strong>Curfew:</strong> All participants must report to their respective hostel rooms by 21:30 hrs.</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-gold font-bold">•</span>
-            <span><strong>Athlete Accreditation:</strong> Wearing tournament ID tags is mandatory across hostel premises.</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-gold font-bold">•</span>
-            <span><strong>Valuables:</strong> Teams should deposit team documents and high-value gear with the delegation manager or hostel warden.</span>
-          </li>
-        </ul>
-      </div>
+      )}
     </div>
   );
 }

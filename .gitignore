@@ -95,4 +95,4 @@ credentials.json
 
 /backend/tests/*
 
-test*.py
+*test*.py

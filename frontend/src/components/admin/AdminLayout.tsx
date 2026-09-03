@@ -22,6 +22,7 @@ import {
   ExternalLink,
   LayoutGrid,
   HardHat,
+  Images,
   LogOut,
   UserCog,
   Radio,
@@ -84,6 +85,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/admin/announcements", label: "Announcements", icon: Megaphone, moduleKey: "announcements" },
       { to: "/admin/faq", label: "FAQ", icon: HelpCircle, moduleKey: "faq" },
+      { to: "/admin/gallery", label: "Photo Gallery", icon: Images, moduleKey: "gallery" },
       { to: "/admin/procurement", label: "Procurement", icon: ShoppingCart, moduleKey: "procurement" },
       { to: "/admin/tasks", label: "Tasks", icon: CheckSquare },
       { to: "/admin/knowledge", label: "Knowledge Base", icon: BookOpen, moduleKey: "knowledge" },

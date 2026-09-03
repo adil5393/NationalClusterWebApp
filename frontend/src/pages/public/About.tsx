@@ -27,7 +27,7 @@ import {
   Globe2,
   FileCheck,
 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, assetUrl } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -173,11 +173,7 @@ export default function About() {
   }, [lightboxIndex, images.length]);
 
   // Asset URL helper (handles both web browser relative paths and Capacitor)
-  const getImageUrl = (path: string) => {
-    if (path.startsWith("http")) return path;
-    const base = api.defaults.baseURL ? api.defaults.baseURL.replace(/\/api\/?$/, "") : "";
-    return `${base}${path.startsWith("/") ? "" : "/"}${path}`;
-  };
+  const getImageUrl = assetUrl;
 
   return (
     <div

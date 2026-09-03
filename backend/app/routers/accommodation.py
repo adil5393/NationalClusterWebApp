@@ -235,6 +235,45 @@ def room_map(db: Session = Depends(get_db)):
     return out
 
 
+@router.get("/rules", response_model=list[schemas.AccommodationRuleRead])
+def list_rules(db: Session = Depends(get_db)):
+    return (
+        db.query(models.AccommodationRule)
+        .order_by(models.AccommodationRule.sequence.asc(), models.AccommodationRule.id.asc())
+        .all()
+    )
+
+
+@router.post("/rules", response_model=schemas.AccommodationRuleRead, status_code=201)
+def create_rule(payload: schemas.AccommodationRuleCreate, db: Session = Depends(get_db)):
+    item = models.AccommodationRule(**payload.model_dump())
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.put("/rules/{rule_id}", response_model=schemas.AccommodationRuleRead)
+def update_rule(rule_id: int, payload: schemas.AccommodationRuleUpdate, db: Session = Depends(get_db)):
+    item = db.get(models.AccommodationRule, rule_id)
+    if not item:
+        raise HTTPException(404, "Rule not found")
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(item, key, value)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.delete("/rules/{rule_id}", status_code=204)
+def delete_rule(rule_id: int, db: Session = Depends(get_db)):
+    item = db.get(models.AccommodationRule, rule_id)
+    if not item:
+        raise HTTPException(404, "Rule not found")
+    db.delete(item)
+    db.commit()
+
+
 @router.get("/occupancy")
 def occupancy(db: Session = Depends(get_db)):
     out = []

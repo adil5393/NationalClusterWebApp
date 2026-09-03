@@ -78,6 +78,39 @@ def public_schedule(db: Session = Depends(get_db)):
     return result
 
 
+@router.get("/accommodation")
+def public_accommodation(db: Session = Depends(get_db)):
+    """Hostel blocks shown on the public /accommodation page — structural
+    info only (name, code, description, room/capacity counts). No occupancy
+    or who's-assigned-where: that's per-team and only shown on that team's
+    own portal (see public_team_detail's "accommodation" key)."""
+    result = []
+    for b in db.query(models.Building).order_by(models.Building.name).all():
+        rooms = [r for f in b.floors for r in f.rooms]
+        room_types = sorted({r.room_type for r in rooms if r.room_type})
+        result.append({
+            "id": b.id,
+            "name": b.name,
+            "code": b.code,
+            "description": b.description,
+            "floor_count": len(b.floors),
+            "room_count": len(rooms),
+            "capacity": sum(r.capacity or 0 for r in rooms),
+            "room_types": room_types,
+        })
+    return result
+
+
+@router.get("/accommodation-rules", response_model=list[schemas.AccommodationRuleRead])
+def public_accommodation_rules(db: Session = Depends(get_db)):
+    return (
+        db.query(models.AccommodationRule)
+        .filter(models.AccommodationRule.is_published.is_(True))
+        .order_by(models.AccommodationRule.sequence.asc(), models.AccommodationRule.id.asc())
+        .all()
+    )
+
+
 @router.get("/announcements", response_model=list[schemas.AnnouncementRead])
 def public_announcements(db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc)

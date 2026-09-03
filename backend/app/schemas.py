@@ -177,9 +177,40 @@ class BuildingCreate(BuildingBase):
     pass
 
 
+class BuildingUpdate(BaseModel):
+    name: Optional[str] = None
+    code: Optional[str] = None
+    description: Optional[str] = None
+
+
 class BuildingRead(ORMModel, BuildingBase):
     id: int
     floors: List[FloorRead] = []
+
+
+# --- Accommodation rules (public hostel rules / curfew list) ---
+class AccommodationRuleBase(BaseModel):
+    title: str
+    description: str
+    sequence: int = 0
+    is_published: bool = True
+
+
+class AccommodationRuleCreate(AccommodationRuleBase):
+    pass
+
+
+class AccommodationRuleUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    sequence: Optional[int] = None
+    is_published: Optional[bool] = None
+
+
+class AccommodationRuleRead(ORMModel, AccommodationRuleBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
 
 
 # --- Knowledge Base ---
@@ -557,6 +588,7 @@ ORGANIZER_MODULES = {
     "schedule": "Schedule",
     "announcements": "Announcements",
     "faq": "FAQ",
+    "gallery": "Photo Gallery",
     "procurement": "Procurement",
     "knowledge": "Knowledge Base",
     "matches": "Matches & Fixtures",

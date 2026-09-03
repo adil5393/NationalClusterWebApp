@@ -23,6 +23,18 @@ def create_building(payload: schemas.BuildingCreate, db: Session = Depends(get_d
     return building
 
 
+@router.put("/buildings/{building_id}", response_model=schemas.BuildingRead)
+def update_building(building_id: int, payload: schemas.BuildingUpdate, db: Session = Depends(get_db)):
+    building = db.get(models.Building, building_id)
+    if not building:
+        raise HTTPException(404, "Building not found")
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(building, key, value)
+    db.commit()
+    db.refresh(building)
+    return building
+
+
 @router.delete("/buildings/{building_id}", status_code=204)
 def delete_building(building_id: int, db: Session = Depends(get_db)):
     obj = db.get(models.Building, building_id)

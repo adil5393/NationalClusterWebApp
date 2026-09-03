@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { Plus, Trash2, Building2, ChevronDown, ChevronRight, Layers, DoorOpen } from "lucide-react";
+import { Plus, Trash2, Pencil, Building2, ChevronDown, ChevronRight, Layers, DoorOpen } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Input, Label } from "@/components/ui/input";
+import { Input, Label, Textarea } from "@/components/ui/input";
 import { Dialog } from "@/components/ui/dialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +25,7 @@ interface Building {
   id: number;
   name: string;
   code?: string;
+  description?: string;
   floors: Floor[];
 }
 
@@ -35,6 +36,7 @@ export default function BuildingsRooms() {
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   const [dialog, setDialog] = useState<null | { kind: "building" | "floor" | "room"; parentId?: number }>(null);
   const [form, setForm] = useState<Record<string, string>>({});
+  const [editBuildingId, setEditBuildingId] = useState<number | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -47,14 +49,28 @@ export default function BuildingsRooms() {
 
   const openDialog = (kind: "building" | "floor" | "room", parentId?: number) => {
     setForm({});
+    setEditBuildingId(null);
     setDialog({ kind, parentId });
+  };
+
+  const openEditBuilding = (b: Building) => {
+    setForm({ name: b.name, code: b.code ?? "", description: b.description ?? "" });
+    setEditBuildingId(b.id);
+    setDialog({ kind: "building" });
   };
 
   const save = async () => {
     const { kind, parentId } = dialog!;
     if (!form.name?.trim()) return toast.error("Name is required");
     try {
-      if (kind === "building") await api.post("/buildings", { name: form.name, code: form.code });
+      if (kind === "building" && editBuildingId)
+        await api.put(`/buildings/${editBuildingId}`, {
+          name: form.name,
+          code: form.code,
+          description: form.description,
+        });
+      else if (kind === "building")
+        await api.post("/buildings", { name: form.name, code: form.code, description: form.description });
       else if (kind === "floor")
         await api.post(`/buildings/${parentId}/floors`, {
           name: form.name,
@@ -83,7 +99,9 @@ export default function BuildingsRooms() {
 
   const title =
     dialog?.kind === "building"
-      ? "Add Hostel Building"
+      ? editBuildingId
+        ? "Edit Hostel Building"
+        : "Add Hostel Building"
       : dialog?.kind === "floor"
       ? "Add Building Floor"
       : "Add Room";
@@ -167,6 +185,15 @@ export default function BuildingsRooms() {
                         className="text-xs font-semibold"
                       >
                         <Plus className="h-3.5 w-3.5 text-gold" /> Add Floor
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => openEditBuilding(b)}
+                        data-testid={`edit-building-${b.id}`}
+                        title="Edit Building"
+                      >
+                        <Pencil className="h-3.5 w-3.5 text-slate-300" />
                       </Button>
                       <Button
                         variant="ghost"
@@ -280,14 +307,26 @@ export default function BuildingsRooms() {
             />
           </div>
           {dialog?.kind === "building" && (
-            <div>
-              <Label>Building Code</Label>
-              <Input
-                value={form.code ?? ""}
-                onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
-                placeholder="e.g. BLK-A"
-              />
-            </div>
+            <>
+              <div>
+                <Label>Building Code</Label>
+                <Input
+                  value={form.code ?? ""}
+                  onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
+                  placeholder="e.g. BLK-A"
+                />
+              </div>
+              <div>
+                <Label>Description (shown on the public Accommodation page)</Label>
+                <Textarea
+                  value={form.description ?? ""}
+                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                  placeholder="e.g. Boys hostel with shared dormitories, secure lockers, and 24/7 hot water"
+                  rows={3}
+                  data-testid="structure-description-input"
+                />
+              </div>
+            </>
           )}
           {dialog?.kind === "floor" && (
             <div>

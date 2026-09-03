@@ -91,13 +91,19 @@ async def import_participants(file: UploadFile = File(...), db: Session = Depend
 
 
 def _find_col(columns, *prefixes: str) -> "str | None":
-    """The school registration form's headers are long and instructional
-    (e.g. "Coach Name(For Multiple Coaches, use comma to separate them)") —
-    match by a short lowercase prefix instead of the exact text."""
+    """The school registration form's headers are long, instructional, and
+    reworded over time by whoever edits the Google Form (e.g. "Attach a Team
+    Photo..." one year, "Attach a Team GROUP Photo..." the next) — matching
+    requires every word of a given prefix to appear somewhere in the header
+    (as a substring, so "name" still matches the no-space-before-paren
+    "Name(For Multiple..." case), not that the header starts with it
+    verbatim. A header with an extra word slipped into the middle, like
+    "group" here, still matches; only a genuinely different header doesn't."""
     for col in columns:
         low = str(col).strip().lower()
-        if any(low.startswith(p) for p in prefixes):
-            return col
+        for p in prefixes:
+            if all(word in low for word in p.split()):
+                return col
     return None
 
 
