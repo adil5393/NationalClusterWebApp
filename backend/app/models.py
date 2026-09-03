@@ -288,6 +288,34 @@ class Announcement(TimestampMixin, Base):
     expires_at = Column(DateTime(timezone=True))
 
 
+class Faq(TimestampMixin, Base):
+    """Public-facing Frequently Asked Questions, organizer-managed from the
+    FAQ admin page and shown on the public /faq page. sequence controls
+    display order (ascending); is_published lets an organizer draft one
+    without it going live yet."""
+    __tablename__ = "faqs"
+    id = Column(Integer, primary_key=True)
+    question = Column(String(300), nullable=False)
+    answer = Column(Text, nullable=False)
+    category = Column(String(60), default="General")
+    sequence = Column(Integer, nullable=False, default=0)
+    is_published = Column(Boolean, default=True)
+
+
+class FaqQuestion(TimestampMixin, Base):
+    """A visitor-submitted question from the public FAQ page's "Ask a
+    question" form — an inbox organizers review from the FAQ admin page.
+    Answering it there either promotes it into a published Faq (question +
+    the organizer's answer become a real entry) or dismisses it."""
+    __tablename__ = "faq_questions"
+    id = Column(Integer, primary_key=True)
+    name = Column(String(120))
+    email = Column(String(200))
+    question = Column(Text, nullable=False)
+    status = Column(String(20), nullable=False, default="new")  # new | promoted | dismissed
+    promoted_faq_id = Column(Integer, ForeignKey("faqs.id", ondelete="SET NULL"))
+
+
 class Driver(TimestampMixin, Base):
     __tablename__ = "drivers"
     id = Column(Integer, primary_key=True)

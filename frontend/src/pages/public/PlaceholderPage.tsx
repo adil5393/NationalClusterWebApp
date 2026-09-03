@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { toast } from "sonner";
+import { api } from "@/lib/api";
 import {
   MapPin,
   BedDouble,
@@ -22,6 +24,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input, Label, Textarea } from "@/components/ui/input";
 
 interface SectionProps {
   title: string;
@@ -376,31 +379,68 @@ function ContactsSection() {
 /* ========================================================================== */
 /* FAQ SECTION                                                               */
 /* ========================================================================== */
-function FaqSection() {
-  const [openIdx, setOpenIdx] = useState<number | null>(0);
+interface FaqItem {
+  id: number;
+  question: string;
+  answer: string;
+  category: string;
+}
 
-  const FAQS = [
-    {
-      q: "What are the eligibility and weigh-in requirements?",
-      a: "All student athletes must produce their original CBSE registration card, valid Aadhaar/Passport, and undergo mandatory weigh-in before Day 1 competition according to AKFI weight brackets (Under-19 and Under-17 specifications).",
-    },
-    {
-      q: "What is the official match format and duration?",
-      a: "Matches follow standard AKFI rules: Two halves of 20 minutes each with a 5-minute interval. Raid time limit is 30 seconds. Third empty raid triggers a 'Do-or-Die' raid.",
-    },
-    {
-      q: "How are pool standings and points calculated?",
-      a: "Win: 2 points, Tie: 1 point, Loss: 0 points. Ties in pool standings are resolved via Score Difference (points scored minus points conceded), followed by total points scored and head-to-head match result.",
-    },
-    {
-      q: "What is the procedure for lodging a technical protest?",
-      a: "Protests regarding match decisions must be submitted in writing to the Chief Technical Official within 30 minutes of the match conclusion, accompanied by the standard official fee.",
-    },
-    {
-      q: "Are parents and external spectators permitted to watch matches?",
-      a: "Yes, spectator entry into the main stadium gallery is free. However, spectator access is restricted to public spectator zones; the court apron, team bench, and athlete hostels require official delegation passes.",
-    },
-  ];
+function FaqSection() {
+  const [openIdx, setOpenIdx] = useState<number | null>(null);
+  const [faqs, setFaqs] = useState<FaqItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [askName, setAskName] = useState("");
+  const [askEmail, setAskEmail] = useState("");
+  const [askQuestion, setAskQuestion] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [asked, setAsked] = useState(false);
+
+  useEffect(() => {
+    api
+      .get<FaqItem[]>("/public/faqs")
+      .then((r) => {
+        setFaqs(r.data);
+        setOpenIdx(r.data[0]?.id ?? null);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const submitQuestion = async () => {
+    if (!askQuestion.trim()) {
+      toast.error("Enter your question first");
+      return;
+    }
+    setAsking(true);
+    try {
+      await api.post("/public/faq-questions", {
+        name: askName.trim() || undefined,
+        email: askEmail.trim() || undefined,
+        question: askQuestion.trim(),
+      });
+      setAsked(true);
+      setAskName("");
+      setAskEmail("");
+      setAskQuestion("");
+    } catch {
+      toast.error("Could not submit your question — please try again");
+    } finally {
+      setAsking(false);
+    }
+  };
+
+  // Group by category, preserving the organizer-defined display order within
+  // each group (the backend already sorts by sequence).
+  const groups: { category: string; items: FaqItem[] }[] = [];
+  for (const f of faqs) {
+    let group = groups.find((g) => g.category === f.category);
+    if (!group) {
+      group = { category: f.category, items: [] };
+      groups.push(group);
+    }
+    group.items.push(f);
+  }
 
   return (
     <div className="space-y-8">
@@ -413,29 +453,99 @@ function FaqSection() {
         </p>
       </div>
 
-      <div className="space-y-3">
-        {FAQS.map((faq, i) => {
-          const isOpen = openIdx === i;
-          return (
-            <div
-              key={i}
-              className="rounded-xl border border-white/10 bg-obsidian-900 overflow-hidden transition-colors"
-            >
-              <button
-                onClick={() => setOpenIdx(isOpen ? null : i)}
-                className="w-full flex items-center justify-between p-5 text-left font-heading text-base font-bold text-white hover:text-gold transition-colors"
-              >
-                <span>{faq.q}</span>
-                {isOpen ? <ChevronUp className="h-5 w-5 text-gold shrink-0 ml-4" /> : <ChevronDown className="h-5 w-5 text-slate-400 shrink-0 ml-4" />}
-              </button>
-              {isOpen && (
-                <div className="px-5 pb-5 pt-0 text-xs sm:text-sm text-slate-300 font-body leading-relaxed border-t border-white/5 pt-3">
-                  {faq.a}
+      {loading ? (
+        <p className="text-sm text-slate-400 font-body">Loading…</p>
+      ) : faqs.length === 0 ? (
+        <p className="text-sm text-slate-400 font-body">No FAQs published yet — check back soon.</p>
+      ) : (
+        groups.map((group) => (
+          <div key={group.category} className="space-y-3">
+            {groups.length > 1 && (
+              <h2 className="text-xs font-heading font-extrabold uppercase tracking-widest text-gold">
+                {group.category}
+              </h2>
+            )}
+            {group.items.map((faq) => {
+              const isOpen = openIdx === faq.id;
+              return (
+                <div
+                  key={faq.id}
+                  className="rounded-xl border border-white/10 bg-obsidian-900 overflow-hidden transition-colors"
+                >
+                  <button
+                    onClick={() => setOpenIdx(isOpen ? null : faq.id)}
+                    className="w-full flex items-center justify-between p-5 text-left font-heading text-base font-bold text-white hover:text-gold transition-colors"
+                  >
+                    <span>{faq.question}</span>
+                    {isOpen ? (
+                      <ChevronUp className="h-5 w-5 text-gold shrink-0 ml-4" />
+                    ) : (
+                      <ChevronDown className="h-5 w-5 text-slate-400 shrink-0 ml-4" />
+                    )}
+                  </button>
+                  {isOpen && (
+                    <div className="px-5 pb-5 pt-0 text-xs sm:text-sm text-slate-300 font-body leading-relaxed border-t border-white/5 pt-3">
+                      {faq.answer}
+                    </div>
+                  )}
                 </div>
-              )}
+              );
+            })}
+          </div>
+        ))
+      )}
+
+      <div className="rounded-xl border border-gold/30 bg-gold/10 p-6 space-y-4" data-testid="ask-question-section">
+        <div className="flex items-start gap-3.5">
+          <HelpCircle className="h-5 w-5 text-gold shrink-0 mt-0.5" />
+          <div>
+            <p className="font-heading font-bold text-white text-base">Didn't find your answer?</p>
+            <p className="mt-1 text-xs text-slate-300 font-body">
+              Ask your question below — the organizing committee will review it and may add it here for everyone.
+            </p>
+          </div>
+        </div>
+
+        {asked ? (
+          <div className="flex items-center gap-2 text-sm text-emerald-400 font-body" data-testid="ask-question-success">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            Thanks — your question has been submitted to the organizing committee.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <Label>Your Name (optional)</Label>
+                <Input value={askName} onChange={(e) => setAskName(e.target.value)} placeholder="Jane Doe" data-testid="ask-question-name" />
+              </div>
+              <div>
+                <Label>Email (optional, if you'd like a reply)</Label>
+                <Input
+                  type="email"
+                  value={askEmail}
+                  onChange={(e) => setAskEmail(e.target.value)}
+                  placeholder="jane@example.com"
+                  data-testid="ask-question-email"
+                />
+              </div>
             </div>
-          );
-        })}
+            <div>
+              <Label>Your Question *</Label>
+              <Textarea
+                value={askQuestion}
+                onChange={(e) => setAskQuestion(e.target.value)}
+                placeholder="Type your question here..."
+                rows={3}
+                data-testid="ask-question-text"
+              />
+            </div>
+            <div className="flex justify-end">
+              <Button variant="gold" size="sm" onClick={submitQuestion} disabled={asking} data-testid="ask-question-submit">
+                {asking ? "Submitting…" : "Submit Question"}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

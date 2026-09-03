@@ -300,6 +300,59 @@ class AnnouncementRead(ORMModel, AnnouncementBase):
     updated_at: datetime
 
 
+# --- FAQ ---
+class FaqBase(BaseModel):
+    question: str
+    answer: str
+    category: str = "General"
+    sequence: int = 0
+    is_published: bool = True
+
+
+class FaqCreate(FaqBase):
+    pass
+
+
+class FaqUpdate(BaseModel):
+    question: Optional[str] = None
+    answer: Optional[str] = None
+    category: Optional[str] = None
+    sequence: Optional[int] = None
+    is_published: Optional[bool] = None
+
+
+class FaqRead(ORMModel, FaqBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+
+FAQ_QUESTION_STATUSES = ["new", "promoted", "dismissed"]
+
+
+class FaqQuestionCreate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    question: str
+
+
+class FaqQuestionPromote(BaseModel):
+    answer: str
+    category: str = "General"
+    sequence: int = 0
+    is_published: bool = True
+
+
+class FaqQuestionRead(ORMModel):
+    id: int
+    name: Optional[str] = None
+    email: Optional[str] = None
+    question: str
+    status: str
+    promoted_faq_id: Optional[int] = None
+    created_at: datetime
+
+
 # --- Accommodation assignments ---
 class AssignmentCreate(BaseModel):
     room_id: int
@@ -503,6 +556,7 @@ ORGANIZER_MODULES = {
     "venues": "Venues",
     "schedule": "Schedule",
     "announcements": "Announcements",
+    "faq": "FAQ",
     "procurement": "Procurement",
     "knowledge": "Knowledge Base",
     "matches": "Matches & Fixtures",

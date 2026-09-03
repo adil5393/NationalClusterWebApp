@@ -25,6 +25,7 @@ import {
   LogOut,
   UserCog,
   Radio,
+  HelpCircle,
   Menu,
   X,
   FileSpreadsheet,
@@ -82,6 +83,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "Operations & Governance",
     items: [
       { to: "/admin/announcements", label: "Announcements", icon: Megaphone, moduleKey: "announcements" },
+      { to: "/admin/faq", label: "FAQ", icon: HelpCircle, moduleKey: "faq" },
       { to: "/admin/procurement", label: "Procurement", icon: ShoppingCart, moduleKey: "procurement" },
       { to: "/admin/tasks", label: "Tasks", icon: CheckSquare },
       { to: "/admin/knowledge", label: "Knowledge Base", icon: BookOpen, moduleKey: "knowledge" },

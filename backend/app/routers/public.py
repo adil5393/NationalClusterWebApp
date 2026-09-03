@@ -93,6 +93,34 @@ def public_announcements(db: Session = Depends(get_db)):
     return [a for a in items if not a.expires_at or a.expires_at > now]
 
 
+@router.get("/faqs", response_model=list[schemas.FaqRead])
+def public_faqs(db: Session = Depends(get_db)):
+    return (
+        db.query(models.Faq)
+        .filter(models.Faq.is_published.is_(True))
+        .order_by(models.Faq.sequence.asc(), models.Faq.id.asc())
+        .all()
+    )
+
+
+@router.post("/faq-questions", response_model=schemas.FaqQuestionRead, status_code=201)
+def submit_faq_question(payload: schemas.FaqQuestionCreate, db: Session = Depends(get_db)):
+    """The public FAQ page's "Ask a question" form — no auth, anyone can
+    submit. Lands in the FAQ admin page's inbox (routers/faq.py) for an
+    organizer to answer and promote, or dismiss."""
+    if not payload.question.strip():
+        raise HTTPException(400, "Question can't be empty")
+    item = models.FaqQuestion(
+        name=(payload.name or "").strip() or None,
+        email=(payload.email or "").strip() or None,
+        question=payload.question.strip(),
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
 def _public_team_name(db: Session, team_id):
     if not team_id:
         return None
