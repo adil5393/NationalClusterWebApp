@@ -17,11 +17,13 @@ import {
   PhoneCall,
   Activity,
   Award,
+  Images,
 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, assetUrl } from "@/lib/api";
 import { Badge, LiveBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Dialog } from "@/components/ui/dialog";
 import { formatDate, priorityTone } from "@/lib/meta";
 
 interface LiveMatch {
@@ -48,6 +50,12 @@ interface Team {
   id: number;
   name: string;
   school_code?: string | null;
+}
+
+interface GalleryPhotoT {
+  id: number;
+  url: string;
+  tag: string;
 }
 
 const TOURNAMENT_SECTIONS = [
@@ -116,7 +124,30 @@ export default function Home() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [quickCode, setQuickCode] = useState("");
   const [codeError, setCodeError] = useState("");
+  const [galleryPhotos, setGalleryPhotos] = useState<GalleryPhotoT[]>([]);
+  const [galleryIndex, setGalleryIndex] = useState(0);
+  const [albumOpen, setAlbumOpen] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    api
+      .get<GalleryPhotoT[]>("/public/gallery")
+      .then((r) => setGalleryPhotos(r.data))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (galleryPhotos.length < 2) return;
+    const timer = setInterval(() => {
+      setGalleryIndex((i) => (i + 1) % galleryPhotos.length);
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [galleryPhotos.length]);
+
+  const galleryByTag = galleryPhotos.reduce<Record<string, GalleryPhotoT[]>>((acc, p) => {
+    (acc[p.tag] ??= []).push(p);
+    return acc;
+  }, {});
 
   useEffect(() => {
     const loadLiveMatches = () => {
@@ -443,6 +474,84 @@ export default function Home() {
           ))}
         </div>
       </section>
+
+      {/* CHAMPIONSHIP PHOTO GALLERY: ROTATING CARD → FULL ALBUM */}
+      {galleryPhotos.length > 0 && (
+        <section className="border-t border-white/10 bg-obsidian-950/60 py-14 md:py-16">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8">
+            <div className="flex flex-col items-center text-center gap-2 mb-8">
+              <span className="text-xs font-heading font-extrabold uppercase tracking-widest text-gold">
+                MOMENTS FROM THE COURT
+              </span>
+              <h2 className="font-heading text-2xl sm:text-3xl md:text-4xl font-black text-white">
+                Championship Photo Gallery
+              </h2>
+              <p className="text-sm text-slate-400 font-body max-w-xl">
+                Tap the frame to browse every photo, grouped day by day.
+              </p>
+            </div>
+
+            <button
+              onClick={() => setAlbumOpen(true)}
+              className="group relative mx-auto block h-64 sm:h-80 w-full max-w-md overflow-hidden rounded-2xl border border-white/10 shadow-xl transition-transform hover:scale-[1.01]"
+              data-testid="homepage-gallery-card"
+            >
+              {galleryPhotos.map((p, i) => (
+                <img
+                  key={p.id}
+                  src={assetUrl(p.url)}
+                  alt=""
+                  className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-700 ${
+                    i === galleryIndex ? "opacity-100" : "opacity-0"
+                  }`}
+                  loading={i === 0 ? "eager" : "lazy"}
+                />
+              ))}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/0 to-black/0" />
+              <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between">
+                <Badge tone="gold" size="sm">
+                  {galleryPhotos[galleryIndex]?.tag}
+                </Badge>
+                <span className="flex items-center gap-1.5 rounded-lg bg-black/50 px-2.5 py-1 text-[11px] font-heading font-bold text-white opacity-0 transition-opacity group-hover:opacity-100">
+                  <Images className="h-3.5 w-3.5" /> View Full Album
+                </span>
+              </div>
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* FULL ALBUM: DAY-WISE / GROUP-WISE PHOTO GRID */}
+      <Dialog
+        open={albumOpen}
+        onClose={() => setAlbumOpen(false)}
+        title="Championship Photo Gallery"
+        testId="homepage-gallery-album"
+        className="max-w-4xl"
+      >
+        <div className="space-y-6">
+          {Object.entries(galleryByTag).map(([tag, photos]) => (
+            <div key={tag} className="space-y-2.5">
+              <h3 className="text-xs font-heading font-extrabold uppercase tracking-wider text-gold">
+                {tag} <span className="text-slate-500 font-mono normal-case">({photos.length})</span>
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+                {photos.map((p) => (
+                  <a
+                    key={p.id}
+                    href={assetUrl(p.url)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="aspect-square overflow-hidden rounded-lg border border-white/10 bg-obsidian-950"
+                  >
+                    <img src={assetUrl(p.url)} alt="" className="h-full w-full object-cover" loading="lazy" />
+                  </a>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Dialog>
 
       {/* BOTTOM CTA: COACHES & PARTICIPANTS */}
       <section className="border-t border-white/10 bg-obsidian-950/80 py-14 md:py-16">
