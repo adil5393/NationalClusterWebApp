@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..database import get_db
+from ..ws import broadcast_roster_change_sync
 
 router = APIRouter(prefix="/api/teams", tags=["teams"])
 
@@ -254,6 +255,11 @@ def update_team(team_id: int, payload: schemas.TeamUpdate, db: Session = Depends
     db.commit()
     db.refresh(team)
     team.present_counts = _present_counts_map(db, [team.id]).get(team.id, {})
+    if "is_active" in data:
+        # Fixture eligibility just changed for this team — nudge the Fixture
+        # creation window so another organizer sees it live (has_arrived/
+        # contact-detail-only edits aren't fixture-relevant, skip those).
+        broadcast_roster_change_sync("team_active")
     return team
 
 
@@ -283,6 +289,7 @@ def set_team_age_group_active(team_id: int, age_group: str, payload: schemas.Tea
     # expires it, so the next access (inside TeamRead's field_validator)
     # naturally re-queries and reflects the change made above.
     team.present_counts = _present_counts_map(db, [team.id]).get(team.id, {})
+    broadcast_roster_change_sync("team_age_group_active")
     return team
 
 

@@ -426,8 +426,22 @@ def compute_standings(pool: models.Pool) -> list[dict]:
     rate, etc.) anywhere yet. Swap the scoring block below if/when it does —
     everything else (aggregation from completed matches) stays the same.
     Shared by the organizer endpoint below and the public one in routers/public.py
-    — one calculation, read by both audiences."""
-    rows = {t.id: {"team_id": t.id, "team_name": t.name, "played": 0, "won": 0, "lost": 0, "drawn": 0, "points_for": 0, "points_against": 0, "points": 0} for t in pool.teams}
+    — one calculation, read by both audiences.
+
+    tiebreak_score: the organizer's tiebreaker for two teams level on points —
+    sum of a team's WINNING margins only (each completed match's own score
+    minus the opponent's, but only when positive; a loss/draw contributes 0,
+    never a negative number). Used first, ahead of plain points differential,
+    to automatically resolve a points-tie for a qualifying spot — see
+    routers/matches.py _standings_key. E.g. a team that wins all 4 of its
+    matches by 1/2/3/4 scores 10 here; a team that wins by 1/2/1/3 scores 7."""
+    rows = {
+        t.id: {
+            "team_id": t.id, "team_name": t.name, "played": 0, "won": 0, "lost": 0, "drawn": 0,
+            "points_for": 0, "points_against": 0, "points": 0, "tiebreak_score": 0,
+        }
+        for t in pool.teams
+    }
 
     for m in pool.matches:
         if m.status != "COMPLETED" or m.team_a_id not in rows or m.team_b_id not in rows:
@@ -439,18 +453,19 @@ def compute_standings(pool: models.Pool) -> list[dict]:
         a["points_against"] += m.team_b_score
         b["points_for"] += m.team_b_score
         b["points_against"] += m.team_a_score
-        if m.team_a_score > m.team_b_score:
-            a["won"] += 1; a["points"] += 2
+        margin = m.team_a_score - m.team_b_score
+        if margin > 0:
+            a["won"] += 1; a["points"] += 2; a["tiebreak_score"] += margin
             b["lost"] += 1
-        elif m.team_b_score > m.team_a_score:
-            b["won"] += 1; b["points"] += 2
+        elif margin < 0:
+            b["won"] += 1; b["points"] += 2; b["tiebreak_score"] += -margin
             a["lost"] += 1
         else:
             a["drawn"] += 1; a["points"] += 1
             b["drawn"] += 1; b["points"] += 1
 
     standings = list(rows.values())
-    standings.sort(key=lambda r: (-r["points"], -(r["points_for"] - r["points_against"]), -r["points_for"]))
+    standings.sort(key=lambda r: (-r["points"], -r["tiebreak_score"], -(r["points_for"] - r["points_against"]), -r["points_for"]))
     for i, row in enumerate(standings):
         row["position"] = i + 1
     return standings

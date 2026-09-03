@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..database import get_db
+from ..ws import broadcast_roster_change_sync
 
 router = APIRouter(prefix="/api/participants", tags=["attendance"])
 
@@ -24,4 +25,8 @@ def set_attendance(participant_id: int, payload: schemas.AttendanceUpdate, db: S
     p.checked_in_at = datetime.now(timezone.utc) if payload.present else None
     db.commit()
     db.refresh(p)
+    # The lone write path for is_present (individual toggle and bulk import
+    # both funnel through here) — nudge the Fixture creation window so
+    # another organizer's attendance change shows up there live.
+    broadcast_roster_change_sync("participant_attendance")
     return p

@@ -70,3 +70,10 @@ export function matchChannel(matchId: number) {
 export function tournamentChannel(tournamentId: number) {
   return `/ws/tournaments/${tournamentId}`;
 }
+
+/** Team/participant eligibility changes (Active/Inactive, per-age-group
+ * Active, attendance) — one global channel, no payload worth typing (see
+ * ws.py's broadcast_roster_change); just a nudge to re-fetch. */
+export function rosterChannel() {
+  return `/ws/roster`;
+}

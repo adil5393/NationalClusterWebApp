@@ -436,8 +436,12 @@ export default function AdminTeams() {
   const [form, setForm] = useState<Partial<Team>>(empty);
   const [search, setSearch] = useState("");
 
-  const load = () => {
-    setLoading(true);
+  const load = (silent = false) => {
+    // silent=true skips the full-page loading spinner (which unmounts the
+    // whole list/table) — used for in-place toggles like Active/Arrived/
+    // Awards so a click near the bottom of a long list doesn't yank the
+    // page back to the top when the spinner briefly replaces the content.
+    if (!silent) setLoading(true);
     api
       .get<Team[]>("/teams")
       .then((r) => setTeams(r.data))
@@ -465,7 +469,7 @@ export default function AdminTeams() {
     if (!confirm("Delete this team?")) return;
     await api.delete(`/teams/${id}`);
     toast.success("Team deleted");
-    load();
+    load(true);
   };
 
   const [awardsTeam, setAwardsTeam] = useState<Team | null>(null);
@@ -474,7 +478,7 @@ export default function AdminTeams() {
   const toggleActive = async (t: Team) => {
     try {
       await api.put(`/teams/${t.id}`, { is_active: t.is_active === false });
-      load();
+      load(true);
     } catch (e: any) {
       toast.error(e?.response?.data?.detail ?? "Could not update active status");
     }
@@ -483,7 +487,7 @@ export default function AdminTeams() {
   const toggleArrived = async (t: Team) => {
     try {
       await api.put(`/teams/${t.id}`, { has_arrived: t.has_arrived !== true });
-      load();
+      load(true);
     } catch (e: any) {
       toast.error(e?.response?.data?.detail ?? "Could not update arrival status");
     }
@@ -492,7 +496,7 @@ export default function AdminTeams() {
   const toggleAgeGroupActive = async (t: Team, ageGroup: string, active: boolean) => {
     try {
       await api.put(`/teams/${t.id}/age-groups/${encodeURIComponent(ageGroup)}/active`, { is_active: active });
-      load();
+      load(true);
     } catch (e: any) {
       toast.error(e?.response?.data?.detail ?? `Could not update ${ageGroup} status`);
     }
@@ -505,7 +509,7 @@ export default function AdminTeams() {
     if (!confirm(`Delete ${emptyTeamCount} team(s) with 0 players? This cannot be undone.`)) return;
     const r = await api.delete("/teams/empty");
     toast.success(`Deleted ${r.data.deleted} team(s) with 0 players`);
-    load();
+    load(true);
   };
 
   const set = (k: keyof Team, v: string) => setForm((f) => ({ ...f, [k]: v }));
@@ -978,7 +982,7 @@ export default function AdminTeams() {
           onClose={() => setAwardsTeam(null)}
           onSaved={() => {
             setAwardsTeam(null);
-            load();
+            load(true);
           }}
         />
       )}

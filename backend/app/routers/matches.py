@@ -192,10 +192,20 @@ def _propagate_winner(db: Session, match: models.Match) -> None:
         .all()
     )
     for dep in dependents:
+        changed = False
         if dep.source_match_a_id == match.id and dep.team_a_id is None:
             dep.team_a_id = match.winner_team_id
+            changed = True
         if dep.source_match_b_id == match.id and dep.team_b_id is None:
             dep.team_b_id = match.winner_team_id
+            changed = True
+        if changed:
+            # This dependent's slot just got filled in programmatically (the
+            # organizer never touched it directly) — broadcast it too, or the
+            # public Live page's tournament-channel subscription never learns
+            # this match now has a team in it until something else about it
+            # changes.
+            broadcast_match_event_sync(dep, "match_updated")
         _try_walkover(db, dep)
 
 
@@ -228,6 +238,7 @@ def _try_walkover(db: Session, dep: models.Match) -> None:
     dep.winner_team_id = winner
     dep.ended_at = datetime.now(timezone.utc)
     dep.notes = "Bye"
+    broadcast_match_event_sync(dep, "match_walkover")
     _propagate_winner(db, dep)
 
 
@@ -270,10 +281,21 @@ def _propagate_pool_qualifiers(db: Session, pool: models.Pool) -> None:
     qualifier_by_rank = {i + 1: q["id"] for i, q in enumerate(pool_info["qualifiers"])}
 
     for dep in dependents:
+        changed = False
         if dep.source_pool_a_id == pool.id and dep.team_a_id is None:
             dep.team_a_id = qualifier_by_rank.get(dep.source_pool_a_rank)
+            changed = changed or dep.team_a_id is not None
         if dep.source_pool_b_id == pool.id and dep.team_b_id is None:
             dep.team_b_id = qualifier_by_rank.get(dep.source_pool_b_rank)
+            changed = changed or dep.team_b_id is not None
+        if changed:
+            # Whichever action resolved this pool's qualifier(s) — a normal
+            # match completion, a cancellation, or the organizer directly
+            # resolving a tie via POST /pools/{id}/resolve-tiebreak — the
+            # dependent match's slot just got filled in programmatically.
+            # Broadcast it, or the public Live page never learns this
+            # bracket match now has a team in it.
+            broadcast_match_event_sync(dep, "match_updated")
 
 
 # ---------- Tournaments ----------
@@ -547,6 +569,14 @@ def generate_bracket(tournament_id: int, payload: schemas.GenerateBracketRequest
         db.flush()
 
     t.bracket_mode = "AUTO" if payload.whole_season else "MANUAL"
+    # A tournament defaults to "draft", which routers/public.py's tournament
+    # list/bracket endpoints deliberately hide from the public Live page —
+    # otherwise an empty, not-yet-set-up tournament would show there. Once a
+    # bracket actually exists, it should show up immediately, not sit hidden
+    # until an organizer separately remembers to flip the status by hand.
+    # Never downgrades an already-active/completed tournament on a re-generate.
+    if t.status == "draft":
+        t.status = "active"
 
     if payload.format == "LEAGUE":
         bye_ids = list(dict.fromkeys(payload.bye_team_ids))
@@ -678,11 +708,14 @@ def delete_round(round_id: int, db: Session = Depends(get_db)):
 # shared, read-only computation both the preview endpoint below and
 # buckets.py build on; it never mutates anything itself.
 def _standings_key(row: dict) -> tuple:
-    # Points alone decide a tie for a qualifying spot — point differential and
-    # points-for are only used to order the standings table, never silently
-    # to break a tie here. Two teams level on points always need the
-    # organizer's pick, regardless of differential.
-    return (row["points"],)
+    # Points decide a tie for a qualifying spot first; level on points, the
+    # automatic tiebreaker (compute_standings' tiebreak_score — sum of a
+    # team's own winning margins, see its docstring) decides next. Plain
+    # points differential and points-for are only used to order the
+    # standings table below that, never to silently break a tie here — two
+    # teams level on BOTH points and tiebreak_score still need the
+    # organizer's pick.
+    return (row["points"], row["tiebreak_score"])
 
 
 def _round_format(round_: models.Round) -> "str | None":

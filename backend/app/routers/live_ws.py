@@ -3,7 +3,7 @@ un-gated (see ws.py docstring) — mounted directly in main.py alongside
 health/public/auth, not through the per-module admin router loop."""
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from ..ws import hub, match_channel, tournament_channel
+from ..ws import ROSTER_CHANNEL, hub, match_channel, tournament_channel
 
 router = APIRouter(tags=["live"])
 
@@ -32,3 +32,15 @@ async def ws_tournament(websocket: WebSocket, tournament_id: int):
         pass
     finally:
         hub.disconnect(channel, websocket)
+
+
+@router.websocket("/ws/roster")
+async def ws_roster(websocket: WebSocket):
+    await hub.connect(ROSTER_CHANNEL, websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        hub.disconnect(ROSTER_CHANNEL, websocket)

@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { connectLive, matchChannel } from "@/lib/live";
+import { connectLive, matchChannel, rosterChannel } from "@/lib/live";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea, Select } from "@/components/ui/input";
 import { Table, THead, TH, TR, TD, TBody } from "@/components/ui/table";
@@ -579,6 +579,20 @@ export default function Matches() {
       .finally(() => setLoading(false));
   };
   useEffect(loadBase, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Live sync for Team.is_active / TeamInactiveAgeGroup / Participant.is_present
+  // — another organizer managing attendance/roster elsewhere shows up here
+  // without a manual reload. Deliberately doesn't touch `loading` (unlike
+  // loadBase) so it never swaps the page out for a spinner mid-interaction —
+  // teams/participants just update in place, and the Generate Bracket
+  // dialog's eligibility checks re-derive from the fresh state automatically.
+  useEffect(() => {
+    const stop = connectLive(rosterChannel(), () => {
+      api.get<Team[]>("/teams").then((r) => setTeams(r.data));
+      api.get<ParticipantT[]>("/participants").then((r) => setParticipants(r.data));
+    });
+    return stop;
+  }, []);
 
   const loadDetail = (id: number) => {
     api.get<TournamentT>(`/tournaments/${id}`).then((r) => setDetail(r.data));
@@ -1863,7 +1877,7 @@ function LiveConsole({
   // (or the official score) until it's explicitly confirmed. Catches misclicks
   // during fast live-raid scoring instead of committing on the very first tap.
   const [pendingScore, setPendingScore] = useState<{ a: number | null; b: number | null }>({ a: null, b: null });
-  const [forfeitHoverSide, setForfeitHoverSide] = useState<"a" | "b" | null>(null);
+  const [forfeitOpen, setForfeitOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetTeamA, setResetTeamA] = useState<string>("");
   const [resetTeamB, setResetTeamB] = useState<string>("");
@@ -1878,6 +1892,7 @@ function LiveConsole({
     load();
     setPendingScore({ a: null, b: null });
     setResetOpen(false);
+    setForfeitOpen(false);
   }, [matchId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -1939,6 +1954,7 @@ function LiveConsole({
     try {
       await api.post(`/matches/${matchId}/forfeit`, { forfeiting_team_id: forfeitingTeamId });
       toast.success(`${forfeitingTeamName} forfeited — ${winningTeamName} wins`);
+      setForfeitOpen(false);
       load();
       onChanged();
     } catch (e: any) {
@@ -2238,7 +2254,6 @@ function LiveConsole({
                     ? "border-red-500/30 bg-red-950/20"
                     : "border-blue-500/30 bg-blue-950/20",
                   isLeader && "ring-1 ring-gold border-gold/60",
-                  forfeitHoverSide === side && "ring-2 ring-red-500 border-red-500/80 bg-red-950/40",
                 )}
                 data-testid={`console-team-panel-${side}`}
               >
@@ -2251,11 +2266,6 @@ function LiveConsole({
                   <span className="truncate font-heading font-bold text-white text-base">
                     {name}
                   </span>
-                  {forfeitHoverSide === side && (
-                    <Badge tone="red" size="sm" className="shrink-0">
-                      Will Forfeit
-                    </Badge>
-                  )}
                 </div>
                 <div className="flex items-center gap-3">
                   <span
@@ -2352,36 +2362,16 @@ function LiveConsole({
                   <Ban className="h-4 w-4" /> Cancel
                 </Button>
                 {m.status !== "COMPLETED" && m.status !== "CANCELLED" && m.team_a_id && m.team_b_id && (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-red-400 hover:bg-red-500/10"
-                      onMouseEnter={() => setForfeitHoverSide("a")}
-                      onMouseLeave={() => setForfeitHoverSide(null)}
-                      onFocus={() => setForfeitHoverSide("a")}
-                      onBlur={() => setForfeitHoverSide(null)}
-                      onClick={() => forfeitMatch(m.team_a_id!, m.team_a_name ?? "Team A", m.team_b_name ?? "Team B")}
-                      title={`${m.team_a_name ?? "Team A"} forfeits`}
-                      data-testid="forfeit-team-a-btn"
-                    >
-                      <UserX className="h-4 w-4" /> Forfeit
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-red-400 hover:bg-red-500/10"
-                      onMouseEnter={() => setForfeitHoverSide("b")}
-                      onMouseLeave={() => setForfeitHoverSide(null)}
-                      onFocus={() => setForfeitHoverSide("b")}
-                      onBlur={() => setForfeitHoverSide(null)}
-                      onClick={() => forfeitMatch(m.team_b_id!, m.team_b_name ?? "Team B", m.team_a_name ?? "Team A")}
-                      title={`${m.team_b_name ?? "Team B"} forfeits`}
-                      data-testid="forfeit-team-b-btn"
-                    >
-                      <UserX className="h-4 w-4" /> Forfeit
-                    </Button>
-                  </>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-red-400 hover:bg-red-500/10"
+                    onClick={() => setForfeitOpen((o) => !o)}
+                    title="Record a forfeit"
+                    data-testid="open-forfeit-btn"
+                  >
+                    <UserX className="h-4 w-4" /> Forfeit
+                  </Button>
                 )}
                 <Button
                   variant="outline"
@@ -2401,6 +2391,41 @@ function LiveConsole({
               >
                 <Flag className="h-4 w-4" /> Conclude Match
               </Button>
+            </div>
+          )}
+
+          {/* FORFEIT PANEL — one button opens this, then the organizer picks
+              which team forfeits; forfeitMatch's own confirm() is the final
+              step, so no separate "Confirm" button is needed here. */}
+          {canEdit && forfeitOpen && m && m.team_a_id && m.team_b_id && (
+            <div
+              className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 space-y-2"
+              data-testid="forfeit-match-panel"
+            >
+              <p className="text-xs font-semibold text-red-400">Which team forfeits?</p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-red-400 hover:bg-red-500/10"
+                  onClick={() => forfeitMatch(m.team_a_id!, m.team_a_name ?? "Team A", m.team_b_name ?? "Team B")}
+                  data-testid="forfeit-team-a-btn"
+                >
+                  {m.team_a_name ?? "Team A"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-red-400 hover:bg-red-500/10"
+                  onClick={() => forfeitMatch(m.team_b_id!, m.team_b_name ?? "Team B", m.team_a_name ?? "Team A")}
+                  data-testid="forfeit-team-b-btn"
+                >
+                  {m.team_b_name ?? "Team B"}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setForfeitOpen(false)}>
+                  Cancel
+                </Button>
+              </div>
             </div>
           )}
 
@@ -3595,6 +3620,7 @@ interface StandingRow {
   points_for: number;
   points_against: number;
   points: number;
+  tiebreak_score: number;
   position: number;
 }
 
@@ -3740,6 +3766,9 @@ function PoolDetailDialog({
                       <TH className="text-right">D</TH>
                       <TH className="text-right">PF</TH>
                       <TH className="text-right">PA</TH>
+                      <TH className="text-right" title="Tiebreaker — sum of this team's own winning margins, used to auto-resolve a points-tie">
+                        TB
+                      </TH>
                       <TH className="text-right">Pts</TH>
                     </TR>
                   </THead>
@@ -3759,6 +3788,9 @@ function PoolDetailDialog({
                         </TD>
                         <TD className="text-right font-mono text-xs text-slate-400">
                           {s.points_against}
+                        </TD>
+                        <TD className="text-right font-mono text-xs text-amber-400">
+                          {s.tiebreak_score}
                         </TD>
                         <TD className="text-right font-heading font-bold text-gold text-sm">
                           {s.points}
