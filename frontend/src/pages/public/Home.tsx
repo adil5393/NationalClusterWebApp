@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Users,
@@ -126,130 +126,12 @@ const TOURNAMENT_SECTIONS = [
   },
 ];
 
-interface SchoolPhoto {
-  id: string;
-  filename: string;
-  fallbackSvg: string;
-  title: string;
-  subtitle: string;
-  tag: string;
-}
-
-const SCHOOL_PHOTOS: SchoolPhoto[] = [
-  {
-    id: "main",
-    filename: "school-main.jpg",
-    fallbackSvg: "school-main.svg",
-    title: "Main Campus & Administrative Block",
-    subtitle: "Central infrastructure & tournament reception at New Angels Sr. Sec. School",
-    tag: "FEATURED CAMPUS",
-  },
-  {
-    id: "ground",
-    filename: "school-ground.jpg",
-    fallbackSvg: "school-ground.svg",
-    title: "Championship Sports Ground",
-    subtitle: "AKFI-standard synthetic Kabaddi courts & spectator galleries",
-    tag: "SPORTS ARENA",
-  },
-  {
-    id: "campus",
-    filename: "school-campus.jpg",
-    fallbackSvg: "school-campus.svg",
-    title: "Lush Green Campus Environment",
-    subtitle: "Spacious, secure grounds welcoming visiting athletes from across India & KSA",
-    tag: "CAMPUS GROUNDS",
-  },
-  {
-    id: "building",
-    filename: "school-building.jpg",
-    fallbackSvg: "school-building.svg",
-    title: "Academic & Tech Pavilion",
-    subtitle: "Modern facilities, briefing halls & athlete control rooms",
-    tag: "FACILITIES",
-  },
-  {
-    id: "gate",
-    filename: "school-gate.jpg",
-    fallbackSvg: "school-gate.svg",
-    title: "Main Entrance & Welcome Gate",
-    subtitle: "Official gateway welcoming participating state delegations to Pratapgarh",
-    tag: "WELCOME GATE",
-  },
-];
-
-function SchoolImage({
-  photo,
-  className,
-  featured = false,
-}: {
-  photo: SchoolPhoto;
-  className?: string;
-  featured?: boolean;
-}) {
-  const [hasError, setHasError] = useState(false);
-  const imgSrc = assetUrl(`/images/school/${photo.filename}`);
-
-  return (
-    <div
-      className={cn(
-        "group relative overflow-hidden rounded-2xl border border-white/10 bg-obsidian-900 shadow-card-subtle transition-all duration-300 hover:border-gold/50 hover:shadow-gold-glow",
-        className,
-      )}
-    >
-      {/* Fallback pure-CSS stylized background (always present behind image or shown on error) */}
-      <div className="absolute inset-0 bg-gradient-to-br from-obsidian-800 via-obsidian-900 to-obsidian-950 flex flex-col items-center justify-center p-6 text-center">
-        <div className="h-16 w-16 rounded-2xl bg-gold/10 border border-gold/30 flex items-center justify-center mb-3">
-          <Building className="h-8 w-8 text-gold" />
-        </div>
-        <span className="text-xs font-heading font-extrabold uppercase tracking-widest text-gold mb-1">
-          {photo.tag}
-        </span>
-        <span className="text-sm font-heading font-bold text-white max-w-xs">
-          {photo.title}
-        </span>
-      </div>
-
-      {/* Image layer */}
-      {!hasError && (
-        <img
-          src={imgSrc}
-          alt={photo.title}
-          onError={() => setHasError(true)}
-          loading="lazy"
-          decoding="async"
-          className="relative z-10 h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
-        />
-      )}
-
-      {/* Dark gradient overlay for text legibility */}
-      <div className="absolute inset-0 z-20 bg-gradient-to-t from-obsidian-950/95 via-obsidian-950/40 to-transparent pointer-events-none" />
-
-      {/* Badges & Captions */}
-      <div className="absolute inset-x-0 bottom-0 z-30 p-4 sm:p-5 flex flex-col justify-end">
-        <div className="flex items-center justify-between gap-2 mb-1.5">
-          <span className="inline-flex items-center gap-1 rounded-md border border-gold/30 bg-gold/15 px-2 py-0.5 text-[10px] font-heading font-extrabold uppercase tracking-wider text-gold backdrop-blur-md">
-            {photo.tag}
-          </span>
-          <span className="text-[11px] font-heading font-semibold text-slate-400 opacity-0 transition-opacity duration-200 group-hover:opacity-100 hidden sm:inline-flex items-center gap-1">
-            <Building className="h-3 w-3 text-gold" /> New Angels
-          </span>
-        </div>
-        <h4
-          className={cn(
-            "font-heading font-bold text-white tracking-tight leading-snug group-hover:text-gold transition-colors",
-            featured ? "text-lg sm:text-2xl font-black" : "text-sm sm:text-base",
-          )}
-        >
-          {photo.title}
-        </h4>
-        <p className="mt-1 text-xs text-slate-300 font-body line-clamp-2 leading-relaxed">
-          {photo.subtitle}
-        </p>
-      </div>
-    </div>
-  );
-}
+import {
+  SCHOOL_CATEGORY_METAS,
+  getSchoolPhotos,
+  type SchoolCategory,
+} from "@/utils/schoolPhotos";
+import { SchoolPhotoSlideshow } from "@/components/public/SchoolPhotoSlideshow";
 
 export default function Home() {
   const [liveMatches, setLiveMatches] = useState<LiveMatch[]>([]);
@@ -261,6 +143,10 @@ export default function Home() {
   const [galleryIndex, setGalleryIndex] = useState(0);
   const [galleryLoading, setGalleryLoading] = useState(true);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [schoolModal, setSchoolModal] = useState<{
+    category: SchoolCategory;
+    photoIndex: number;
+  } | null>(null);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const navigate = useNavigate();
 
@@ -280,12 +166,12 @@ export default function Home() {
 
   // Automatic slideshow loop (4-second interval, paused when lightbox is open)
   useEffect(() => {
-    if (galleryPhotos.length < 2 || lightboxIndex !== null) return;
+    if (galleryPhotos.length < 2 || lightboxIndex !== null || schoolModal !== null) return;
     const timer = setInterval(() => {
       setGalleryIndex((i) => (i + 1) % galleryPhotos.length);
     }, 4000);
     return () => clearInterval(timer);
-  }, [galleryPhotos.length, lightboxIndex]);
+  }, [galleryPhotos.length, lightboxIndex, schoolModal]);
 
   // Preload adjacent next photo
   useEffect(() => {
@@ -296,27 +182,48 @@ export default function Home() {
     }
   }, [galleryIndex, galleryPhotos]);
 
-  // Keyboard navigation for Lightbox modal (Escape, ArrowLeft, ArrowRight)
+  // Keyboard navigation for Lightbox modals (Escape, ArrowLeft, ArrowRight)
   useEffect(() => {
-    if (lightboxIndex === null) return;
+    if (lightboxIndex === null && schoolModal === null) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setLightboxIndex(null);
+      if (e.key === "Escape") {
+        setLightboxIndex(null);
+        setSchoolModal(null);
+      }
       if (e.key === "ArrowLeft") {
-        setLightboxIndex((prev) =>
-          prev !== null ? (prev - 1 + galleryPhotos.length) % galleryPhotos.length : null,
-        );
+        if (lightboxIndex !== null) {
+          setLightboxIndex((prev) =>
+            prev !== null ? (prev - 1 + galleryPhotos.length) % galleryPhotos.length : null,
+          );
+        } else if (schoolModal !== null) {
+          const photos = getSchoolPhotos(schoolModal.category);
+          if (photos.length > 1) {
+            setSchoolModal((prev) =>
+              prev ? { ...prev, photoIndex: (prev.photoIndex - 1 + photos.length) % photos.length } : null,
+            );
+          }
+        }
       }
       if (e.key === "ArrowRight") {
-        setLightboxIndex((prev) =>
-          prev !== null ? (prev + 1) % galleryPhotos.length : null,
-        );
+        if (lightboxIndex !== null) {
+          setLightboxIndex((prev) =>
+            prev !== null ? (prev + 1) % galleryPhotos.length : null,
+          );
+        } else if (schoolModal !== null) {
+          const photos = getSchoolPhotos(schoolModal.category);
+          if (photos.length > 1) {
+            setSchoolModal((prev) =>
+              prev ? { ...prev, photoIndex: (prev.photoIndex + 1) % photos.length } : null,
+            );
+          }
+        }
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [lightboxIndex, galleryPhotos.length]);
+  }, [lightboxIndex, schoolModal, galleryPhotos.length]);
 
   // Mobile swipe gestures for lightbox
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -324,13 +231,28 @@ export default function Home() {
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-    if (touchStartX === null || lightboxIndex === null) return;
+    if (touchStartX === null) return;
     const diff = touchStartX - e.changedTouches[0].clientX;
     if (Math.abs(diff) > 40) {
-      if (diff > 0) {
-        setLightboxIndex((lightboxIndex + 1) % galleryPhotos.length);
-      } else {
-        setLightboxIndex((lightboxIndex - 1 + galleryPhotos.length) % galleryPhotos.length);
+      if (lightboxIndex !== null) {
+        if (diff > 0) {
+          setLightboxIndex((lightboxIndex + 1) % galleryPhotos.length);
+        } else {
+          setLightboxIndex((lightboxIndex - 1 + galleryPhotos.length) % galleryPhotos.length);
+        }
+      } else if (schoolModal !== null) {
+        const photos = getSchoolPhotos(schoolModal.category);
+        if (photos.length > 1) {
+          if (diff > 0) {
+            setSchoolModal((prev) =>
+              prev ? { ...prev, photoIndex: (prev.photoIndex + 1) % photos.length } : null,
+            );
+          } else {
+            setSchoolModal((prev) =>
+              prev ? { ...prev, photoIndex: (prev.photoIndex - 1 + photos.length) % photos.length } : null,
+            );
+          }
+        }
       }
     }
     setTouchStartX(null);
@@ -692,19 +614,24 @@ export default function Home() {
           <div className="grid gap-4 lg:grid-cols-12">
             {/* Featured Large Card: Left Column (7 cols on lg) */}
             <div className="lg:col-span-7">
-              <SchoolImage
-                photo={SCHOOL_PHOTOS[0]}
-                featured
+              <SchoolPhotoSlideshow
+                meta={SCHOOL_CATEGORY_METAS[0]}
+                onClick={(activeIndex) =>
+                  setSchoolModal({ category: "main", photoIndex: activeIndex })
+                }
                 className="h-72 sm:h-96 lg:h-full min-h-[300px] sm:min-h-[380px]"
               />
             </div>
 
             {/* 4 Supporting Image Cards: Right 2x2 Grid (5 cols on lg) */}
             <div className="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {SCHOOL_PHOTOS.slice(1, 5).map((photo) => (
-                <SchoolImage
-                  key={photo.id}
-                  photo={photo}
+              {SCHOOL_CATEGORY_METAS.slice(1).map((meta) => (
+                <SchoolPhotoSlideshow
+                  key={meta.category}
+                  meta={meta}
+                  onClick={(activeIndex) =>
+                    setSchoolModal({ category: meta.category, photoIndex: activeIndex })
+                  }
                   className="h-52 sm:h-56"
                 />
               ))}
@@ -1063,6 +990,191 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* HOST SCHOOL PHOTOS LIGHTBOX MODAL */}
+      {schoolModal !== null && (() => {
+        const meta =
+          SCHOOL_CATEGORY_METAS.find((m) => m.category === schoolModal.category) ||
+          SCHOOL_CATEGORY_METAS[0];
+        const photos = getSchoolPhotos(schoolModal.category);
+        const photoIndex =
+          photos.length > 0
+            ? Math.min(schoolModal.photoIndex, photos.length - 1)
+            : 0;
+        const currentSrc = photos[photoIndex];
+
+        return (
+          <div
+            className="fixed inset-0 z-50 bg-black/95 backdrop-blur-2xl flex flex-col justify-between p-4 sm:p-6 select-none animate-in fade-in duration-200"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setSchoolModal(null);
+            }}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+          >
+            {/* TOP MODAL BAR */}
+            <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-3 shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gold/15 text-gold border border-gold/30 shrink-0">
+                  <Building className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <h3 className="font-heading text-sm sm:text-base font-bold text-white truncate">
+                    {meta.title} — New Angels Senior Secondary School
+                  </h3>
+                  <div className="flex items-center gap-2 text-xs text-slate-400">
+                    <span className="font-heading font-extrabold uppercase text-gold">
+                      {meta.tag}
+                    </span>
+                    {photos.length > 0 && (
+                      <>
+                        <span>·</span>
+                        <span>
+                          Photo {photoIndex + 1} of {photos.length}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Category switcher pills */}
+              <div className="hidden lg:flex items-center gap-1.5 overflow-x-auto">
+                {SCHOOL_CATEGORY_METAS.map((cm) => (
+                  <button
+                    key={cm.category}
+                    onClick={() => setSchoolModal({ category: cm.category, photoIndex: 0 })}
+                    className={cn(
+                      "px-2.5 py-1 rounded-md text-xs font-heading font-bold transition-colors whitespace-nowrap",
+                      cm.category === schoolModal.category
+                        ? "bg-gold text-obsidian shadow-sm"
+                        : "bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white"
+                    )}
+                  >
+                    {cm.category.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-3 shrink-0">
+                <span className="hidden sm:inline-block text-[11px] text-slate-500 font-mono">
+                  Use ← → arrows / Esc
+                </span>
+                <button
+                  onClick={() => setSchoolModal(null)}
+                  className="h-9 w-9 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"
+                  aria-label="Close modal"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* CENTER VIEWPORT: MAIN LARGE IMAGE & CONTROLS */}
+            <div
+              className="relative flex-1 flex flex-col items-center justify-center py-4 min-h-0"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) setSchoolModal(null);
+              }}
+            >
+              {/* Prev Button */}
+              {photos.length > 1 && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSchoolModal((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            photoIndex: (prev.photoIndex - 1 + photos.length) % photos.length,
+                          }
+                        : null
+                    );
+                  }}
+                  className="absolute left-1 sm:left-4 z-20 h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-obsidian-900/90 border border-white/20 text-white flex items-center justify-center hover:bg-gold hover:text-obsidian transition-all shadow-xl backdrop-blur-md"
+                  aria-label="Previous photo"
+                >
+                  <ChevronLeft className="h-6 w-6" />
+                </button>
+              )}
+
+              {/* Main Photo Display */}
+              <div className="relative max-h-[60vh] sm:max-h-[66vh] max-w-full flex flex-col items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-obsidian-950 shadow-2xl">
+                {currentSrc ? (
+                  <img
+                    key={currentSrc}
+                    src={currentSrc}
+                    alt={`${meta.title} photo`}
+                    className="max-h-[52vh] sm:max-h-[60vh] w-auto max-w-full object-contain rounded-lg"
+                  />
+                ) : (
+                  <div className="p-12 text-center flex flex-col items-center justify-center">
+                    <Building className="h-12 w-12 text-gold/60 mb-2" />
+                    <p className="text-sm font-heading font-bold text-white">{meta.title}</p>
+                    <p className="text-xs text-slate-400 mt-1">No photographs placed in this folder yet.</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Image Title & Caption below */}
+              <div className="mt-3 text-center max-w-xl px-4 pointer-events-none">
+                <h4 className="text-sm sm:text-base font-heading font-bold text-white">
+                  {meta.title}
+                </h4>
+                <p className="text-xs text-slate-300 mt-1 font-body">
+                  {meta.subtitle}
+                </p>
+              </div>
+
+              {/* Next Button */}
+              {photos.length > 1 && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSchoolModal((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            photoIndex: (prev.photoIndex + 1) % photos.length,
+                          }
+                        : null
+                    );
+                  }}
+                  className="absolute right-1 sm:right-4 z-20 h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-obsidian-900/90 border border-white/20 text-white flex items-center justify-center hover:bg-gold hover:text-obsidian transition-all shadow-xl backdrop-blur-md"
+                  aria-label="Next photo"
+                >
+                  <ChevronRight className="h-6 w-6" />
+                </button>
+              )}
+            </div>
+
+            {/* BOTTOM THUMBNAIL STRIP */}
+            {photos.length > 1 && (
+              <div className="shrink-0 border-t border-white/10 pt-3">
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none snap-x justify-start sm:justify-center">
+                  {photos.map((src, idx) => (
+                    <button
+                      key={src}
+                      onClick={() =>
+                        setSchoolModal((prev) => (prev ? { ...prev, photoIndex: idx } : null))
+                      }
+                      className={cn(
+                        "relative h-12 w-16 sm:h-14 sm:w-20 shrink-0 rounded-lg overflow-hidden border transition-all snap-start",
+                        idx === photoIndex
+                          ? "border-gold ring-2 ring-gold scale-105 opacity-100"
+                          : "border-white/15 opacity-50 hover:opacity-100 hover:border-white/40"
+                      )}
+                      aria-label={`View photo ${idx + 1}`}
+                    >
+                      <img src={src} alt="" className="h-full w-full object-cover" loading="lazy" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* BOTTOM CTA: COACHES & PARTICIPANTS */}
       <section className="border-t border-white/10 bg-obsidian-950/80 py-14 md:py-16">

@@ -98,3 +98,10 @@ credentials.json
 *test*.py
 backend/make_school_images.py
 backend/assets/
+
+frontend/public/images/
+
+# Raw camera originals (8-16MB each) — see frontend/scripts/optimize-school-photos.py.
+# The resized WebP output it produces (images-optimized/) is what the app
+# actually uses and stays tracked.
+frontend/src/assets/images/
