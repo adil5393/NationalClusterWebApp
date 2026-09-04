@@ -106,7 +106,7 @@ function LastYearAwardsCell({
   const content =
     awards.length === 0 ? (
       <span className="inline-flex items-center gap-1 rounded border border-white/5 bg-white/[0.02] px-2 py-0.5 text-[11px] font-medium text-slate-500">
-        <X className="h-3 w-3 shrink-0" /> None
+        <Trophy className="h-3 w-3 shrink-0 text-slate-500" /> Awards: None
       </span>
     ) : (
       <div className="flex flex-wrap gap-1 max-w-full">
@@ -626,132 +626,222 @@ export default function AdminTeams() {
           </div>
         ) : (
           <>
-            {/* MOBILE: CARD LIST */}
-            <div className="w-full min-w-0 grid gap-3 lg:hidden">
+            {/* MOBILE: HIGH-DENSITY COMPACT OPERATIONS CARD LIST */}
+            <div className="w-full min-w-0 grid gap-2.5 sm:gap-3 lg:hidden">
               {filtered.map((t, i) => {
                 const ageEntries = Object.entries(t.age_group_counts ?? {}).sort(
                   ([a], [b]) => ageGroupRank(a) - ageGroupRank(b) || a.localeCompare(b),
                 );
+                const inactiveGroups = new Set(t.inactive_age_groups ?? []);
                 const accStatus = t.accommodation_status ?? "none";
                 const isIndia = (t.country || "").toLowerCase() === "india";
+                const awards = t.last_year_awards ?? [];
 
                 return (
                   <div
                     key={t.id}
                     data-testid={`team-card-${t.id}`}
-                    className="w-full min-w-0 max-w-full rounded-xl border border-white/10 bg-obsidian-900 p-4 space-y-3 shadow-sm"
+                    className="w-full min-w-0 max-w-full rounded-xl border border-white/10 bg-obsidian-900/90 p-3 sm:p-3.5 space-y-2.5 shadow-sm"
                   >
-                    <div className="flex items-start justify-between gap-3 min-w-0">
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <TeamAvatar name={t.name} size="sm" tone={isIndia ? "gold" : "coral"} />
+                    {/* ROW 1: IDENTITY & PRIMARY STATUSES */}
+                    <div className="flex items-start justify-between gap-2.5 min-w-0">
+                      <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                        <div className="relative shrink-0 mt-0.5">
+                          <TeamAvatar name={t.name} size="sm" tone={isIndia ? "gold" : "coral"} />
+                          <span className="absolute -bottom-1 -right-1 rounded bg-obsidian-950/90 border border-white/15 px-1 text-[9px] font-mono font-bold text-slate-400">
+                            #{i + 1}
+                          </span>
+                        </div>
                         <div className="min-w-0 flex-1">
-                          <span className="text-[10px] font-mono text-slate-500">#{i + 1}</span>
-                          <h3 className="font-heading font-bold text-white text-sm truncate" title={t.name}>{t.name}</h3>
-                          {t.school && <p className="text-xs text-slate-400 truncate font-body" title={t.school}>{t.school}</p>}
-                          {t.school_code && <p className="font-mono text-[10px] text-slate-500 truncate">Code: {t.school_code}</p>}
-                          {t.affiliation_number && (
-                            <p className="font-mono text-[10px] text-slate-500 truncate">Affiliation #: {t.affiliation_number}</p>
+                          <h3
+                            className="font-heading font-bold text-white text-sm leading-snug truncate"
+                            title={t.name}
+                          >
+                            {t.name}
+                          </h3>
+                          {t.school && t.school !== t.name && (
+                            <p
+                              className="text-xs text-slate-400 truncate font-body leading-tight mt-0.5"
+                              title={t.school}
+                            >
+                              {t.school}
+                            </p>
+                          )}
+                          {(t.school_code || t.affiliation_number) && (
+                            <div className="flex flex-wrap items-center gap-x-2 text-[10px] font-mono text-slate-500 leading-tight mt-0.5">
+                              {t.school_code && <span>Code: {t.school_code}</span>}
+                              {t.school_code && t.affiliation_number && <span>·</span>}
+                              {t.affiliation_number && <span>Affil: {t.affiliation_number}</span>}
+                            </div>
                           )}
                         </div>
                       </div>
-                      <div className="shrink-0 pt-0.5 flex flex-col items-end gap-1">
+
+                      {/* Primary status badges */}
+                      <div className="shrink-0 flex flex-col items-end gap-1">
                         <ActiveCell team={t} canEdit={canEdit} onToggle={toggleActive} />
                         <ArrivedCell team={t} canEdit={canEdit} onToggle={toggleArrived} />
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-white/5 text-xs">
+                    {/* ROW 2: CONSOLIDATED METADATA CHIPS */}
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs">
                       <Badge tone={isIndia ? "gold" : "coral"} size="sm">
                         {t.country || "General"}
                       </Badge>
                       {t.region && (
-                        <span className="rounded bg-white/5 px-2 py-0.5 text-[11px] text-slate-300 font-mono truncate max-w-full">
+                        <span className="rounded bg-white/5 px-2 py-0.5 text-[10px] font-mono text-slate-300">
                           {t.region}
                         </span>
                       )}
-                      <span className="rounded bg-white/5 px-2 py-0.5 text-[11px] text-slate-300 font-mono shrink-0">
+                      <span className="rounded bg-white/5 px-2 py-0.5 text-[10px] font-mono text-slate-300">
                         {t.member_count ?? 0} members
                       </span>
                       <Badge tone={ACCOMMODATION_TONE[accStatus]} size="sm">
                         {ACCOMMODATION_LABEL[accStatus]}
                       </Badge>
+                      {t.stay && (
+                        <span className="rounded bg-white/5 px-2 py-0.5 text-[10px] font-mono text-slate-300">
+                          Stay: <strong className="text-white font-semibold">{t.stay}</strong>
+                        </span>
+                      )}
+                      {t.contact_name && (
+                        <span className="rounded bg-white/5 px-2 py-0.5 text-[10px] font-body text-slate-300 truncate max-w-[170px]" title={t.contact_name}>
+                          Contact: <strong className="text-white font-semibold">{t.contact_name}</strong>
+                        </span>
+                      )}
+                      {t.photos && t.photos.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setPhotosTeam(t)}
+                          className="inline-flex items-center gap-1 rounded bg-white/5 hover:bg-white/10 px-2 py-0.5 text-[10px] font-mono text-slate-300 transition-colors"
+                          title="View/Manage Team Photos"
+                        >
+                          <ImageIcon className="h-3 w-3 text-gold" /> {t.photos.length} photos
+                        </button>
+                      )}
                     </div>
 
-                    <div className="pt-0.5">
-                      <button
-                        type="button"
-                        onClick={() => canEdit && setAwardsTeam(t)}
-                        disabled={!canEdit}
-                        data-testid={`edit-awards-mobile-${t.id}`}
-                        className={cn("text-left max-w-full", canEdit ? "hover:opacity-80 transition-opacity cursor-pointer" : "cursor-default")}
-                        title={canEdit ? "Edit last year's awards" : undefined}
-                      >
-                        <LastYearAwardsCell team={t} canEdit={false} onEdit={() => {}} />
-                      </button>
-                    </div>
-
-                    {ageEntries.length > 0 && (
-                      <div className="flex flex-wrap gap-1 pt-1">
-                        {ageEntries.map(([group, count]) => (
+                    {/* ROW 3: CONSOLIDATED AGE GROUPS, SQUAD SIZES & AWARDS */}
+                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                      {ageEntries.map(([group, count]) => {
+                        const active = !inactiveGroups.has(group);
+                        const shortGroup = group.replace(/under\s*(\d+)/i, "U$1");
+                        const isBelowMin = count < MIN_SQUAD_SIZE;
+                        const pill = (
                           <span
-                            key={group}
                             className={cn(
-                              "rounded px-1.5 py-0.5 text-[10px] font-mono font-bold",
-                              count < MIN_SQUAD_SIZE ? "bg-red-500/15 text-red-400" : "bg-emerald-500/15 text-emerald-400",
+                              "inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-heading font-bold transition-all",
+                              active
+                                ? isBelowMin
+                                  ? "border border-amber-500/40 bg-amber-500/10 text-amber-300"
+                                  : "border border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                                : "border border-red-500/40 bg-red-500/10 text-red-400 opacity-60 line-through",
                             )}
                           >
-                            {group}: {count}
+                            <span>{shortGroup}: {count}</span>
+                            <span
+                              className={cn(
+                                "text-[9px] uppercase font-extrabold px-1 py-0.2 rounded",
+                                active
+                                  ? isBelowMin
+                                    ? "bg-amber-400/20 text-amber-200"
+                                    : "bg-emerald-400/20 text-emerald-200"
+                                  : "bg-red-500/20 text-red-300",
+                              )}
+                            >
+                              {active ? "Active" : "Off"}
+                            </span>
                           </span>
-                        ))}
-                      </div>
-                    )}
+                        );
+                        if (!canEdit) return <span key={group}>{pill}</span>;
+                        return (
+                          <button
+                            key={group}
+                            type="button"
+                            onClick={() => toggleAgeGroupActive(t, group, !active)}
+                            data-testid={`age-group-active-toggle-${t.id}-${group}`}
+                            title={active ? `Click to deactivate ${group}` : `Click to activate ${group}`}
+                            className="hover:opacity-80 transition-opacity"
+                          >
+                            {pill}
+                          </button>
+                        );
+                      })}
 
-                    <AgeGroupActiveCell team={t} canEdit={canEdit} onToggle={toggleAgeGroupActive} />
+                      {/* Awards pill */}
+                      {awards.length > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => canEdit && setAwardsTeam(t)}
+                          disabled={!canEdit}
+                          data-testid={`edit-awards-mobile-${t.id}`}
+                          className={cn("inline-flex items-center gap-1", canEdit ? "hover:opacity-80 cursor-pointer" : "cursor-default")}
+                          title={canEdit ? "Edit last year's awards" : undefined}
+                        >
+                          {awards.map((a) => (
+                            <span
+                              key={a.age_group}
+                              className={cn(
+                                "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-heading font-bold",
+                                AWARD_TONE[a.award],
+                              )}
+                            >
+                              <Trophy className="h-3 w-3 shrink-0" /> {AWARD_LABEL[a.award]} · {a.age_group.replace(/under\s*(\d+)/i, "U$1")}
+                            </span>
+                          ))}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => canEdit && setAwardsTeam(t)}
+                          disabled={!canEdit}
+                          data-testid={`edit-awards-mobile-${t.id}`}
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded border border-white/5 bg-white/[0.02] px-2 py-0.5 text-[10px] font-medium text-slate-500",
+                            canEdit ? "hover:opacity-80 hover:border-white/10 hover:text-slate-400 cursor-pointer" : "cursor-default",
+                          )}
+                          title={canEdit ? "Add last year's awards" : undefined}
+                        >
+                          <Trophy className="h-3 w-3 text-slate-600 shrink-0" /> Awards: None
+                        </button>
+                      )}
+                    </div>
 
-                    {t.contact_name && (
-                      <p className="text-xs text-slate-400 truncate font-body">
-                        Contact: <strong className="text-slate-200">{t.contact_name}</strong>
-                      </p>
-                    )}
-                    {t.stay && (
-                      <p className="text-xs text-slate-400 truncate font-body">
-                        Stay: <strong className="text-slate-200">{t.stay}</strong>
-                      </p>
-                    )}
-
-                    <div className={cn("grid gap-2 border-t border-white/10 pt-3 min-w-0", canEdit ? "grid-cols-3" : "grid-cols-1")}>
+                    {/* ROW 4: COMPACT ACTION BUTTONS */}
+                    <div className={cn("grid gap-1.5 border-t border-white/10 pt-2.5 min-w-0", canEdit ? "grid-cols-3" : "grid-cols-1")}>
                       <Button
                         variant="outline"
                         size="sm"
-                        className="h-8 text-xs min-w-0 px-2"
+                        className="h-8 text-xs min-w-0 px-2 font-heading font-bold"
                         onClick={() => setQrTeam({ id: t.id, name: t.name })}
                         data-testid={`qr-team-mobile-${t.id}`}
                       >
-                        <QrCode className="h-3.5 w-3.5 text-gold shrink-0" /> <span className="truncate">QR</span>
+                        <QrCode className="h-3.5 w-3.5 text-gold shrink-0 mr-1" /> <span className="truncate">QR</span>
                       </Button>
                       {canEdit && (
                         <Button
                           variant="outline"
                           size="sm"
-                          className="h-8 text-xs min-w-0 px-2"
+                          className="h-8 text-xs min-w-0 px-2 font-heading font-bold"
                           onClick={() => {
                             setForm(t);
                             setOpen(true);
                           }}
                           data-testid={`edit-team-mobile-${t.id}`}
                         >
-                          <Pencil className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">Edit</span>
+                          <Pencil className="h-3.5 w-3.5 shrink-0 mr-1 text-slate-300" /> <span className="truncate">Edit</span>
                         </Button>
                       )}
                       {canEdit && (
                         <Button
                           variant="danger"
                           size="sm"
-                          className="h-8 text-xs min-w-0 px-2"
+                          className="h-8 text-xs min-w-0 px-2 font-heading font-bold"
                           onClick={() => remove(t.id)}
                           data-testid={`delete-team-mobile-${t.id}`}
                         >
-                          <Trash2 className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">Delete</span>
+                          <Trash2 className="h-3.5 w-3.5 shrink-0 mr-1" /> <span className="truncate">Delete</span>
                         </Button>
                       )}
                     </div>

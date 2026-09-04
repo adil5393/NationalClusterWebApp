@@ -236,6 +236,26 @@
   }
 }
 
+@media (max-width: 640px) {
+  @keyframes kenBurnsSlow {
+    0% {
+      transform: scale(1);
+    }
+    100% {
+      transform: scale(1.025);
+    }
+  }
+
+  @keyframes kenBurnsPan {
+    0% {
+      transform: scale(1.025) translate(0, 0);
+    }
+    100% {
+      transform: scale(1.01) translate(-0.5%, 0.25%);
+    }
+  }
+}
+
 .animate-ken-burns-slow {
   animation: kenBurnsSlow linear forwards;
 }

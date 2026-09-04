@@ -118,7 +118,7 @@ export function SiteBackgroundSlideshow() {
       className="absolute inset-0 w-full h-full pointer-events-none overflow-hidden select-none z-0"
       aria-hidden="true"
     >
-      {/* BASE ACTIVE IMAGE (VIEWPORT CONSTRAINED) */}
+      {/* BASE ACTIVE IMAGE (VIEWPORT ORIENTED, ASPECT-SAFE) */}
       <div className="absolute inset-0 overflow-hidden">
         <img
           key={activePhoto}
@@ -133,8 +133,6 @@ export function SiteBackgroundSlideshow() {
           }`}
           style={{
             animationDuration: `${SLIDE_INTERVAL_MS + 1000}ms`,
-            objectFit: "cover",
-            objectPosition: "center",
           }}
         />
       </div>
@@ -162,8 +160,6 @@ export function SiteBackgroundSlideshow() {
             }`}
             style={{
               animationDuration: `${SLIDE_INTERVAL_MS + 1000}ms`,
-              objectFit: "cover",
-              objectPosition: "center",
             }}
           />
         </div>
@@ -173,14 +169,14 @@ export function SiteBackgroundSlideshow() {
       {/* GLOBAL CINEMATIC DARK GRADIENTS & MULTI-LAYER OVERLAYS        */}
       {/* ------------------------------------------------------------- */}
 
-      {/* 1. Base dark tint overlay (74% deep obsidian tint for maximum site-wide readability) */}
-      <div className="absolute inset-0 bg-obsidian-950/74 backdrop-brightness-[0.52]" />
+      {/* 1. Base dark tint overlay (80% on mobile for crisp text readability, 74% on md+ desktop) */}
+      <div className="absolute inset-0 bg-obsidian-950/80 md:bg-obsidian-950/74 backdrop-brightness-[0.52]" />
 
       {/* 2. Top vignette (seamless blend with sticky navigation header) */}
-      <div className="absolute inset-x-0 top-0 h-48 bg-gradient-to-b from-obsidian-950/95 via-obsidian-950/60 to-transparent" />
+      <div className="absolute inset-x-0 top-0 h-36 sm:h-48 bg-gradient-to-b from-obsidian-950/95 via-obsidian-950/60 to-transparent" />
 
       {/* 3. Bottom vignette (seamless blend with footer) */}
-      <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-obsidian-950/95 via-obsidian-950/60 to-transparent" />
+      <div className="absolute inset-x-0 bottom-0 h-36 sm:h-48 bg-gradient-to-t from-obsidian-950/95 via-obsidian-950/60 to-transparent" />
 
       {/* 4. Left radial reading spotlight for headings & metadata */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_75%_55%_at_25%_25%,rgba(10,15,29,0.85),rgba(10,15,29,0.50))]" />
