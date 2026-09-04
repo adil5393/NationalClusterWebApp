@@ -25,6 +25,7 @@ interface Team {
   name: string;
   school?: string;
   school_code?: string | null;
+  affiliation_number?: string | null;
 }
 
 interface AccommodationRow {
@@ -323,7 +324,12 @@ export default function Campus() {
   const lookupByCode = () => {
     const code = codeInput.trim();
     if (!code) return;
-    const match = teams.find((t) => t.school_code && t.school_code.toLowerCase() === code.toLowerCase());
+    const lower = code.toLowerCase();
+    const match = teams.find(
+      (t) =>
+        (t.school_code && t.school_code.toLowerCase() === lower) ||
+        (t.affiliation_number && t.affiliation_number.toLowerCase() === lower),
+    );
     if (!match) {
       setCodeError(`No team found with school code "${code}"`);
       return;

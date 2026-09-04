@@ -65,6 +65,10 @@ class Team(TimestampMixin, Base):
     contact_phone = Column(String(60))
     member_count = Column(Integer, default=0)
     notes = Column(Text)
+    # Fooding/lodging arrangement from the registration form's "Stay" column
+    # (free text — the form doesn't constrain it to fixed options). Organizer
+    # Portal only: never exposed on any /api/public/* endpoint.
+    stay = Column(String(120))
     # Manual organizer bench (e.g. a school withdrew) — enforced in
     # routers/matches.py _check_team_playable, alongside the automatic
     # attendance-based check (Tournament.min_present_players). Both keep the

@@ -13,6 +13,7 @@ interface Team {
   name: string;
   school?: string;
   school_code?: string;
+  affiliation_number?: string | null;
   region?: string;
   country?: string;
   member_count?: number;
@@ -86,7 +87,7 @@ export default function PublicTeams() {
     if (!s) return result;
 
     return result.filter((t) =>
-      [t.name, t.school, t.school_code, t.region, t.country]
+      [t.name, t.school, t.school_code, t.affiliation_number, t.region, t.country]
         .filter(Boolean)
         .some((v) => v!.toLowerCase().includes(s)),
     );

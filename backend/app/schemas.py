@@ -40,6 +40,8 @@ class TeamBase(BaseModel):
     contact_phone: Optional[str] = None
     member_count: Optional[int] = 0
     notes: Optional[str] = None
+    # Fooding/lodging arrangement — Organizer Portal only, never on TeamPublic.
+    stay: Optional[str] = None
 
 
 class TeamCreate(TeamBase):
@@ -61,6 +63,7 @@ class TeamUpdate(BaseModel):
     contact_phone: Optional[str] = None
     member_count: Optional[int] = None
     notes: Optional[str] = None
+    stay: Optional[str] = None
     # Toggled directly from the Teams table (see PUT /teams/{id}), never part
     # of the main edit form.
     is_active: Optional[bool] = None
@@ -129,6 +132,7 @@ class TeamPublic(ORMModel):
     name: str
     school: Optional[str] = None
     school_code: Optional[str] = None
+    affiliation_number: Optional[str] = None
     region: Optional[str] = None
     country: Optional[str] = None
     member_count: Optional[int] = None

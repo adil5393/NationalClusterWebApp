@@ -50,6 +50,7 @@ interface Team {
   id: number;
   name: string;
   school_code?: string | null;
+  affiliation_number?: string | null;
 }
 
 interface GalleryPhotoT {
@@ -186,6 +187,7 @@ export default function Home() {
     const match = teams.find(
       (t) =>
         (t.school_code && t.school_code.toLowerCase() === query) ||
+        (t.affiliation_number && t.affiliation_number.toLowerCase() === query) ||
         t.name.toLowerCase().includes(query),
     );
 

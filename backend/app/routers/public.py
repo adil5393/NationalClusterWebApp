@@ -47,6 +47,7 @@ def public_teams(db: Session = Depends(get_db)):
             "name": t.name,
             "school": t.school,
             "school_code": t.school_code,
+            "affiliation_number": t.affiliation_number,
             "region": t.region,
             "country": t.country,
             "member_count": t.member_count,

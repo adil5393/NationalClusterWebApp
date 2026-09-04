@@ -41,6 +41,7 @@ interface Team {
   name: string;
   school?: string;
   school_code?: string;
+  affiliation_number?: string | null;
   region?: string;
   country?: string;
   contact_name?: string;
@@ -48,6 +49,7 @@ interface Team {
   contact_phone?: string;
   member_count?: number;
   notes?: string;
+  stay?: string | null;
   participant_count?: number;
   accommodation_status?: "none" | "partial" | "full";
   accommodation_locations?: { room?: string | null; building?: string | null; whole_team: boolean; count: number }[];
@@ -517,7 +519,7 @@ export default function AdminTeams() {
   const filtered = teams.filter((t) => {
     if (!search.trim()) return true;
     const s = search.toLowerCase();
-    return [t.name, t.school, t.school_code, t.region, t.country, t.contact_name]
+    return [t.name, t.school, t.school_code, t.affiliation_number, t.region, t.country, t.contact_name]
       .filter(Boolean)
       .some((v) => v!.toLowerCase().includes(s));
   });
@@ -647,6 +649,9 @@ export default function AdminTeams() {
                           <h3 className="font-heading font-bold text-white text-sm truncate" title={t.name}>{t.name}</h3>
                           {t.school && <p className="text-xs text-slate-400 truncate font-body" title={t.school}>{t.school}</p>}
                           {t.school_code && <p className="font-mono text-[10px] text-slate-500 truncate">Code: {t.school_code}</p>}
+                          {t.affiliation_number && (
+                            <p className="font-mono text-[10px] text-slate-500 truncate">Affiliation #: {t.affiliation_number}</p>
+                          )}
                         </div>
                       </div>
                       <div className="shrink-0 pt-0.5 flex flex-col items-end gap-1">
@@ -708,6 +713,11 @@ export default function AdminTeams() {
                         Contact: <strong className="text-slate-200">{t.contact_name}</strong>
                       </p>
                     )}
+                    {t.stay && (
+                      <p className="text-xs text-slate-400 truncate font-body">
+                        Stay: <strong className="text-slate-200">{t.stay}</strong>
+                      </p>
+                    )}
 
                     <div className={cn("grid gap-2 border-t border-white/10 pt-3 min-w-0", canEdit ? "grid-cols-3" : "grid-cols-1")}>
                       <Button
@@ -766,6 +776,7 @@ export default function AdminTeams() {
                     <TH>Squad by Age</TH>
                     <TH>Active by Age Group</TH>
                     <TH>Accommodation</TH>
+                    <TH>Stay</TH>
                     <TH>Contact</TH>
                     <TH className="text-right">Actions</TH>
                   </TR>
@@ -783,6 +794,9 @@ export default function AdminTeams() {
                               <p className="font-heading font-bold text-white text-sm">{t.name}</p>
                               {t.school && <p className="text-xs text-slate-400 font-body truncate">{t.school}</p>}
                               {t.school_code && <p className="font-mono text-[10px] text-slate-500">#{t.school_code}</p>}
+                              {t.affiliation_number && (
+                                <p className="font-mono text-[10px] text-slate-500">Aff #{t.affiliation_number}</p>
+                              )}
                             </div>
                           </div>
                         </TD>
@@ -817,6 +831,7 @@ export default function AdminTeams() {
                         <TD>
                           <AccommodationCell t={t} />
                         </TD>
+                        <TD className="text-slate-300 text-xs font-body">{t.stay || "—"}</TD>
                         <TD className="text-slate-300 text-xs font-body">{t.contact_name || "—"}</TD>
                         <TD className="text-right">
                           <div className="flex items-center justify-end gap-1">
@@ -946,6 +961,15 @@ export default function AdminTeams() {
                 placeholder="+91 98765 00000"
               />
             </div>
+          </div>
+          <div>
+            <Label>Stay (Fooding / Lodging)</Label>
+            <Input
+              value={form.stay ?? ""}
+              onChange={(e) => set("stay", e.target.value)}
+              placeholder="e.g. Fooding and Lodging"
+              data-testid="team-stay-input"
+            />
           </div>
           <div>
             <Label>Operational Notes</Label>

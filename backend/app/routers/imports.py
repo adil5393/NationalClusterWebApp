@@ -111,7 +111,8 @@ def _find_col(columns, *prefixes: str) -> "str | None":
 async def import_team_details(file: UploadFile = File(...), db: Session = Depends(get_db)):
     """The school registration form (backend/assets/data/form.xlsx is a sample
     of its shape): one row per school with its school code, coach(es) +
-    manager, contact info, and team photo link. Updates the matching Team —
+    manager, contact info, team photo link, and stay (fooding/lodging)
+    arrangement. Updates the matching Team —
     looked up by school_code first, falling back to affiliation_number for a
     row whose "School Code" cell is actually that school's affiliation
     number instead — and upserts Coach rows tagged role="Coach"/"Manager" —
@@ -138,6 +139,7 @@ async def import_team_details(file: UploadFile = File(...), db: Session = Depend
     col_coach_phone = _find_col(df.columns, "contact number of coach")
     col_email = _find_col(df.columns, "email")
     col_photo = _find_col(df.columns, "attach a team photo", "team photo")
+    col_stay = _find_col(df.columns, "stay")
     col_school_code = _find_col(df.columns, "school code")
     if not col_school_code:
         raise HTTPException(400, "Missing a 'School Code' column")
@@ -172,6 +174,10 @@ async def import_team_details(file: UploadFile = File(...), db: Session = Depend
         email = _val(row, col_email) if col_email else None
         if email:
             team.contact_email = email
+
+        stay = _val(row, col_stay) if col_stay else None
+        if stay:
+            team.stay = stay
 
         # A school's photo cell can list more than one Drive link, comma-separated
         # (same convention as the coach-name cell) — add any not already stored,
