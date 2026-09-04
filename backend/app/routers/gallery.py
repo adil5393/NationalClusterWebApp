@@ -6,11 +6,13 @@ here is automatically picked up next time that endpoint is called. Each
 upload is also tracked in the gallery_photos table with a day/group tag, so
 the public homepage's album view can group them (see public.py's
 public_gallery)."""
+import io
 import re
 import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from PIL import Image, ImageOps
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
@@ -20,6 +22,45 @@ from .public import ASSETS_ABOUT_DIR, VALID_IMAGE_EXTENSIONS
 router = APIRouter(prefix="/api/gallery", tags=["gallery"])
 
 _SAFE_STEM_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+# A modern phone camera shoots 4000px+/8-12MB JPEGs — full resolution buys
+# nothing on a gallery grid or lightbox, so every upload is downsized to this
+# before hitting disk. Keeps storage and public-page load times sane without
+# a visible quality hit (this is also what made bright/detailed photos look
+# "broken" — they were the ones landing over nginx's request-size limit).
+_MAX_DIMENSION = 2000
+_JPEG_QUALITY = 82
+_WEBP_QUALITY = 82
+
+
+def _optimize_image(content: bytes, ext: str) -> bytes:
+    """Re-encodes an uploaded image at a capped resolution/quality. Falls
+    back to the original bytes if Pillow can't decode it (corrupt upload, or
+    a format PIL doesn't recognize despite the extension) — better to store
+    the original than to reject an otherwise-valid upload."""
+    try:
+        img = Image.open(io.BytesIO(content))
+        img = ImageOps.exif_transpose(img)  # bake in rotation before EXIF is dropped
+        img.load()
+    except Exception:  # noqa: BLE001
+        return content
+
+    if max(img.size) > _MAX_DIMENSION:
+        img.thumbnail((_MAX_DIMENSION, _MAX_DIMENSION), Image.LANCZOS)
+
+    out = io.BytesIO()
+    try:
+        if ext in (".jpg", ".jpeg"):
+            if img.mode in ("RGBA", "P", "LA"):
+                img = img.convert("RGB")
+            img.save(out, format="JPEG", quality=_JPEG_QUALITY, optimize=True)
+        elif ext == ".webp":
+            img.save(out, format="WEBP", quality=_WEBP_QUALITY)
+        else:  # .png — lossless, so the resize above is the whole size win
+            img.save(out, format="PNG", optimize=True)
+    except Exception:  # noqa: BLE001
+        return content
+    return out.getvalue()
 
 
 @router.get("/photos", response_model=list[schemas.GalleryPhotoRead])
@@ -51,7 +92,7 @@ async def upload_photos(files: list[UploadFile] = File(...), tag: str = Form("Ge
         # disk — sidesteps both collisions (two "IMG_0001.jpg" from
         # different phones) and path-traversal-via-filename entirely.
         name = f"{stem}-{uuid.uuid4().hex[:8]}{ext}"
-        content = await f.read()
+        content = _optimize_image(await f.read(), ext)
         (ASSETS_ABOUT_DIR / name).write_bytes(content)
         photo = models.GalleryPhoto(filename=name, tag=tag)
         db.add(photo)

@@ -177,6 +177,11 @@ class Coach(TimestampMixin, Base):
     email = Column(String(200))
     phone = Column(String(60))
     notes = Column(Text)
+    # Attendance/check-in at the event, same convention as Participant — kept
+    # off any fixture/eligibility query on purpose, so coaches/managers never
+    # count toward age-group eligibility or present-count thresholds.
+    is_present = Column(Boolean, nullable=False, default=False)
+    checked_in_at = Column(DateTime(timezone=True))
 
     team = relationship("Team", back_populates="coaches")
 

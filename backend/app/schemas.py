@@ -505,6 +505,35 @@ class AttendanceUpdate(BaseModel):
     present: bool
 
 
+# --- Coaches / Managers ---
+class CoachBase(BaseModel):
+    team_id: int
+    full_name: str
+    role: Optional[str] = "Coach"
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class CoachCreate(CoachBase):
+    pass
+
+
+class CoachUpdate(BaseModel):
+    team_id: Optional[int] = None
+    full_name: Optional[str] = None
+    role: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class CoachRead(ORMModel, CoachBase):
+    id: int
+    is_present: bool = False
+    checked_in_at: Optional[datetime] = None
+
+
 # --- Transport ---
 class DriverBase(BaseModel):
     name: str

@@ -14,6 +14,7 @@ from .routers import (
     attendance,
     auth,
     buckets,
+    coaches,
     dashboard,
     exports,
     faq,
@@ -109,6 +110,7 @@ for module in (dashboard, search, tasks):
 for router_module, module_key in (
     (teams, "teams"),
     (participants, "teams"),
+    (coaches, "teams"),
     (imports, "teams"),
     (structure, "buildings"),
     (accommodation, "accommodation"),
@@ -130,6 +132,10 @@ for router_module, module_key in (
     (attendance, "attendance"),
 ):
     app.include_router(router_module.router, dependencies=[Depends(require_module(module_key))])
+
+# attendance.py's second router (coach check-in) — same "attendance" module,
+# registered separately since it isn't the module's `.router` attribute.
+app.include_router(attendance.coach_router, dependencies=[Depends(require_module("attendance"))])
 
 # exports.py mixes entities across modules in one router (participants.csv vs
 # rooms.csv) — each endpoint declares its own module dependency instead.

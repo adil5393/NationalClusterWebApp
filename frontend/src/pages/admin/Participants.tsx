@@ -24,6 +24,17 @@ interface Participant {
   notes?: string;
 }
 
+interface Coach {
+  id: number;
+  team_id: number;
+  full_name: string;
+  role?: string;
+  email?: string;
+  phone?: string;
+  notes?: string;
+  is_present?: boolean;
+}
+
 interface Team {
   id: number;
   name: string;
@@ -31,11 +42,14 @@ interface Team {
 
 const PAGE_SIZE = 25;
 const empty: Partial<Participant> = { full_name: "", role: "Player", is_present: false };
+const emptyCoach: Partial<Coach> = { full_name: "", role: "Coach", is_present: false };
 
 export default function Participants() {
   const { canEdit } = useModuleAccess("teams");
   const canMarkAttendance = canEdit;
+  const [view, setView] = useState<"players" | "coaches">("players");
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [coaches, setCoaches] = useState<Coach[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -46,12 +60,19 @@ export default function Participants() {
   const [open, setOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [form, setForm] = useState<Partial<Participant>>(empty);
+  const [coachOpen, setCoachOpen] = useState(false);
+  const [coachForm, setCoachForm] = useState<Partial<Coach>>(emptyCoach);
 
   const load = () => {
     setLoading(true);
-    Promise.all([api.get<Participant[]>("/participants"), api.get<Team[]>("/teams")])
-      .then(([p, t]) => {
+    Promise.all([
+      api.get<Participant[]>("/participants"),
+      api.get<Coach[]>("/coaches"),
+      api.get<Team[]>("/teams"),
+    ])
+      .then(([p, c, t]) => {
         setParticipants(p.data);
+        setCoaches(c.data);
         setTeams(t.data);
       })
       .finally(() => setLoading(false));
@@ -94,9 +115,25 @@ export default function Participants() {
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
+  const coachPresentCount = coaches.filter((c) => c.is_present).length;
+
+  const filteredCoaches = useMemo(() => {
+    const s = search.trim().toLowerCase();
+    return coaches.filter((c) => {
+      if (teamFilter && String(c.team_id) !== teamFilter) return false;
+      if (presenceFilter === "present" && !c.is_present) return false;
+      if (presenceFilter === "absent" && c.is_present) return false;
+      if (!s) return true;
+      return c.full_name.toLowerCase().includes(s) || teamName(c.team_id).toLowerCase().includes(s);
+    });
+  }, [coaches, teams, search, teamFilter, presenceFilter]);
+
+  const coachPageCount = Math.max(1, Math.ceil(filteredCoaches.length / PAGE_SIZE));
+  const pagedCoaches = filteredCoaches.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
   useEffect(() => {
     setPage(1);
-  }, [search, teamFilter, ageGroupFilter, presenceFilter]);
+  }, [search, teamFilter, ageGroupFilter, presenceFilter, view]);
 
   const save = async () => {
     if (!form.full_name?.trim()) return toast.error("Full name is required");
@@ -137,6 +174,41 @@ export default function Participants() {
 
   const set = (k: keyof Participant, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
+  const saveCoach = async () => {
+    if (!coachForm.full_name?.trim()) return toast.error("Full name is required");
+    if (!coachForm.team_id) return toast.error("Team is required");
+    try {
+      const payload = { ...coachForm, team_id: Number(coachForm.team_id) };
+      if (coachForm.id) await api.put(`/coaches/${coachForm.id}`, payload);
+      else await api.post("/coaches", payload);
+      toast.success(coachForm.id ? "Coach updated" : "Coach added");
+      setCoachOpen(false);
+      load();
+    } catch {
+      toast.error("Could not save coach");
+    }
+  };
+
+  const removeCoach = async (id: number) => {
+    if (!confirm("Delete this coach/manager?")) return;
+    await api.delete(`/coaches/${id}`);
+    toast.success("Coach deleted");
+    load();
+  };
+
+  const toggleCoachAttendance = async (c: Coach) => {
+    const next = !c.is_present;
+    setCoaches((rows) => rows.map((r) => (r.id === c.id ? { ...r, is_present: next } : r)));
+    try {
+      await api.post(`/coaches/${c.id}/attendance`, { present: next });
+    } catch {
+      toast.error("Could not update attendance");
+      setCoaches((rows) => rows.map((r) => (r.id === c.id ? { ...r, is_present: c.is_present } : r)));
+    }
+  };
+
+  const setCoachField = (k: keyof Coach, v: string) => setCoachForm((f) => ({ ...f, [k]: v }));
+
   return (
     <div data-testid="admin-participants" className="space-y-6">
       {/* PAGE HEADER */}
@@ -149,13 +221,22 @@ export default function Participants() {
             Participants & Attendance
           </h1>
           <p className="mt-1 text-xs sm:text-sm text-slate-400 font-body">
-            {participants.length} registered athletes across {teams.length} delegations ·{" "}
-            <span className="font-bold text-emerald-400 font-mono">{presentCount} Verified Present</span>
+            {view === "players" ? (
+              <>
+                {participants.length} registered athletes across {teams.length} delegations ·{" "}
+                <span className="font-bold text-emerald-400 font-mono">{presentCount} Verified Present</span>
+              </>
+            ) : (
+              <>
+                {coaches.length} coaches/managers across {teams.length} delegations ·{" "}
+                <span className="font-bold text-emerald-400 font-mono">{coachPresentCount} Verified Present</span>
+              </>
+            )}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {canEdit && (
+          {view === "players" && canEdit && (
             <Button
               variant="outline"
               size="sm"
@@ -166,21 +247,25 @@ export default function Participants() {
               <Upload className="h-3.5 w-3.5 text-gold" /> Import Excel/CSV
             </Button>
           )}
-          <a
-            href={`${BASE_URL}/api/export/participants.csv`}
-            className="inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors"
-            data-testid="export-participants-btn"
-          >
-            <Download className="h-3.5 w-3.5 text-slate-400" /> Export CSV
-          </a>
-          <a
-            href={`${BASE_URL}/api/export/participants.xlsx`}
-            className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 transition-colors"
-            data-testid="export-participants-xlsx-btn"
-          >
-            <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" /> Export XLSX
-          </a>
-          {canEdit && (
+          {view === "players" && (
+            <>
+              <a
+                href={`${BASE_URL}/api/export/participants.csv`}
+                className="inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors"
+                data-testid="export-participants-btn"
+              >
+                <Download className="h-3.5 w-3.5 text-slate-400" /> Export CSV
+              </a>
+              <a
+                href={`${BASE_URL}/api/export/participants.xlsx`}
+                className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 transition-colors"
+                data-testid="export-participants-xlsx-btn"
+              >
+                <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" /> Export XLSX
+              </a>
+            </>
+          )}
+          {canEdit && view === "players" && (
             <Button
               variant="gold"
               size="sm"
@@ -194,7 +279,43 @@ export default function Participants() {
               <Plus className="h-4 w-4" /> Add Participant
             </Button>
           )}
+          {canEdit && view === "coaches" && (
+            <Button
+              variant="gold"
+              size="sm"
+              onClick={() => {
+                setCoachForm(emptyCoach);
+                setCoachOpen(true);
+              }}
+              data-testid="add-coach-btn"
+              className="text-xs font-extrabold"
+            >
+              <Plus className="h-4 w-4" /> Add Coach / Manager
+            </Button>
+          )}
         </div>
+      </div>
+
+      {/* VIEW TABS */}
+      <div className="flex gap-2" data-testid="participants-view-tabs">
+        <button
+          onClick={() => setView("players")}
+          data-testid="view-tab-players"
+          className={`rounded-md px-3 py-1.5 text-xs font-bold transition-colors ${
+            view === "players" ? "bg-gold text-obsidian-950" : "bg-white/5 text-slate-300 hover:bg-white/10"
+          }`}
+        >
+          Players ({participants.length})
+        </button>
+        <button
+          onClick={() => setView("coaches")}
+          data-testid="view-tab-coaches"
+          className={`rounded-md px-3 py-1.5 text-xs font-bold transition-colors ${
+            view === "coaches" ? "bg-gold text-obsidian-950" : "bg-white/5 text-slate-300 hover:bg-white/10"
+          }`}
+        >
+          Coaches & Managers ({coaches.length})
+        </button>
       </div>
 
       {/* SEARCH & FILTERS BAR */}
@@ -225,7 +346,7 @@ export default function Participants() {
           </Select>
         </div>
 
-        {ageGroups.length > 0 && (
+        {view === "players" && ageGroups.length > 0 && (
           <div className="w-full sm:w-40">
             <Select
               value={ageGroupFilter}
@@ -251,17 +372,23 @@ export default function Participants() {
             data-testid="participant-presence-filter"
           >
             <option value="">All Attendance</option>
-            <option value="present">Present Only ({presentCount})</option>
-            <option value="absent">Absent Only ({participants.length - presentCount})</option>
+            <option value="present">
+              Present Only ({view === "players" ? presentCount : coachPresentCount})
+            </option>
+            <option value="absent">
+              Absent Only (
+              {view === "players" ? participants.length - presentCount : coaches.length - coachPresentCount})
+            </option>
           </Select>
         </div>
 
         <div className="ml-auto text-xs text-slate-400 font-mono hidden xl:block">
-          {filtered.length} Matches
+          {view === "players" ? filtered.length : filteredCoaches.length} Matches
         </div>
       </div>
 
       {/* PARTICIPANTS CONTENT */}
+      {view === "players" ? (
       <div>
         {loading ? (
           <div className="rounded-xl border border-white/10 bg-obsidian-900/60 py-16">
@@ -523,6 +650,242 @@ export default function Participants() {
           </div>
         )}
       </div>
+      ) : (
+      <div>
+        {loading ? (
+          <div className="rounded-xl border border-white/10 bg-obsidian-900/60 py-16">
+            <Spinner label="Loading coaches & managers…" />
+          </div>
+        ) : filteredCoaches.length === 0 ? (
+          <div className="rounded-xl border border-white/10 bg-obsidian-900/60 p-6">
+            <EmptyState
+              title="No coaches or managers found"
+              hint="Try clearing filters, or add a coach/manager manually."
+            />
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* MOBILE: CARD LIST */}
+            <div className="grid gap-2.5 lg:hidden">
+              {pagedCoaches.map((c, i) => (
+                <div
+                  key={c.id}
+                  data-testid={`coach-card-${c.id}`}
+                  className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-2 shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span className="text-[10px] font-mono text-slate-500">
+                        #{(page - 1) * PAGE_SIZE + i + 1}
+                      </span>
+                      <h3 className="font-heading font-bold text-white text-sm">{c.full_name}</h3>
+                      <p className="text-xs text-gold font-body">{teamName(c.team_id)}</p>
+                    </div>
+
+                    {canMarkAttendance ? (
+                      <button
+                        onClick={() => toggleCoachAttendance(c)}
+                        data-testid={`coach-attendance-toggle-mobile-${c.id}`}
+                        title={c.is_present ? "Mark absent" : "Mark present"}
+                        className="shrink-0"
+                      >
+                        {c.is_present ? (
+                          <Badge tone="live" size="sm">
+                            <CheckCircle2 className="h-3 w-3" /> Present
+                          </Badge>
+                        ) : (
+                          <Badge tone="neutral" size="sm">
+                            <Circle className="h-3 w-3" /> Absent
+                          </Badge>
+                        )}
+                      </button>
+                    ) : c.is_present ? (
+                      <Badge tone="live" size="sm">
+                        <CheckCircle2 className="h-3 w-3" /> Present
+                      </Badge>
+                    ) : (
+                      <Badge tone="neutral" size="sm">
+                        <Circle className="h-3 w-3" /> Absent
+                      </Badge>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap gap-1 text-[11px] pt-1">
+                    {c.role && (
+                      <span className="rounded bg-gold/15 px-1.5 py-0.5 font-bold text-gold">{c.role}</span>
+                    )}
+                    {c.phone && (
+                      <span className="rounded bg-white/5 px-1.5 py-0.5 font-mono text-slate-300">{c.phone}</span>
+                    )}
+                    {c.email && (
+                      <span className="rounded bg-white/5 px-1.5 py-0.5 text-slate-300">{c.email}</span>
+                    )}
+                  </div>
+
+                  {canEdit && (
+                    <div className="grid grid-cols-2 gap-2 border-t border-white/10 pt-2.5">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={() => {
+                          setCoachForm(c);
+                          setCoachOpen(true);
+                        }}
+                        data-testid={`edit-coach-mobile-${c.id}`}
+                      >
+                        <Pencil className="h-3.5 w-3.5" /> Edit
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={() => removeCoach(c.id)}
+                        data-testid={`delete-coach-mobile-${c.id}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Delete
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* DESKTOP: TABLE */}
+            <div className="hidden lg:block">
+              <Table>
+                <THead>
+                  <TR>
+                    <TH className="w-12">#</TH>
+                    <TH>Full Name</TH>
+                    <TH>Team / School</TH>
+                    <TH>Role</TH>
+                    <TH>Phone</TH>
+                    <TH>Email</TH>
+                    <TH>Attendance Verification</TH>
+                    <TH className="text-right">Actions</TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {pagedCoaches.map((c, i) => (
+                    <TR key={c.id} data-testid={`coach-row-${c.id}`}>
+                      <TD className="text-slate-500 font-mono text-xs">
+                        {(page - 1) * PAGE_SIZE + i + 1}
+                      </TD>
+                      <TD className="font-bold text-white text-sm">{c.full_name}</TD>
+                      <TD className="text-slate-300 font-body text-xs">{teamName(c.team_id)}</TD>
+                      <TD>
+                        <span className="rounded bg-white/5 px-2 py-0.5 text-xs font-bold text-slate-300">
+                          {c.role || "Coach"}
+                        </span>
+                      </TD>
+                      <TD className="font-mono text-xs text-slate-400">{c.phone || "—"}</TD>
+                      <TD className="text-xs text-slate-400">{c.email || "—"}</TD>
+                      <TD>
+                        {canMarkAttendance ? (
+                          <button
+                            onClick={() => toggleCoachAttendance(c)}
+                            data-testid={`coach-attendance-toggle-${c.id}`}
+                            className="inline-flex items-center hover:opacity-80 transition-opacity"
+                            title={c.is_present ? "Click to mark absent" : "Click to mark present"}
+                          >
+                            {c.is_present ? (
+                              <Badge tone="live" size="sm">
+                                <CheckCircle2 className="h-3.5 w-3.5" /> Present
+                              </Badge>
+                            ) : (
+                              <Badge tone="neutral" size="sm">
+                                <Circle className="h-3.5 w-3.5 text-slate-500" /> Absent
+                              </Badge>
+                            )}
+                          </button>
+                        ) : c.is_present ? (
+                          <Badge tone="live" size="sm">
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Present
+                          </Badge>
+                        ) : (
+                          <Badge tone="neutral" size="sm">
+                            <Circle className="h-3.5 w-3.5 text-slate-500" /> Absent
+                          </Badge>
+                        )}
+                      </TD>
+                      <TD className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          {canEdit && (
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => {
+                                setCoachForm(c);
+                                setCoachOpen(true);
+                              }}
+                              data-testid={`edit-coach-${c.id}`}
+                              title="Edit Coach/Manager Record"
+                            >
+                              <Pencil className="h-3.5 w-3.5 text-slate-300" />
+                            </Button>
+                          )}
+                          {canEdit && (
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => removeCoach(c.id)}
+                              data-testid={`delete-coach-${c.id}`}
+                              title="Delete Coach/Manager Record"
+                            >
+                              <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                            </Button>
+                          )}
+                        </div>
+                      </TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+            </div>
+
+            {/* PAGINATION BAR */}
+            <div
+              className="flex flex-col gap-2 rounded-xl border border-white/10 bg-obsidian-900 px-4 py-3 sm:flex-row sm:items-center sm:justify-between shadow-sm"
+              data-testid="coach-pagination"
+            >
+              <span className="text-xs text-slate-400 font-body">
+                Showing{" "}
+                <strong className="text-white">
+                  {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filteredCoaches.length)}
+                </strong>{" "}
+                of <strong className="text-white">{filteredCoaches.length}</strong> coaches/managers
+              </span>
+              <div className="flex items-center justify-between gap-2 sm:justify-start">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => p - 1)}
+                  data-testid="coach-page-prev"
+                  className="text-xs"
+                >
+                  Previous
+                </Button>
+                <span className="text-xs font-mono font-bold text-gold px-2">
+                  Page {page} / {coachPageCount}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= coachPageCount}
+                  onClick={() => setPage((p) => p + 1)}
+                  data-testid="coach-page-next"
+                  className="text-xs"
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+      )}
 
       {/* ADD / EDIT PARTICIPANT DIALOG */}
       <Dialog
@@ -614,6 +977,86 @@ export default function Participants() {
             </Button>
             <Button variant="gold" size="sm" onClick={save} data-testid="save-participant-btn">
               {form.id ? "Update Athlete" : "Save Athlete"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* ADD / EDIT COACH DIALOG */}
+      <Dialog
+        open={coachOpen}
+        onClose={() => setCoachOpen(false)}
+        title={coachForm.id ? "Edit Coach / Manager" : "Add Coach / Manager"}
+        testId="coach-dialog"
+      >
+        <div className="space-y-4">
+          <div>
+            <Label>Team Delegation *</Label>
+            <Select
+              value={coachForm.team_id ?? ""}
+              onChange={(e) => setCoachField("team_id", e.target.value)}
+              data-testid="coach-team-select"
+            >
+              <option value="">Select team…</option>
+              {teams.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <Label>Full Name *</Label>
+            <Input
+              value={coachForm.full_name ?? ""}
+              onChange={(e) => setCoachField("full_name", e.target.value)}
+              placeholder="e.g. Suresh Kumar"
+              data-testid="coach-name-input"
+            />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label>Role</Label>
+              <Select
+                value={coachForm.role ?? "Coach"}
+                onChange={(e) => setCoachField("role", e.target.value)}
+                data-testid="coach-role-select"
+              >
+                <option value="Coach">Coach</option>
+                <option value="Manager">Manager</option>
+              </Select>
+            </div>
+            <div>
+              <Label>Phone</Label>
+              <Input
+                value={coachForm.phone ?? ""}
+                onChange={(e) => setCoachField("phone", e.target.value)}
+                placeholder="+91-XXXXXXXXXX"
+              />
+            </div>
+          </div>
+          <div>
+            <Label>Email</Label>
+            <Input
+              value={coachForm.email ?? ""}
+              onChange={(e) => setCoachField("email", e.target.value)}
+              placeholder="name@example.com"
+            />
+          </div>
+          <div>
+            <Label>Notes</Label>
+            <Textarea
+              value={coachForm.notes ?? ""}
+              onChange={(e) => setCoachField("notes", e.target.value)}
+              placeholder="Any relevant notes..."
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-3 border-t border-white/10">
+            <Button variant="outline" size="sm" onClick={() => setCoachOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="gold" size="sm" onClick={saveCoach} data-testid="save-coach-btn">
+              {coachForm.id ? "Update Coach/Manager" : "Save Coach/Manager"}
             </Button>
           </div>
         </div>
