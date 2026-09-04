@@ -18,6 +18,12 @@ import {
   Activity,
   Award,
   Images,
+  Building,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Maximize2,
+  X,
 } from "lucide-react";
 import { api, assetUrl } from "@/lib/api";
 import { Badge, LiveBadge } from "@/components/ui/badge";
@@ -25,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog } from "@/components/ui/dialog";
 import { formatDate, priorityTone } from "@/lib/meta";
+import { cn } from "@/lib/utils";
 
 interface LiveMatch {
   id: number;
@@ -119,6 +126,131 @@ const TOURNAMENT_SECTIONS = [
   },
 ];
 
+interface SchoolPhoto {
+  id: string;
+  filename: string;
+  fallbackSvg: string;
+  title: string;
+  subtitle: string;
+  tag: string;
+}
+
+const SCHOOL_PHOTOS: SchoolPhoto[] = [
+  {
+    id: "main",
+    filename: "school-main.jpg",
+    fallbackSvg: "school-main.svg",
+    title: "Main Campus & Administrative Block",
+    subtitle: "Central infrastructure & tournament reception at New Angels Sr. Sec. School",
+    tag: "FEATURED CAMPUS",
+  },
+  {
+    id: "ground",
+    filename: "school-ground.jpg",
+    fallbackSvg: "school-ground.svg",
+    title: "Championship Sports Ground",
+    subtitle: "AKFI-standard synthetic Kabaddi courts & spectator galleries",
+    tag: "SPORTS ARENA",
+  },
+  {
+    id: "campus",
+    filename: "school-campus.jpg",
+    fallbackSvg: "school-campus.svg",
+    title: "Lush Green Campus Environment",
+    subtitle: "Spacious, secure grounds welcoming visiting athletes from across India & KSA",
+    tag: "CAMPUS GROUNDS",
+  },
+  {
+    id: "building",
+    filename: "school-building.jpg",
+    fallbackSvg: "school-building.svg",
+    title: "Academic & Tech Pavilion",
+    subtitle: "Modern facilities, briefing halls & athlete control rooms",
+    tag: "FACILITIES",
+  },
+  {
+    id: "gate",
+    filename: "school-gate.jpg",
+    fallbackSvg: "school-gate.svg",
+    title: "Main Entrance & Welcome Gate",
+    subtitle: "Official gateway welcoming participating state delegations to Pratapgarh",
+    tag: "WELCOME GATE",
+  },
+];
+
+function SchoolImage({
+  photo,
+  className,
+  featured = false,
+}: {
+  photo: SchoolPhoto;
+  className?: string;
+  featured?: boolean;
+}) {
+  const [hasError, setHasError] = useState(false);
+  const imgSrc = assetUrl(`/images/school/${photo.filename}`);
+
+  return (
+    <div
+      className={cn(
+        "group relative overflow-hidden rounded-2xl border border-white/10 bg-obsidian-900 shadow-card-subtle transition-all duration-300 hover:border-gold/50 hover:shadow-gold-glow",
+        className,
+      )}
+    >
+      {/* Fallback pure-CSS stylized background (always present behind image or shown on error) */}
+      <div className="absolute inset-0 bg-gradient-to-br from-obsidian-800 via-obsidian-900 to-obsidian-950 flex flex-col items-center justify-center p-6 text-center">
+        <div className="h-16 w-16 rounded-2xl bg-gold/10 border border-gold/30 flex items-center justify-center mb-3">
+          <Building className="h-8 w-8 text-gold" />
+        </div>
+        <span className="text-xs font-heading font-extrabold uppercase tracking-widest text-gold mb-1">
+          {photo.tag}
+        </span>
+        <span className="text-sm font-heading font-bold text-white max-w-xs">
+          {photo.title}
+        </span>
+      </div>
+
+      {/* Image layer */}
+      {!hasError && (
+        <img
+          src={imgSrc}
+          alt={photo.title}
+          onError={() => setHasError(true)}
+          loading="lazy"
+          decoding="async"
+          className="relative z-10 h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
+        />
+      )}
+
+      {/* Dark gradient overlay for text legibility */}
+      <div className="absolute inset-0 z-20 bg-gradient-to-t from-obsidian-950/95 via-obsidian-950/40 to-transparent pointer-events-none" />
+
+      {/* Badges & Captions */}
+      <div className="absolute inset-x-0 bottom-0 z-30 p-4 sm:p-5 flex flex-col justify-end">
+        <div className="flex items-center justify-between gap-2 mb-1.5">
+          <span className="inline-flex items-center gap-1 rounded-md border border-gold/30 bg-gold/15 px-2 py-0.5 text-[10px] font-heading font-extrabold uppercase tracking-wider text-gold backdrop-blur-md">
+            {photo.tag}
+          </span>
+          <span className="text-[11px] font-heading font-semibold text-slate-400 opacity-0 transition-opacity duration-200 group-hover:opacity-100 hidden sm:inline-flex items-center gap-1">
+            <Building className="h-3 w-3 text-gold" /> New Angels
+          </span>
+        </div>
+        <h4
+          className={cn(
+            "font-heading font-bold text-white tracking-tight leading-snug group-hover:text-gold transition-colors",
+            featured ? "text-lg sm:text-2xl font-black" : "text-sm sm:text-base",
+          )}
+        >
+          {photo.title}
+        </h4>
+        <p className="mt-1 text-xs text-slate-300 font-body line-clamp-2 leading-relaxed">
+          {photo.subtitle}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [liveMatches, setLiveMatches] = useState<LiveMatch[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -127,28 +259,82 @@ export default function Home() {
   const [codeError, setCodeError] = useState("");
   const [galleryPhotos, setGalleryPhotos] = useState<GalleryPhotoT[]>([]);
   const [galleryIndex, setGalleryIndex] = useState(0);
-  const [albumOpen, setAlbumOpen] = useState(false);
+  const [galleryLoading, setGalleryLoading] = useState(true);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const navigate = useNavigate();
 
+  // Fetch championship gallery photos from backend
   useEffect(() => {
+    setGalleryLoading(true);
     api
       .get<GalleryPhotoT[]>("/public/gallery")
-      .then((r) => setGalleryPhotos(r.data))
-      .catch(() => {});
+      .then((r) => {
+        if (Array.isArray(r.data)) {
+          setGalleryPhotos(r.data);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setGalleryLoading(false));
   }, []);
 
+  // Automatic slideshow loop (4-second interval, paused when lightbox is open)
   useEffect(() => {
-    if (galleryPhotos.length < 2) return;
+    if (galleryPhotos.length < 2 || lightboxIndex !== null) return;
     const timer = setInterval(() => {
       setGalleryIndex((i) => (i + 1) % galleryPhotos.length);
-    }, 2000);
+    }, 4000);
     return () => clearInterval(timer);
-  }, [galleryPhotos.length]);
+  }, [galleryPhotos.length, lightboxIndex]);
 
-  const galleryByTag = galleryPhotos.reduce<Record<string, GalleryPhotoT[]>>((acc, p) => {
-    (acc[p.tag] ??= []).push(p);
-    return acc;
-  }, {});
+  // Preload adjacent next photo
+  useEffect(() => {
+    if (galleryPhotos.length > 1) {
+      const nextIdx = (galleryIndex + 1) % galleryPhotos.length;
+      const img = new Image();
+      img.src = assetUrl(galleryPhotos[nextIdx].url);
+    }
+  }, [galleryIndex, galleryPhotos]);
+
+  // Keyboard navigation for Lightbox modal (Escape, ArrowLeft, ArrowRight)
+  useEffect(() => {
+    if (lightboxIndex === null) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLightboxIndex(null);
+      if (e.key === "ArrowLeft") {
+        setLightboxIndex((prev) =>
+          prev !== null ? (prev - 1 + galleryPhotos.length) % galleryPhotos.length : null,
+        );
+      }
+      if (e.key === "ArrowRight") {
+        setLightboxIndex((prev) =>
+          prev !== null ? (prev + 1) % galleryPhotos.length : null,
+        );
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [lightboxIndex, galleryPhotos.length]);
+
+  // Mobile swipe gestures for lightbox
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.touches[0].clientX);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX === null || lightboxIndex === null) return;
+    const diff = touchStartX - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 40) {
+      if (diff > 0) {
+        setLightboxIndex((lightboxIndex + 1) % galleryPhotos.length);
+      } else {
+        setLightboxIndex((lightboxIndex - 1 + galleryPhotos.length) % galleryPhotos.length);
+      }
+    }
+    setTouchStartX(null);
+  };
 
   useEffect(() => {
     const loadLiveMatches = () => {
@@ -216,7 +402,7 @@ export default function Home() {
                 </span>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <h1 className="font-heading text-3xl font-black leading-[1.08] tracking-tight sm:text-5xl lg:text-6xl text-white">
                   CBSE NATIONAL <br className="hidden sm:block" />
                   <span className="text-transparent bg-clip-text bg-gradient-to-r from-gold via-amber-400 to-coral">
@@ -226,10 +412,26 @@ export default function Home() {
                     2026–27
                   </span>
                 </h1>
+
+                {/* Host School Branding */}
+                <div className="pt-1">
+                  <div className="inline-flex flex-wrap items-center gap-x-2.5 gap-y-1.5 rounded-xl border border-gold/30 bg-gradient-to-r from-gold/15 via-obsidian-900/80 to-obsidian-900/40 p-2.5 sm:px-3.5 sm:py-2 backdrop-blur-md shadow-sm">
+                    <span className="inline-flex items-center gap-1 rounded bg-gold/20 px-2 py-0.5 text-[10px] sm:text-[11px] font-heading font-extrabold uppercase tracking-widest text-gold shrink-0">
+                      <Building className="h-3 w-3 text-gold" /> HOSTED BY
+                    </span>
+                    <span className="font-heading text-sm sm:text-base font-black text-white tracking-tight">
+                      New Angels Senior Secondary School
+                    </span>
+                    <span className="text-slate-600 hidden sm:inline">·</span>
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-slate-300">
+                      <MapPin className="h-3 w-3 text-coral shrink-0" /> Pratapgarh, Uttar Pradesh
+                    </span>
+                  </div>
+                </div>
               </div>
 
               <p className="max-w-2xl text-sm sm:text-base leading-relaxed text-slate-300 font-body">
-                Official digital tournament portal for the Cluster Nationals. Featuring around{" "}
+                Official digital tournament portal for the Cluster Nationals hosted at New Angels Senior Secondary School in Pratapgarh, UP. Featuring around{" "}
                 <strong className="text-white font-bold">800 elite student athletes</strong>, coaches, and delegations representing schools across India and international guest squads from Saudi Arabia.
               </p>
 
@@ -418,6 +620,99 @@ export default function Home() {
         </section>
       )}
 
+      {/* HOST SCHOOL SHOWCASE & CAMPUS PHOTOS */}
+      <section className="border-b border-white/10 bg-gradient-to-b from-obsidian-950 via-obsidian-900/70 to-obsidian-950 py-14 md:py-20 relative overflow-hidden">
+        {/* Ambient background court lines */}
+        <div className="absolute inset-0 bg-kabaddi-court-subtle pointer-events-none opacity-40" />
+
+        <div className="relative mx-auto max-w-7xl px-4 sm:px-6 md:px-8 space-y-10">
+          {/* SECTION HEADER */}
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+            <div className="max-w-2xl space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-gold/40 bg-gold/10 px-2.5 py-1 text-xs font-heading font-extrabold uppercase tracking-widest text-gold shadow-sm">
+                  <Building className="h-3.5 w-3.5 text-gold" /> HOST SCHOOL
+                </span>
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-slate-300">
+                  <MapPin className="h-3.5 w-3.5 text-coral shrink-0" /> Pratapgarh, Uttar Pradesh
+                </span>
+              </div>
+
+              <h2 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight text-white">
+                Welcome to New Angels Senior Secondary School
+              </h2>
+
+              <p className="text-sm sm:text-base text-slate-300 font-body leading-relaxed pt-1">
+                Proud host of the CBSE National Kabaddi Championship 2026–27 in Pratapgarh, Uttar Pradesh.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 shrink-0">
+              <Link
+                to="/campus"
+                className="inline-flex items-center gap-2 rounded-lg border border-gold/40 bg-gold/15 px-4 py-2.5 text-xs sm:text-sm font-heading font-bold text-gold hover:bg-gold/25 hover:border-gold transition-colors shadow-sm"
+              >
+                <MapPin className="h-4 w-4" /> Interactive Campus Map
+              </Link>
+              <Link
+                to="/about"
+                className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-xs sm:text-sm font-heading font-semibold text-slate-300 hover:bg-white/10 hover:text-white transition-colors"
+              >
+                About Host Institution →
+              </Link>
+            </div>
+          </div>
+
+          {/* CAMPUS HIGHLIGHT CHIPS */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+            {[
+              { label: "AKFI Synthetic Courts", desc: "4 Mats with electronic consoles", icon: Trophy },
+              { label: "Athlete Hostels", desc: "24/7 Secure residential campus", icon: BedDouble },
+              { label: "Sports Nutrition Hall", desc: "Audited athlete dining & catering", icon: UtensilsCrossed },
+              { label: "Medical & Recovery", desc: "Doctors, physios & recovery bays", icon: Shield },
+            ].map((chip) => (
+              <div
+                key={chip.label}
+                className="rounded-xl border border-white/10 bg-obsidian-900/80 p-3.5 sm:p-4 backdrop-blur-sm shadow-sm"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <chip.icon className="h-4 w-4 text-gold shrink-0" />
+                  <span className="font-heading text-xs sm:text-sm font-bold text-white truncate">
+                    {chip.label}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 font-body truncate">
+                  {chip.desc}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          {/* MODERN RESPONSIVE PHOTO GALLERY */}
+          <div className="grid gap-4 lg:grid-cols-12">
+            {/* Featured Large Card: Left Column (7 cols on lg) */}
+            <div className="lg:col-span-7">
+              <SchoolImage
+                photo={SCHOOL_PHOTOS[0]}
+                featured
+                className="h-72 sm:h-96 lg:h-full min-h-[300px] sm:min-h-[380px]"
+              />
+            </div>
+
+            {/* 4 Supporting Image Cards: Right 2x2 Grid (5 cols on lg) */}
+            <div className="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {SCHOOL_PHOTOS.slice(1, 5).map((photo) => (
+                <SchoolImage
+                  key={photo.id}
+                  photo={photo}
+                  className="h-52 sm:h-56"
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* TOURNAMENT DIRECTORY HUB */}
       <section className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8 py-14 md:py-20">
         <div className="max-w-2xl space-y-1.5">
@@ -477,83 +772,297 @@ export default function Home() {
         </div>
       </section>
 
-      {/* CHAMPIONSHIP PHOTO GALLERY: ROTATING CARD → FULL ALBUM */}
-      {galleryPhotos.length > 0 && (
-        <section className="border-t border-white/10 bg-obsidian-950/60 py-14 md:py-16">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8">
-            <div className="flex flex-col items-center text-center gap-2 mb-8">
+      {/* -------------------------------------------------------------------------- */}
+      {/* OFFICIAL PHOTOGRAPHY / ACTION CAPTURED ON THE MAT                          */}
+      {/* -------------------------------------------------------------------------- */}
+      <section className="border-t border-white/10 bg-obsidian-950/70 py-14 md:py-20 relative overflow-hidden">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8">
+          <div className="flex flex-col items-center text-center gap-2 mb-8 sm:mb-10">
+            <div className="flex items-center gap-2">
               <span className="text-xs font-heading font-extrabold uppercase tracking-widest text-gold">
-                MOMENTS FROM THE COURT
+                OFFICIAL PHOTOGRAPHY
               </span>
-              <h2 className="font-heading text-2xl sm:text-3xl md:text-4xl font-black text-white">
-                Championship Photo Gallery
-              </h2>
-              <p className="text-sm text-slate-400 font-body max-w-xl">
-                Tap the frame to browse every photo, grouped day by day.
+              {galleryPhotos.length > 0 && (
+                <span className="rounded bg-white/10 px-2 py-0.5 text-[11px] font-mono font-bold text-slate-300">
+                  {galleryPhotos.length} {galleryPhotos.length === 1 ? "Photograph" : "Photographs"}
+                </span>
+              )}
+            </div>
+            <h2 className="font-heading text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tight">
+              Action Captured on the Mat
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-400 font-body max-w-xl">
+              High-resolution moments of athleticism, victory celebrations, tactical timeouts, and the sportsmanship of the CBSE National Championship.
+            </p>
+          </div>
+
+          {/* LOADING STATE */}
+          {galleryLoading ? (
+            <div className="mx-auto max-w-4xl h-72 sm:h-96 md:h-[460px] rounded-2xl border border-white/10 bg-obsidian-900/60 flex flex-col items-center justify-center p-8 text-center shadow-lg">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-gold border-t-transparent mb-3" />
+              <p className="text-xs sm:text-sm font-heading font-bold text-slate-300">
+                Discovering championship photographs…
               </p>
             </div>
-
-            <button
-              onClick={() => setAlbumOpen(true)}
-              className="group relative mx-auto block h-64 sm:h-80 w-full max-w-md overflow-hidden rounded-2xl border border-white/10 shadow-xl transition-transform hover:scale-[1.01]"
-              data-testid="homepage-gallery-card"
-            >
-              {galleryPhotos.map((p, i) => (
-                <img
-                  key={p.id}
-                  src={assetUrl(p.url)}
-                  alt=""
-                  className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-700 ${
-                    i === galleryIndex ? "opacity-100" : "opacity-0"
-                  }`}
-                  loading={i === 0 ? "eager" : "lazy"}
-                />
-              ))}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/0 to-black/0" />
-              <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between">
-                <Badge tone="gold" size="sm">
-                  {galleryPhotos[galleryIndex]?.tag}
-                </Badge>
-                <span className="flex items-center gap-1.5 rounded-lg bg-black/50 px-2.5 py-1 text-[11px] font-heading font-bold text-white opacity-0 transition-opacity group-hover:opacity-100">
-                  <Images className="h-3.5 w-3.5" /> View Full Album
-                </span>
+          ) : galleryPhotos.length === 0 ? (
+            /* EMPTY STATE: WHEN 0 PHOTOS ARE AVAILABLE */
+            <div className="mx-auto max-w-4xl rounded-2xl border border-dashed border-white/15 bg-obsidian-900/60 p-10 sm:p-14 text-center space-y-4 shadow-lg">
+              <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-gold/10 text-gold border border-gold/20">
+                <Trophy className="h-7 w-7" />
               </div>
-            </button>
-          </div>
-        </section>
-      )}
-
-      {/* FULL ALBUM: DAY-WISE / GROUP-WISE PHOTO GRID */}
-      <Dialog
-        open={albumOpen}
-        onClose={() => setAlbumOpen(false)}
-        title="Championship Photo Gallery"
-        testId="homepage-gallery-album"
-        className="max-w-4xl"
-      >
-        <div className="space-y-6">
-          {Object.entries(galleryByTag).map(([tag, photos]) => (
-            <div key={tag} className="space-y-2.5">
-              <h3 className="text-xs font-heading font-extrabold uppercase tracking-wider text-gold">
-                {tag} <span className="text-slate-500 font-mono normal-case">({photos.length})</span>
-              </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
-                {photos.map((p) => (
-                  <a
-                    key={p.id}
-                    href={assetUrl(p.url)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="aspect-square overflow-hidden rounded-lg border border-white/10 bg-obsidian-950"
-                  >
-                    <img src={assetUrl(p.url)} alt="" className="h-full w-full object-cover" loading="lazy" />
-                  </a>
-                ))}
+              <div className="max-w-md mx-auto space-y-1.5">
+                <h3 className="font-heading text-lg font-bold text-white">
+                  Championship Photo Gallery
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-400 font-body leading-relaxed">
+                  Official tournament photographs from opening ceremonies, mat action, and podium presentations will be served directly here during match days.
+                </p>
               </div>
             </div>
-          ))}
+          ) : (
+            /* ACTIVE AUTOMATIC SLIDESHOW FRAME */
+            <div
+              onClick={() => setLightboxIndex(galleryIndex)}
+              className="group relative mx-auto block w-full max-w-4xl h-72 sm:h-96 md:h-[460px] overflow-hidden rounded-2xl border border-white/15 bg-obsidian-950 shadow-2xl transition-all duration-300 hover:border-gold/50 hover:shadow-gold-glow cursor-pointer select-none"
+              data-testid="homepage-gallery-slideshow"
+              role="button"
+              tabIndex={0}
+              aria-label="Open photo gallery lightbox"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  setLightboxIndex(galleryIndex);
+                }
+              }}
+            >
+              {/* Photo Slides (Smooth crossfade transition) */}
+              {galleryPhotos.map((p, i) => (
+                <div
+                  key={p.id}
+                  className={cn(
+                    "absolute inset-0 h-full w-full transition-opacity duration-700 ease-in-out pointer-events-none",
+                    i === galleryIndex ? "opacity-100 z-10" : "opacity-0 z-0",
+                  )}
+                >
+                  <img
+                    src={assetUrl(p.url)}
+                    alt={p.tag || `Championship photo ${i + 1}`}
+                    onError={(e) => {
+                      (e.currentTarget as HTMLElement).style.display = "none";
+                    }}
+                    className="h-full w-full object-cover object-center"
+                    loading={i === 0 ? "eager" : "lazy"}
+                    decoding="async"
+                  />
+                </div>
+              ))}
+
+              {/* Subtle bottom gradient overlay for readability */}
+              <div className="absolute inset-0 z-20 bg-gradient-to-t from-obsidian-950/90 via-obsidian-950/20 to-transparent pointer-events-none" />
+
+              {/* Top-Right "Open Lightbox" hint on hover */}
+              <div className="absolute top-3.5 right-3.5 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <span className="inline-flex items-center gap-1.5 rounded-lg bg-obsidian-900/90 border border-white/15 px-2.5 py-1 text-xs font-heading font-bold text-white shadow-md backdrop-blur-md">
+                  <Maximize2 className="h-3.5 w-3.5 text-gold" /> Open Lightbox
+                </span>
+              </div>
+
+              {/* Bottom Information & Pagination Bar */}
+              <div className="absolute inset-x-0 bottom-0 z-30 p-4 sm:p-5 flex items-center justify-between gap-3 pointer-events-none">
+                <div className="flex items-center gap-2">
+                  {galleryPhotos[galleryIndex]?.tag && (
+                    <Badge tone="gold" size="sm" className="backdrop-blur-md">
+                      {galleryPhotos[galleryIndex].tag}
+                    </Badge>
+                  )}
+                  <span className="rounded bg-obsidian-900/80 border border-white/10 px-2 py-0.5 text-[11px] font-mono font-bold text-slate-300 backdrop-blur-md">
+                    {String(galleryIndex + 1).padStart(2, "0")} / {String(galleryPhotos.length).padStart(2, "0")}
+                  </span>
+                </div>
+
+                {/* Tiny pagination dots */}
+                {galleryPhotos.length > 1 && (
+                  <div className="hidden sm:flex items-center gap-1.5 pointer-events-auto">
+                    {galleryPhotos.slice(0, 10).map((_, idx) => (
+                      <button
+                        key={idx}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setGalleryIndex(idx);
+                        }}
+                        className={cn(
+                          "h-1.5 rounded-full transition-all duration-300",
+                          idx === galleryIndex ? "w-6 bg-gold" : "w-1.5 bg-white/40 hover:bg-white/70",
+                        )}
+                        aria-label={`Go to slide ${idx + 1}`}
+                      />
+                    ))}
+                    {galleryPhotos.length > 10 && (
+                      <span className="text-[10px] text-slate-400 font-mono pl-1">
+                        +{galleryPhotos.length - 10}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                <span className="inline-flex items-center gap-1.5 rounded-lg bg-black/60 border border-white/15 px-3 py-1.5 text-xs font-heading font-bold text-white backdrop-blur-md">
+                  <Images className="h-3.5 w-3.5 text-gold" /> Browse All
+                </span>
+              </div>
+
+              {/* Subtle Prev / Next controls appearing on hover */}
+              {galleryPhotos.length > 1 && (
+                <>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setGalleryIndex((prev) => (prev - 1 + galleryPhotos.length) % galleryPhotos.length);
+                    }}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 z-30 h-10 w-10 rounded-full bg-obsidian-900/80 border border-white/20 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-gold hover:text-obsidian transition-all duration-200 shadow-lg backdrop-blur-md"
+                    aria-label="Previous photo"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setGalleryIndex((prev) => (prev + 1) % galleryPhotos.length);
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 z-30 h-10 w-10 rounded-full bg-obsidian-900/80 border border-white/20 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-gold hover:text-obsidian transition-all duration-200 shadow-lg backdrop-blur-md"
+                    aria-label="Next photo"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
-      </Dialog>
+      </section>
+
+      {/* FULL GALLERY LIGHTBOX MODAL */}
+      {lightboxIndex !== null && galleryPhotos[lightboxIndex] && (
+        <div
+          className="fixed inset-0 z-50 bg-black/95 backdrop-blur-2xl flex flex-col justify-between p-4 sm:p-6 select-none animate-in fade-in duration-200"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setLightboxIndex(null);
+          }}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+        >
+          {/* TOP MODAL BAR */}
+          <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-3 shrink-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gold/15 text-gold border border-gold/30 shrink-0">
+                <Images className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <h3 className="font-heading text-sm sm:text-base font-bold text-white truncate">
+                  Championship Photo Gallery
+                </h3>
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                  {galleryPhotos[lightboxIndex].tag && (
+                    <span className="font-heading font-extrabold uppercase text-gold">
+                      {galleryPhotos[lightboxIndex].tag}
+                    </span>
+                  )}
+                  <span>·</span>
+                  <span>
+                    Photo {lightboxIndex + 1} of {galleryPhotos.length}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 shrink-0">
+              <span className="hidden sm:inline-block text-[11px] text-slate-500 font-mono">
+                Use ← → arrows / Esc
+              </span>
+              <button
+                onClick={() => setLightboxIndex(null)}
+                className="h-9 w-9 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"
+                aria-label="Close modal"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* CENTER VIEWPORT: MAIN LARGE IMAGE & CONTROLS */}
+          <div
+            className="relative flex-1 flex items-center justify-center py-4 min-h-0"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setLightboxIndex(null);
+            }}
+          >
+            {/* Prev Button */}
+            {galleryPhotos.length > 1 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightboxIndex((prev) =>
+                    prev !== null ? (prev - 1 + galleryPhotos.length) % galleryPhotos.length : null,
+                  );
+                }}
+                className="absolute left-1 sm:left-4 z-20 h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-obsidian-900/90 border border-white/20 text-white flex items-center justify-center hover:bg-gold hover:text-obsidian transition-all shadow-xl backdrop-blur-md"
+                aria-label="Previous photo"
+              >
+                <ChevronLeft className="h-6 w-6" />
+              </button>
+            )}
+
+            {/* Main Photo Display */}
+            <div className="relative max-h-full max-w-full flex items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-obsidian-950 shadow-2xl">
+              <img
+                src={assetUrl(galleryPhotos[lightboxIndex].url)}
+                alt={galleryPhotos[lightboxIndex].tag || "Championship photograph"}
+                className="max-h-[58vh] sm:max-h-[66vh] w-auto max-w-full object-contain rounded-lg"
+              />
+            </div>
+
+            {/* Next Button */}
+            {galleryPhotos.length > 1 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightboxIndex((prev) =>
+                    prev !== null ? (prev + 1) % galleryPhotos.length : null,
+                  );
+                }}
+                className="absolute right-1 sm:right-4 z-20 h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-obsidian-900/90 border border-white/20 text-white flex items-center justify-center hover:bg-gold hover:text-obsidian transition-all shadow-xl backdrop-blur-md"
+                aria-label="Next photo"
+              >
+                <ChevronRight className="h-6 w-6" />
+              </button>
+            )}
+          </div>
+
+          {/* BOTTOM THUMBNAIL STRIP */}
+          <div className="shrink-0 border-t border-white/10 pt-3">
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none snap-x justify-start sm:justify-center">
+              {galleryPhotos.map((photo, idx) => (
+                <button
+                  key={photo.id}
+                  onClick={() => setLightboxIndex(idx)}
+                  className={cn(
+                    "relative h-12 w-16 sm:h-14 sm:w-20 shrink-0 rounded-lg overflow-hidden border transition-all snap-start",
+                    idx === lightboxIndex
+                      ? "border-gold ring-2 ring-gold scale-105 opacity-100"
+                      : "border-white/15 opacity-50 hover:opacity-100 hover:border-white/40",
+                  )}
+                  aria-label={`View photo ${idx + 1}`}
+                >
+                  <img
+                    src={assetUrl(photo.url)}
+                    alt=""
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* BOTTOM CTA: COACHES & PARTICIPANTS */}
       <section className="border-t border-white/10 bg-obsidian-950/80 py-14 md:py-16">

@@ -500,6 +500,13 @@ class StaffMember(TimestampMixin, Base):
 
     duties = relationship("DutyAssignment", back_populates="staff", cascade="all, delete-orphan")
 
+    @property
+    def login_username(self) -> "str | None":
+        """None until an organizer creates one on demand (see routers/staff.py
+        POST /staff/{id}/credential) — `organizer_users` is the backref from
+        OrganizerUser.staff_members."""
+        return self.organizer_users[0].username if self.organizer_users else None
+
 
 class DutyAssignment(TimestampMixin, Base):
     __tablename__ = "duty_assignments"

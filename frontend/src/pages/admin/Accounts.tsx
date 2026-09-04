@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Plus, Pencil, Trash2, ShieldCheck, ShieldOff, Crown, User, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -348,6 +349,16 @@ export default function Accounts() {
         testId="account-dialog"
       >
         <div className="space-y-4">
+          {!form.id && (
+            <p className="text-[11px] text-slate-400 font-body leading-relaxed">
+              This creates a standalone login — not tied to any staff member unless you link one below. Most staff
+              logins are created automatically when you add them from{" "}
+              <Link to="/admin/staff" className="text-gold hover:underline">
+                Staff & Duty Allotments
+              </Link>{" "}
+              instead. Use this form for admin accounts, or to give one person a second login.
+            </p>
+          )}
           <div>
             <Label>Username *</Label>
             <Input
@@ -358,7 +369,7 @@ export default function Accounts() {
             />
           </div>
           <div>
-            <Label>Staff Full Name</Label>
+            <Label>Full Name</Label>
             <Input
               value={form.full_name}
               onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
@@ -389,6 +400,11 @@ export default function Accounts() {
                 </button>
               )}
             </div>
+            <p className="mt-0.5 text-[11px] text-slate-500 font-body">
+              Purely a record of who this login belongs to — shows up in the "Linked Staff Member" column so it's
+              easy to tell which account is whose. Doesn't affect what this login can access; that's set by the
+              permissions below.
+            </p>
             <div
               className="mt-1.5 max-h-36 overflow-y-auto rounded-lg border border-white/10 bg-obsidian-950 p-2 space-y-1"
               data-testid="account-staff-list"

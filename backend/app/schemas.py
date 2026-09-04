@@ -562,14 +562,16 @@ class StaffUpdate(BaseModel):
 
 class StaffRead(ORMModel, StaffBase):
     id: int
+    # None until an organizer clicks "Create Credential" for this person (see
+    # POST /staff/{id}/credential) — not settable directly, just reflects
+    # whether a linked OrganizerUser login already exists.
+    login_username: Optional[str] = None
 
 
-class StaffCreateResult(StaffRead):
-    """create_staff's response — same fields as StaffRead, plus the login this
-    staff member was just auto-provisioned. Shown once, since after this the
-    password only exists as a bcrypt hash — the organizer creating the staff
-    record needs to hand it off now or it's gone (resettable from Accounts,
-    but not recoverable)."""
+class StaffCredentialResult(BaseModel):
+    """POST /staff/{id}/credential's response. Shown once, since after this
+    the password only exists as a bcrypt hash — the organizer needs to hand
+    it off now or it's gone (resettable from Accounts, but not recoverable)."""
     login_username: str
     login_password: str
 

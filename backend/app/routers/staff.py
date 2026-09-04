@@ -11,11 +11,10 @@ router = APIRouter(prefix="/api/staff", tags=["staff"])
 
 
 def _provision_login(db: Session, full_name: str) -> tuple[str, str]:
-    """Every staff member gets a login the moment they're created — no separate
-    "create an account and link it" step. Username is their first name in caps
-    (suffixed with a number if that's already taken by someone else), password
-    is "2026" + their first name; both are handed back once in the create
-    response since the password only exists as a bcrypt hash after this."""
+    """Username is their first name in caps (suffixed with a number if that's
+    already taken by someone else), password is "2026" + their first name;
+    both are handed back once by the caller since the password only exists
+    as a bcrypt hash after this."""
     first = (full_name or "").strip().split()[0] if (full_name or "").strip() else "STAFF"
     base_username = first.upper()
     username = base_username
@@ -37,11 +36,25 @@ def list_staff(db: Session = Depends(get_db)):
     return db.query(models.StaffMember).order_by(models.StaffMember.full_name).all()
 
 
-@router.post("", response_model=schemas.StaffCreateResult, status_code=201)
+@router.post("", response_model=schemas.StaffRead, status_code=201)
 def create_staff(payload: schemas.StaffCreate, db: Session = Depends(get_db)):
+    """No login is created here — an organizer creates one on demand per
+    staff member via POST /staff/{id}/credential, from a "Create Credential"
+    button in the Staff admin page."""
     staff = models.StaffMember(**payload.model_dump())
     db.add(staff)
-    db.flush()
+    db.commit()
+    db.refresh(staff)
+    return staff
+
+
+@router.post("/{staff_id}/credential", response_model=schemas.StaffCredentialResult, status_code=201)
+def create_staff_credential(staff_id: int, db: Session = Depends(get_db)):
+    staff = db.get(models.StaffMember, staff_id)
+    if not staff:
+        raise HTTPException(404, "Staff member not found")
+    if staff.organizer_users:
+        raise HTTPException(409, f"{staff.full_name} already has a login: {staff.organizer_users[0].username}")
 
     username, password = _provision_login(db, staff.full_name)
     login = models.OrganizerUser(
@@ -55,12 +68,7 @@ def create_staff(payload: schemas.StaffCreate, db: Session = Depends(get_db)):
     )
     db.add(login)
     db.commit()
-    db.refresh(staff)
-
-    result = schemas.StaffRead.model_validate(staff).model_dump()
-    result["login_username"] = username
-    result["login_password"] = password
-    return result
+    return {"login_username": username, "login_password": password}
 
 
 @router.put("/{staff_id}", response_model=schemas.StaffRead)

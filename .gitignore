@@ -96,3 +96,5 @@ credentials.json
 /backend/tests/*
 
 *test*.py
+backend/make_school_images.py
+backend/assets/

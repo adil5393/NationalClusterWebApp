@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, X, HardHat, ClipboardList, ChevronLeft, ChevronRight, Search, Clock, Building } from "lucide-react";
+import { Plus, Pencil, Trash2, X, HardHat, ClipboardList, ChevronLeft, ChevronRight, Search, Clock, Building, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ interface StaffMember {
   email?: string;
   category?: string;
   notes?: string;
+  login_username?: string | null;
 }
 interface RoomOpt {
   id: number;
@@ -60,6 +61,7 @@ export default function Staff() {
   const [member, setMember] = useState(emptyMember);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [newLogin, setNewLogin] = useState<{ full_name: string; username: string; password: string } | null>(null);
+  const [creatingCredentialId, setCreatingCredentialId] = useState<number | null>(null);
   const [assign, setAssign] = useState({
     staff_id: "",
     room_id: "",
@@ -102,15 +104,27 @@ export default function Staff() {
         await api.put(`/staff/${editingId}`, payload);
         toast.success("Staff member updated");
       } else {
-        const r = await api.post<{ full_name: string; login_username: string; login_password: string }>("/staff", payload);
+        await api.post("/staff", payload);
         toast.success("Staff member added");
-        setNewLogin({ full_name: r.data.full_name, username: r.data.login_username, password: r.data.login_password });
       }
       setMember(emptyMember);
       setEditingId(null);
       load();
     } catch (e: any) {
       toast.error(e?.response?.data?.detail ?? "Could not save staff member");
+    }
+  };
+
+  const createCredential = async (s: StaffMember) => {
+    setCreatingCredentialId(s.id);
+    try {
+      const r = await api.post<{ login_username: string; login_password: string }>(`/staff/${s.id}/credential`);
+      setNewLogin({ full_name: s.full_name, username: r.data.login_username, password: r.data.login_password });
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not create credential");
+    } finally {
+      setCreatingCredentialId(null);
     }
   };
 
@@ -350,10 +364,29 @@ export default function Staff() {
                   <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400 mt-0.5">
                     {s.category && <span className="font-semibold text-gold">{s.category}</span>}
                     {s.phone && <span>· {s.phone}</span>}
+                    {s.login_username && (
+                      <span className="flex items-center gap-1 font-mono text-emerald-400">
+                        <KeyRound className="h-3 w-3" /> {s.login_username}
+                      </span>
+                    )}
                   </div>
                 </div>
                 {canEdit && (
                   <div className="flex items-center gap-1">
+                    {!s.login_username && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-[11px]"
+                        onClick={() => createCredential(s)}
+                        disabled={creatingCredentialId === s.id}
+                        data-testid={`create-credential-${s.id}`}
+                        title="Create Organizer Portal Credential"
+                      >
+                        <KeyRound className="h-3.5 w-3.5 text-gold" />
+                        {creatingCredentialId === s.id ? "Creating…" : "Create Credential"}
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="icon-sm"
@@ -623,7 +656,7 @@ export default function Staff() {
         )}
       </div>
 
-      {/* NEW LOGIN CREDENTIALS — shown once, right after a staff member is created */}
+      {/* NEW LOGIN CREDENTIALS — shown once, right after "Create Credential" */}
       <Dialog
         open={!!newLogin}
         onClose={() => setNewLogin(null)}
