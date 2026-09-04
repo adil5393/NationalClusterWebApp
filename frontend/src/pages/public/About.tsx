@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Trophy,
@@ -8,8 +8,6 @@ import {
   CalendarDays,
   Radio,
   Sparkles,
-  Play,
-  Pause,
   ChevronLeft,
   ChevronRight,
   Maximize2,
@@ -26,10 +24,18 @@ import {
   Zap,
   Globe2,
   FileCheck,
+  Images,
 } from "lucide-react";
 import { api, assetUrl } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+interface GalleryPhotoT {
+  id: number;
+  url: string;
+  tag: string;
+}
 
 interface Team {
   id: number;
@@ -54,16 +60,12 @@ interface ScheduleEvent {
 }
 
 export default function About() {
-  // Photos state
-  const [images, setImages] = useState<string[]>([]);
-  const [imagesLoading, setImagesLoading] = useState(true);
+  // Championship gallery photos state
+  const [galleryPhotos, setGalleryPhotos] = useState<GalleryPhotoT[]>([]);
+  const [galleryIndex, setGalleryIndex] = useState(0);
+  const [galleryLoading, setGalleryLoading] = useState(true);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-
-  // Flipbook state
-  const [flipIndex, setFlipIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(true);
-  const [reducedMotion, setReducedMotion] = useState(false);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
 
   // Real backend statistics state
   const [teams, setTeams] = useState<Team[]>([]);
@@ -71,37 +73,77 @@ export default function About() {
   const [scheduleEvents, setScheduleEvents] = useState<ScheduleEvent[]>([]);
   const [statsLoading, setStatsLoading] = useState(true);
 
-  // Check reduced motion preference
+  // Fetch championship gallery photos from backend
   useEffect(() => {
-    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setReducedMotion(mediaQuery.matches);
-    if (mediaQuery.matches) {
-      setIsPlaying(false);
-    }
-    const handler = (e: MediaQueryListEvent) => {
-      setReducedMotion(e.matches);
-      if (e.matches) setIsPlaying(false);
-    };
-    mediaQuery.addEventListener("change", handler);
-    return () => mediaQuery.removeEventListener("change", handler);
-  }, []);
-
-  // Fetch about images from lightweight backend endpoint
-  useEffect(() => {
-    setImagesLoading(true);
+    setGalleryLoading(true);
     api
-      .get<string[]>("/public/about-images")
-      .then((res) => {
-        if (Array.isArray(res.data)) {
-          setImages(res.data);
+      .get<GalleryPhotoT[]>("/public/gallery")
+      .then((r) => {
+        if (Array.isArray(r.data)) {
+          setGalleryPhotos(r.data);
         }
       })
-      .catch(() => {
-        // Graceful fallback: empty list
-        setImages([]);
-      })
-      .finally(() => setImagesLoading(false));
+      .catch(() => {})
+      .finally(() => setGalleryLoading(false));
   }, []);
+
+  // Automatic slideshow loop (4-second interval, paused when lightbox is open)
+  useEffect(() => {
+    if (galleryPhotos.length < 2 || lightboxIndex !== null) return;
+    const timer = setInterval(() => {
+      setGalleryIndex((i) => (i + 1) % galleryPhotos.length);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [galleryPhotos.length, lightboxIndex]);
+
+  // Preload adjacent next photo
+  useEffect(() => {
+    if (galleryPhotos.length > 1) {
+      const nextIdx = (galleryIndex + 1) % galleryPhotos.length;
+      const img = new Image();
+      img.src = assetUrl(galleryPhotos[nextIdx].url);
+    }
+  }, [galleryIndex, galleryPhotos]);
+
+  // Keyboard navigation for Lightbox modal (Escape, ArrowLeft, ArrowRight)
+  useEffect(() => {
+    if (lightboxIndex === null) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLightboxIndex(null);
+      if (e.key === "ArrowLeft") {
+        setLightboxIndex((prev) =>
+          prev !== null ? (prev - 1 + galleryPhotos.length) % galleryPhotos.length : null,
+        );
+      }
+      if (e.key === "ArrowRight") {
+        setLightboxIndex((prev) =>
+          prev !== null ? (prev + 1) % galleryPhotos.length : null,
+        );
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [lightboxIndex, galleryPhotos.length]);
+
+  // Mobile swipe gestures for lightbox
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.touches[0].clientX);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX === null) return;
+    const diff = touchStartX - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 40 && lightboxIndex !== null) {
+      if (diff > 0) {
+        setLightboxIndex((lightboxIndex + 1) % galleryPhotos.length);
+      } else {
+        setLightboxIndex((lightboxIndex - 1 + galleryPhotos.length) % galleryPhotos.length);
+      }
+    }
+    setTouchStartX(null);
+  };
 
   // Fetch real tournament data for "Championship at a Glance"
   useEffect(() => {
@@ -135,45 +177,6 @@ export default function About() {
   }, [teams]);
   const totalTournaments = tournaments.length;
   const totalEvents = scheduleEvents.length;
-
-  // Flipbook rapid-burst playback: 200ms per frame when playing and 5+ images exist
-  const canFlip = images.length >= 5 && !reducedMotion;
-
-  useEffect(() => {
-    if (!canFlip || !isPlaying) {
-      if (timerRef.current) clearInterval(timerRef.current);
-      return;
-    }
-
-    timerRef.current = setInterval(() => {
-      setFlipIndex((prev) => (prev + 1) % images.length);
-    }, 220); // 220ms per frame: crisp, cinematic rapid motion
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [canFlip, isPlaying, images.length]);
-
-  // Keyboard navigation for Lightbox
-  useEffect(() => {
-    if (lightboxIndex === null) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setLightboxIndex(null);
-      if (e.key === "ArrowLeft") {
-        setLightboxIndex((prev) => (prev !== null ? (prev - 1 + images.length) % images.length : null));
-      }
-      if (e.key === "ArrowRight") {
-        setLightboxIndex((prev) => (prev !== null ? (prev + 1) % images.length : null));
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [lightboxIndex, images.length]);
-
-  // Asset URL helper (handles both web browser relative paths and Capacitor)
-  const getImageUrl = assetUrl;
 
   return (
     <div
@@ -337,228 +340,293 @@ export default function About() {
       </section>
 
       {/* -------------------------------------------------------------------------- */}
-      {/* 3. FOLDER-DRIVEN PHOTOGRAPHY & CINEMATIC FLIPBOOK                           */}
       {/* -------------------------------------------------------------------------- */}
-      <section className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8 py-14 sm:py-20 border-b border-white/10">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
-          <div>
+      {/* 3. OFFICIAL PHOTOGRAPHY / ACTION CAPTURED ON THE MAT                          */}
+      {/* -------------------------------------------------------------------------- */}
+      <section className="border-t border-white/10 bg-obsidian-950/60 backdrop-blur-md py-14 md:py-20 relative overflow-hidden">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8">
+          <div className="flex flex-col items-center text-center gap-2 mb-8 sm:mb-10">
             <div className="flex items-center gap-2">
               <span className="text-xs font-heading font-extrabold uppercase tracking-widest text-gold">
                 OFFICIAL PHOTOGRAPHY
               </span>
-              {images.length > 0 && (
+              {galleryPhotos.length > 0 && (
                 <span className="rounded bg-white/10 px-2 py-0.5 text-[11px] font-mono font-bold text-slate-300">
-                  {images.length} {images.length === 1 ? "Photograph" : "Photographs"}
+                  {galleryPhotos.length} {galleryPhotos.length === 1 ? "Photograph" : "Photographs"}
                 </span>
               )}
             </div>
-            <h2 className="mt-1 font-heading text-2xl sm:text-4xl font-black text-white tracking-tight">
+            <h2 className="font-heading text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tight">
               Action Captured on the Mat
             </h2>
-            <p className="mt-2 text-xs sm:text-sm text-slate-400 font-body max-w-2xl">
-              High-resolution moments of athleticism, victory celebrations, tactical timeouts, and the sportsmanship of
-              the CBSE National Championship.
+            <p className="text-xs sm:text-sm text-slate-400 font-body max-w-xl">
+              High-resolution moments of athleticism, victory celebrations, tactical timeouts, and the sportsmanship of the CBSE National Championship.
             </p>
           </div>
 
-          {/* FLIPBOOK CONTROLS (IF 5+ PHOTOS EXIST) */}
-          {images.length >= 5 && (
-            <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-obsidian-900 p-2 shrink-0">
-              <span className="text-xs font-heading font-bold text-slate-300 px-2">Rapid Flipbook</span>
-              <Button
-                variant={isPlaying ? "gold" : "outline"}
-                size="sm"
-                onClick={() => setIsPlaying(!isPlaying)}
-                className="h-8 px-3 text-xs gap-1.5"
-                title={isPlaying ? "Pause rapid sequence" : "Play rapid sequence"}
-              >
-                {isPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
-                {isPlaying ? "Pause" : "Play Burst"}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setFlipIndex((prev) => (prev - 1 + images.length) % images.length)}
-                className="h-8 w-8 p-0"
-                title="Previous frame"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setFlipIndex((prev) => (prev + 1) % images.length)}
-                className="h-8 w-8 p-0"
-                title="Next frame"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
+          {/* LOADING STATE */}
+          {galleryLoading ? (
+            <div className="mx-auto max-w-4xl h-72 sm:h-96 md:h-[460px] rounded-2xl border border-white/10 bg-obsidian-900/60 flex flex-col items-center justify-center p-8 text-center shadow-lg">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-gold border-t-transparent mb-3" />
+              <p className="text-xs sm:text-sm font-heading font-bold text-slate-300">
+                Discovering championship photographs…
+              </p>
+            </div>
+          ) : galleryPhotos.length === 0 ? (
+            /* EMPTY STATE: WHEN 0 PHOTOS ARE AVAILABLE */
+            <div className="mx-auto max-w-4xl rounded-2xl border border-dashed border-white/15 bg-obsidian-900/60 p-10 sm:p-14 text-center space-y-4 shadow-lg">
+              <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-gold/10 text-gold border border-gold/20">
+                <Trophy className="h-7 w-7" />
+              </div>
+              <div className="max-w-md mx-auto space-y-1.5">
+                <h3 className="font-heading text-lg font-bold text-white">
+                  Championship Photo Gallery
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-400 font-body leading-relaxed">
+                  Official tournament photographs from opening ceremonies, mat action, and podium presentations will be served directly here during match days.
+                </p>
+              </div>
+            </div>
+          ) : (
+            /* ACTIVE AUTOMATIC SLIDESHOW FRAME */
+            <div
+              onClick={() => setLightboxIndex(galleryIndex)}
+              className="group relative mx-auto block w-full max-w-4xl h-72 sm:h-96 md:h-[460px] overflow-hidden rounded-2xl border border-white/15 bg-obsidian-950 shadow-2xl transition-all duration-300 hover:border-gold/50 hover:shadow-gold-glow cursor-pointer select-none"
+              data-testid="about-gallery-slideshow"
+              role="button"
+              tabIndex={0}
+              aria-label="Open photo gallery lightbox"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  setLightboxIndex(galleryIndex);
+                }
+              }}
+            >
+              {/* Photo Slides (Smooth crossfade transition) */}
+              {galleryPhotos.map((p, i) => (
+                <div
+                  key={p.id}
+                  className={cn(
+                    "absolute inset-0 h-full w-full transition-opacity duration-700 ease-in-out pointer-events-none",
+                    i === galleryIndex ? "opacity-100 z-10" : "opacity-0 z-0",
+                  )}
+                >
+                  <img
+                    src={assetUrl(p.url)}
+                    alt={p.tag || `Championship photo ${i + 1}`}
+                    onError={(e) => {
+                      (e.currentTarget as HTMLElement).style.display = "none";
+                    }}
+                    className="h-full w-full object-cover object-center"
+                    loading={i === 0 ? "eager" : "lazy"}
+                    decoding="async"
+                  />
+                </div>
+              ))}
+
+              {/* Subtle bottom gradient overlay for readability */}
+              <div className="absolute inset-0 z-20 bg-gradient-to-t from-obsidian-950/90 via-obsidian-950/20 to-transparent pointer-events-none" />
+
+              {/* Top-Right "Open Lightbox" hint on hover */}
+              <div className="absolute top-3.5 right-3.5 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <span className="inline-flex items-center gap-1.5 rounded-lg bg-obsidian-900/90 border border-white/15 px-2.5 py-1 text-xs font-heading font-bold text-white shadow-md backdrop-blur-md">
+                  <Maximize2 className="h-3.5 w-3.5 text-gold" /> Open Lightbox
+                </span>
+              </div>
+
+              {/* Bottom Information & Pagination Bar */}
+              <div className="absolute inset-x-0 bottom-0 z-30 p-4 sm:p-5 flex items-center justify-between gap-3 pointer-events-none">
+                <div className="flex items-center gap-2">
+                  {galleryPhotos[galleryIndex]?.tag && (
+                    <Badge tone="gold" size="sm" className="backdrop-blur-md">
+                      {galleryPhotos[galleryIndex].tag}
+                    </Badge>
+                  )}
+                  <span className="rounded bg-obsidian-900/80 border border-white/10 px-2 py-0.5 text-[11px] font-mono font-bold text-slate-300 backdrop-blur-md">
+                    {String(galleryIndex + 1).padStart(2, "0")} / {String(galleryPhotos.length).padStart(2, "0")}
+                  </span>
+                </div>
+
+                {/* Tiny pagination dots */}
+                {galleryPhotos.length > 1 && (
+                  <div className="hidden sm:flex items-center gap-1.5 pointer-events-auto">
+                    {galleryPhotos.slice(0, 10).map((_, idx) => (
+                      <button
+                        key={idx}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setGalleryIndex(idx);
+                        }}
+                        className={cn(
+                          "h-1.5 rounded-full transition-all duration-300",
+                          idx === galleryIndex ? "w-6 bg-gold" : "w-1.5 bg-white/40 hover:bg-white/70",
+                        )}
+                        aria-label={`Go to slide ${idx + 1}`}
+                      />
+                    ))}
+                    {galleryPhotos.length > 10 && (
+                      <span className="text-[10px] text-slate-400 font-mono pl-1">
+                        +{galleryPhotos.length - 10}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                <span className="inline-flex items-center gap-1.5 rounded-lg bg-black/60 border border-white/15 px-3 py-1.5 text-xs font-heading font-bold text-white backdrop-blur-md">
+                  <Images className="h-3.5 w-3.5 text-gold" /> Browse All
+                </span>
+              </div>
+
+              {/* Subtle Prev / Next controls appearing on hover */}
+              {galleryPhotos.length > 1 && (
+                <>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setGalleryIndex((prev) => (prev - 1 + galleryPhotos.length) % galleryPhotos.length);
+                    }}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 z-30 h-10 w-10 rounded-full bg-obsidian-900/80 border border-white/20 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-gold hover:text-obsidian transition-all duration-200 shadow-lg backdrop-blur-md"
+                    aria-label="Previous photo"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setGalleryIndex((prev) => (prev + 1) % galleryPhotos.length);
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 z-30 h-10 w-10 rounded-full bg-obsidian-900/80 border border-white/20 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-gold hover:text-obsidian transition-all duration-200 shadow-lg backdrop-blur-md"
+                    aria-label="Next photo"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
-
-        {/* PHOTO CONTENT STATES */}
-        {imagesLoading ? (
-          <div className="rounded-2xl border border-white/10 bg-obsidian-900 p-12 text-center">
-            <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-gold border-t-transparent mb-3" />
-            <p className="text-sm font-heading font-bold text-slate-300">Discovering event gallery photos…</p>
-          </div>
-        ) : images.length === 0 ? (
-          /* GRACEFUL ZERO-IMAGE PLACEHOLDER */
-          <div className="rounded-2xl border border-dashed border-white/15 bg-obsidian-900/60 p-8 sm:p-12 text-center space-y-4">
-            <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-gold/10 text-gold border border-gold/20">
-              <Trophy className="h-7 w-7" />
-            </div>
-            <div className="max-w-md mx-auto space-y-1">
-              <h3 className="font-heading text-lg font-bold text-white">Championship Photo Gallery</h3>
-              <p className="text-xs sm:text-sm text-slate-400 font-body leading-relaxed">
-                Official tournament photographs from opening ceremonies, mat action, and podium presentations will be
-                served directly here during match days.
-              </p>
-            </div>
-            <div className="flex justify-center gap-3 pt-2">
-              <Link to="/live">
-                <Button variant="gold" size="sm">
-                  <Radio className="h-4 w-4" /> Watch Live Scores
-                </Button>
-              </Link>
-            </div>
-          </div>
-        ) : (
-          /* GALLERY DISPLAY & FLIPBOOK */
-          <div className="space-y-6">
-            {/* FAST FLIPBOOK HERO BANNER (5+ IMAGES) */}
-            {images.length >= 5 && (
-              <div className="relative overflow-hidden rounded-2xl border border-gold/30 bg-obsidian-950 shadow-2xl">
-                {/* FIXED ASPECT RATIO CONTAINER PREVENTS CLS */}
-                <div className="relative aspect-[16/9] sm:aspect-[21/9] w-full bg-obsidian overflow-hidden">
-                  <img
-                    src={getImageUrl(images[flipIndex])}
-                    alt={`Championship moment ${flipIndex + 1}`}
-                    className="h-full w-full object-cover object-center transition-opacity duration-150 cursor-pointer"
-                    onClick={() => setLightboxIndex(flipIndex)}
-                    loading="eager"
-                  />
-
-                  {/* GRADIENT OVERLAY */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-obsidian via-transparent to-transparent opacity-80" />
-
-                  {/* FRAME COUNTER PILL & CONTROLS OVERLAY */}
-                  <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
-                    <div className="flex items-center gap-2 rounded-lg bg-obsidian/80 backdrop-blur-md px-3 py-1.5 border border-white/10 text-xs font-mono">
-                      <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="text-white font-bold">FRAME {String(flipIndex + 1).padStart(2, "0")}</span>
-                      <span className="text-slate-400">/ {String(images.length).padStart(2, "0")}</span>
-                    </div>
-
-                    <button
-                      onClick={() => setLightboxIndex(flipIndex)}
-                      className="flex items-center gap-1.5 rounded-lg bg-obsidian/80 backdrop-blur-md px-3 py-1.5 border border-white/10 text-xs font-heading font-bold text-white hover:bg-gold hover:text-obsidian transition-colors"
-                    >
-                      <Maximize2 className="h-3.5 w-3.5" /> Fullscreen View
-                    </button>
-                  </div>
-                </div>
-
-                {/* PROGRESS TRACKER */}
-                <div className="h-1 w-full bg-white/10">
-                  <div
-                    className="h-full bg-gold transition-all duration-150"
-                    style={{ width: `${((flipIndex + 1) / images.length) * 100}%` }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* FULL PHOTO GRID / THUMBNAILS */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-              {images.map((img, idx) => (
-                <div
-                  key={img}
-                  onClick={() => setLightboxIndex(idx)}
-                  className={`group relative aspect-[4/3] overflow-hidden rounded-xl border bg-obsidian-900 cursor-pointer transition-all duration-200 hover:border-gold hover:shadow-lg ${
-                    idx === flipIndex && images.length >= 5 ? "border-gold ring-1 ring-gold" : "border-white/10"
-                  }`}
-                >
-                  <img
-                    src={getImageUrl(img)}
-                    alt={`Event capture ${idx + 1}`}
-                    loading="lazy"
-                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  />
-                  <div className="absolute inset-0 bg-obsidian/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <span className="rounded-full bg-obsidian/80 p-2 text-white border border-white/20">
-                      <Maximize2 className="h-4 w-4" />
-                    </span>
-                  </div>
-                  <span className="absolute bottom-1.5 right-1.5 rounded bg-obsidian/70 px-1.5 py-0.5 text-[10px] font-mono text-slate-300">
-                    #{idx + 1}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </section>
 
-      {/* -------------------------------------------------------------------------- */}
-      {/* 4. LIGHTBOX MODAL VIEWER                                                   */}
-      {/* -------------------------------------------------------------------------- */}
-      {lightboxIndex !== null && images[lightboxIndex] && (
+      {/* FULL GALLERY LIGHTBOX MODAL */}
+      {lightboxIndex !== null && galleryPhotos[lightboxIndex] && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-obsidian/95 backdrop-blur-md p-4 animate-in fade-in duration-200"
-          onClick={() => setLightboxIndex(null)}
+          className="fixed inset-0 z-50 bg-black/95 backdrop-blur-2xl flex flex-col justify-between p-4 sm:p-6 select-none animate-in fade-in duration-200"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setLightboxIndex(null);
+          }}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
         >
-          <div
-            className="relative max-w-5xl w-full max-h-[90vh] flex flex-col items-center"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* CLOSE BUTTON */}
-            <button
-              onClick={() => setLightboxIndex(null)}
-              className="absolute -top-12 right-0 grid h-10 w-10 place-items-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
-              aria-label="Close photo viewer"
-            >
-              <X className="h-5 w-5" />
-            </button>
+          {/* TOP MODAL BAR */}
+          <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-3 shrink-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gold/15 text-gold border border-gold/30 shrink-0">
+                <Images className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <h3 className="font-heading text-sm sm:text-base font-bold text-white truncate">
+                  Championship Photo Gallery
+                </h3>
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                  {galleryPhotos[lightboxIndex].tag && (
+                    <span className="font-heading font-extrabold uppercase text-gold">
+                      {galleryPhotos[lightboxIndex].tag}
+                    </span>
+                  )}
+                  <span>·</span>
+                  <span>
+                    Photo {lightboxIndex + 1} of {galleryPhotos.length}
+                  </span>
+                </div>
+              </div>
+            </div>
 
-            {/* MAIN IMAGE */}
-            <div className="relative max-h-[75vh] w-full flex items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-black">
+            <div className="flex items-center gap-3 shrink-0">
+              <span className="hidden sm:inline-block text-[11px] text-slate-500 font-mono">
+                Use ← → arrows / Esc
+              </span>
+              <button
+                onClick={() => setLightboxIndex(null)}
+                className="h-9 w-9 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"
+                aria-label="Close modal"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* CENTER VIEWPORT: MAIN LARGE IMAGE & CONTROLS */}
+          <div
+            className="relative flex-1 flex items-center justify-center py-4 min-h-0"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setLightboxIndex(null);
+            }}
+          >
+            {/* Prev Button */}
+            {galleryPhotos.length > 1 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightboxIndex((prev) =>
+                    prev !== null ? (prev - 1 + galleryPhotos.length) % galleryPhotos.length : null,
+                  );
+                }}
+                className="absolute left-1 sm:left-4 z-20 h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-obsidian-900/90 border border-white/20 text-white flex items-center justify-center hover:bg-gold hover:text-obsidian transition-all shadow-xl backdrop-blur-md"
+                aria-label="Previous photo"
+              >
+                <ChevronLeft className="h-6 w-6" />
+              </button>
+            )}
+
+            {/* Main Photo Display */}
+            <div className="relative max-h-full max-w-full flex items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-obsidian-950 shadow-2xl">
               <img
-                src={getImageUrl(images[lightboxIndex])}
-                alt={`Enlarged capture ${lightboxIndex + 1}`}
-                className="max-h-[75vh] max-w-full object-contain"
+                src={assetUrl(galleryPhotos[lightboxIndex].url)}
+                alt={galleryPhotos[lightboxIndex].tag || "Championship photograph"}
+                className="max-h-[58vh] sm:max-h-[66vh] w-auto max-w-full object-contain rounded-lg"
               />
             </div>
 
-            {/* LIGHTBOX FOOTER & CONTROLS */}
-            <div className="w-full mt-4 flex items-center justify-between text-xs text-slate-300 font-body">
-              <div className="flex items-center gap-2 font-mono">
-                <span className="text-gold font-bold">Image {lightboxIndex + 1}</span>
-                <span>/</span>
-                <span>{images.length}</span>
-              </div>
+            {/* Next Button */}
+            {galleryPhotos.length > 1 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightboxIndex((prev) =>
+                    prev !== null ? (prev + 1) % galleryPhotos.length : null,
+                  );
+                }}
+                className="absolute right-1 sm:right-4 z-20 h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-obsidian-900/90 border border-white/20 text-white flex items-center justify-center hover:bg-gold hover:text-obsidian transition-all shadow-xl backdrop-blur-md"
+                aria-label="Next photo"
+              >
+                <ChevronRight className="h-6 w-6" />
+              </button>
+            )}
+          </div>
 
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setLightboxIndex((prev) => (prev !== null ? (prev - 1 + images.length) % images.length : null))
-                  }
-                  className="h-8 gap-1 text-xs"
+          {/* BOTTOM THUMBNAIL STRIP */}
+          <div className="shrink-0 border-t border-white/10 pt-3">
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none snap-x justify-start sm:justify-center">
+              {galleryPhotos.map((photo, idx) => (
+                <button
+                  key={photo.id}
+                  onClick={() => setLightboxIndex(idx)}
+                  className={cn(
+                    "relative h-12 w-16 sm:h-14 sm:w-20 shrink-0 rounded-lg overflow-hidden border transition-all snap-start",
+                    idx === lightboxIndex
+                      ? "border-gold ring-2 ring-gold scale-105 opacity-100"
+                      : "border-white/15 opacity-50 hover:opacity-100 hover:border-white/40",
+                  )}
+                  aria-label={`View photo ${idx + 1}`}
                 >
-                  <ChevronLeft className="h-3.5 w-3.5" /> Previous
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setLightboxIndex((prev) => (prev !== null ? (prev + 1) % images.length : null))}
-                  className="h-8 gap-1 text-xs"
-                >
-                  Next <ChevronRight className="h-3.5 w-3.5" />
-                </Button>
-              </div>
+                  <img
+                    src={assetUrl(photo.url)}
+                    alt=""
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                  />
+                </button>
+              ))}
             </div>
           </div>
         </div>
