@@ -88,6 +88,7 @@ class TeamPhotoRead(ORMModel):
 class TeamRead(ORMModel, TeamBase):
     id: int
     school_code: Optional[str] = None
+    affiliation_number: Optional[str] = None
     photos: List[TeamPhotoRead] = []
     participant_count: Optional[int] = None
     accommodation_status: Optional[str] = None  # "none" | "partial" | "full"

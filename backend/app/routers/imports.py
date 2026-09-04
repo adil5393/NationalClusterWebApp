@@ -111,8 +111,10 @@ def _find_col(columns, *prefixes: str) -> "str | None":
 async def import_team_details(file: UploadFile = File(...), db: Session = Depends(get_db)):
     """The school registration form (backend/assets/data/form.xlsx is a sample
     of its shape): one row per school with its school code, coach(es) +
-    manager, contact info, and team photo link. Updates the matching Team by
-    school_code and upserts Coach rows tagged role="Coach"/"Manager" —
+    manager, contact info, and team photo link. Updates the matching Team —
+    looked up by school_code first, falling back to affiliation_number for a
+    row whose "School Code" cell is actually that school's affiliation
+    number instead — and upserts Coach rows tagged role="Coach"/"Manager" —
     re-uploading a corrected sheet is safe, existing rows are only ever
     updated in place, never duplicated or deleted. Multiple coaches/numbers
     are comma-separated in their own cell and paired by position; a coach
@@ -140,7 +142,9 @@ async def import_team_details(file: UploadFile = File(...), db: Session = Depend
     if not col_school_code:
         raise HTTPException(400, "Missing a 'School Code' column")
 
-    teams_by_code = {t.school_code: t for t in db.query(models.Team).filter(models.Team.school_code.isnot(None)).all()}
+    all_teams = db.query(models.Team).all()
+    teams_by_code = {t.school_code: t for t in all_teams if t.school_code}
+    teams_by_affiliation = {t.affiliation_number: t for t in all_teams if t.affiliation_number}
     teams_updated = 0
     coaches_created = coaches_updated = 0
     photos_added = 0
@@ -153,7 +157,10 @@ async def import_team_details(file: UploadFile = File(...), db: Session = Depend
             errors.append(f"Row {i + 2}: missing School Code")
             continue
 
-        team = teams_by_code.get(code)
+        # Most sheets have this cell hold the school_code we assigned, but
+        # some schools instead put their own affiliation number there — try
+        # both before giving up on the row.
+        team = teams_by_code.get(code) or teams_by_affiliation.get(code)
         if team is None:
             unmatched_school_codes.append({
                 "school_code": code,
@@ -218,6 +225,20 @@ async def import_team_details(file: UploadFile = File(...), db: Session = Depend
 REQUIRED_STUDENT_SHEET_COLUMNS = {"schcode", "SchoolName", "registrationNo", "studentname", "gender", "dob"}
 
 
+def _find_exact_col(columns, *names: str) -> "str | None":
+    """This sheet's headers are a stable system export (schcode,
+    registrationNo, ...), not a human-reworded Google Form — so match by
+    exact name (case/space/underscore-insensitive) rather than _find_col's
+    fuzzy word search, which would (and did) miss "affno" entirely when
+    searching for "affiliation"."""
+    normalized = {str(c).strip().lower().replace(" ", "").replace("_", ""): c for c in columns}
+    for n in names:
+        key = n.lower().replace(" ", "").replace("_", "")
+        if key in normalized:
+            return normalized[key]
+    return None
+
+
 def _region_from_address(value) -> "str | None":
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
@@ -251,10 +272,11 @@ async def import_attendance_list(file: UploadFile = File(...), db: Session = Dep
     Address, ...). Teams are derived by grouping students by schcode (school name = the
     most common spelling seen for that code, member_count = male students found for it
     — matching the fact that only Male students are imported as participants — region =
-    best-effort parsed from the address's state segment) and upserted by
-    school_code; Participants are upserted by registration_no. Re-uploading a newer
-    export is safe — existing rows are only ever updated, never deleted, so adding a new
-    team or adding more players to an existing one just adds what's new.
+    best-effort parsed from the address's state segment, affiliation number = read from
+    whichever column has "affiliation" in its name, if the sheet has one at all) and
+    upserted by school_code; Participants are upserted by registration_no. Re-uploading
+    a newer export is safe — existing rows are only ever updated, never deleted, so
+    adding a new team or adding more players to an existing one just adds what's new.
 
     Only Male students are imported as participants.
     """
@@ -269,6 +291,7 @@ async def import_attendance_list(file: UploadFile = File(...), db: Session = Dep
         raise HTTPException(400, f"'Sheet' is missing expected columns: {REQUIRED_STUDENT_SHEET_COLUMNS - set(sheet.columns)}")
 
     sheet["schcode"] = sheet["schcode"].astype(str).str.strip()
+    col_affiliation = _find_exact_col(sheet.columns, "affno", "affiliationno", "affiliationnumber")
 
     # ---------- Teams, derived from Sheet and upserted by school_code ----------
     teams_by_code = {t.school_code: t for t in db.query(models.Team).filter(models.Team.school_code.isnot(None)).all()}
@@ -287,21 +310,36 @@ async def import_attendance_list(file: UploadFile = File(...), db: Session = Dep
             region = _region_from_address(addr)
             if region:
                 break
+        affiliation_number = None
+        if col_affiliation:
+            for val in group[col_affiliation].dropna():
+                v = str(val).strip()
+                if v.endswith(".0"):  # pandas reads an all-numeric column as float64 when any row is blank
+                    v = v[:-2]
+                if v:
+                    affiliation_number = v
+                    break
 
         team = teams_by_code.get(code)
         if team is None:
-            team = models.Team(school_code=code, name=school_name, school=school_name, region=region, country="India", member_count=member_count)
+            team = models.Team(
+                school_code=code, name=school_name, school=school_name, region=region, country="India",
+                member_count=member_count, affiliation_number=affiliation_number,
+            )
             db.add(team)
             teams_by_code[code] = team
             teams_created += 1
         else:
             changed = (team.name != school_name or team.school != school_name or team.member_count != member_count
-                       or (region and team.region != region))
+                       or (region and team.region != region)
+                       or (affiliation_number and team.affiliation_number != affiliation_number))
             team.name = school_name
             team.school = school_name
             team.member_count = member_count
             if region:
                 team.region = region  # only overwrite if this upload actually parsed one
+            if affiliation_number:
+                team.affiliation_number = affiliation_number
             if changed:
                 teams_updated += 1
     db.flush()  # assign ids to newly-added teams before participants reference them

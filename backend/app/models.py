@@ -50,6 +50,12 @@ class Team(TimestampMixin, Base):
     __tablename__ = "teams"
     id = Column(Integer, primary_key=True)
     school_code = Column(String(40), unique=True, index=True)
+    # A school's own affiliation number (e.g. CBSE-issued) — distinct from
+    # school_code, which this organizer assigns. Populated by the attendance
+    # list import when the sheet has it; used by the registration-form
+    # import as a fallback lookup when a row's "School Code" cell doesn't
+    # match any school_code (see routers/imports.py).
+    affiliation_number = Column(String(60), unique=True, index=True)
     name = Column(String(200), nullable=False)
     school = Column(String(200))
     region = Column(String(120))
