@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import schoolLogo from "@/assets/logo/Document_from_Adil_Shahid-removebg-preview.png";
+import { SiteBackgroundSlideshow } from "@/components/public/SiteBackgroundSlideshow";
 
 const NAV = [
   { to: "/", label: "Home" },
@@ -37,9 +38,9 @@ export function PublicLayout() {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-obsidian text-slate-100 flex flex-col selection:bg-gold selection:text-obsidian">
+    <div className="min-h-screen text-slate-100 flex flex-col selection:bg-gold selection:text-obsidian bg-obsidian-950">
       {/* TOP BROADCAST TICKER STRIP */}
-      <div className="border-b border-white/10 bg-obsidian-950 px-4 py-1.5 text-xs text-slate-400">
+        <div className="border-b border-white/10 bg-obsidian-950/80 backdrop-blur-md px-4 py-1.5 text-xs text-slate-400">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <div className="flex items-center gap-2 overflow-hidden">
             <span className="flex items-center gap-1.5 rounded bg-gold/15 px-2 py-0.5 text-[10px] font-heading font-black tracking-widest text-gold shrink-0">
@@ -192,9 +193,19 @@ export function PublicLayout() {
         </div>
       </header>
 
-      {/* MAIN BODY OUTLET */}
-      <main className="flex-1">
-        <Outlet />
+      {/* MAIN BODY OUTLET (CENTERED CONTENT CONTAINER WITH VIEWPORT-SIZED STICKY BACKGROUND) */}
+      <main className="flex-1 w-full bg-obsidian-950">
+        <div className="relative mx-auto max-w-7xl min-h-full border-x border-white/5 shadow-2xl">
+          {/* STICKY VIEWPORT-ALIGNED CANVAS BACKGROUND */}
+          <div className="sticky top-0 h-screen w-full pointer-events-none -mb-[100vh] overflow-hidden z-0">
+            <SiteBackgroundSlideshow />
+          </div>
+
+          {/* PAGE CONTENT */}
+          <div className="relative z-10 min-h-full">
+            <Outlet />
+          </div>
+        </div>
       </main>
 
       {/* CHAMPIONSHIP FOOTER */}

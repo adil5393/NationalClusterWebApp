@@ -32,7 +32,6 @@ import { Input } from "@/components/ui/input";
 import { Dialog } from "@/components/ui/dialog";
 import { formatDate, priorityTone } from "@/lib/meta";
 import { cn } from "@/lib/utils";
-import schoolLogo from "@/assets/logo/Document_from_Adil_Shahid-removebg-preview.png";
 
 interface LiveMatch {
   id: number;
@@ -309,75 +308,48 @@ export default function Home() {
   };
 
   return (
-    <div data-testid="public-home" className="min-h-screen bg-obsidian text-slate-100 bg-kabaddi-court">
+    <div data-testid="public-home" className="space-y-0">
       {/* HERO SECTION */}
-      <section className="relative isolate overflow-hidden border-b border-white/10 bg-arena-glow">
+      <section className="relative isolate overflow-hidden border-b border-white/10 bg-arena-glow/40">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8 pt-12 pb-16 md:pt-16 md:pb-20">
           <div className="grid gap-10 lg:grid-cols-12 lg:items-center">
-            {/* LEFT HERO TEXT: DUAL PRIMARY BRANDING (HOST SCHOOL × NATIONAL CHAMPIONSHIP) */}
-            <div className="lg:col-span-7 space-y-6">
-              
-              {/* PRIMARY BRANDING CONTAINER */}
-              <div className="space-y-4">
-                
-                {/* 1. HOST SCHOOL IDENTITY */}
-                <div className="flex items-start sm:items-center gap-3.5 sm:gap-4.5">
-                  <div className="relative shrink-0 rounded-2xl border border-gold/30 bg-white/[0.06] p-1.5 sm:p-2 backdrop-blur-md shadow-[0_0_20px_rgba(245,158,11,0.2)]">
-                    <img
-                      src={schoolLogo}
-                      alt="New Angels Senior Secondary School Emblem"
-                      className="h-14 w-14 sm:h-16 sm:w-16 md:h-20 md:w-20 object-contain drop-shadow-md"
-                    />
-                  </div>
-                  <div className="space-y-1 min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center gap-1.5 rounded-md border border-gold/40 bg-gold/10 px-2.5 py-0.5 text-[11px] font-heading font-extrabold uppercase tracking-widest text-gold shadow-sm">
-                        <Building className="h-3.5 w-3.5 text-gold" /> Host Institution &amp; Venue
-                      </span>
-                    </div>
-                    
-                    <h1 className="font-heading text-2xl sm:text-3xl md:text-4xl lg:text-[2.5rem] font-black leading-[1.1] tracking-tight text-white uppercase">
-                      New Angels Senior Secondary School
-                    </h1>
-                    
-                    <div className="flex items-center gap-1.5 text-sm sm:text-base font-semibold text-coral">
-                      <MapPin className="h-4 w-4 text-coral shrink-0" />
-                      <span>Pratapgarh, Uttar Pradesh</span>
-                    </div>
-                  </div>
-                </div>
+            {/* LEFT HERO TEXT */}
+            <div className="lg:col-span-7 space-y-5">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-gold/40 bg-gold/10 px-3 py-1 text-xs font-heading font-extrabold tracking-widest text-gold shadow-sm">
+                  <Shield className="h-3.5 w-3.5 text-gold" /> CBSE NATIONAL EVENT
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-semibold text-slate-300">
+                  <Award className="h-3.5 w-3.5 text-coral" /> October 2026
+                </span>
+              </div>
 
-                {/* 2. ELEGANT CONNECTOR / RELATIONSHIP DIVIDER */}
-                <div className="flex items-center gap-3 py-1">
-                  <div className="h-px flex-1 bg-gradient-to-r from-gold/40 via-gold/20 to-transparent" />
-                  <span className="text-[11px] sm:text-xs font-heading font-extrabold uppercase tracking-widest text-gold bg-gold/10 border border-gold/30 px-3 py-0.5 rounded-full shadow-inner">
-                    Proud Host Of
+              <div className="space-y-3">
+                <h1 className="font-heading text-3xl font-black leading-[1.08] tracking-tight sm:text-5xl lg:text-6xl text-white">
+                  CBSE NATIONAL <br className="hidden sm:block" />
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-gold via-amber-400 to-coral">
+                    KABADDI CHAMPIONSHIP
                   </span>
-                  <div className="h-px flex-1 bg-gradient-to-r from-transparent via-gold/20 to-gold/40" />
-                </div>
+                  <span className="block text-xl sm:text-2xl lg:text-3xl font-extrabold text-slate-300 mt-1">
+                    2026–27
+                  </span>
+                </h1>
 
-                {/* 3. CHAMPIONSHIP EVENT IDENTITY */}
-                <div className="space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs font-semibold text-slate-300">
-                      <Shield className="h-3.5 w-3.5 text-gold" /> CBSE National Event
+                {/* Small "Hosted by school name" after event name */}
+                <div className="pt-1">
+                  <div className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-gold/30 bg-gold/10 px-3 py-1.5 text-xs text-slate-300 backdrop-blur-sm">
+                    <span className="font-heading font-bold text-gold uppercase tracking-wider text-[11px]">
+                      Hosted by
                     </span>
-                    <span className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs font-semibold text-slate-300">
-                      <Award className="h-3.5 w-3.5 text-coral" /> October 2026
+                    <span className="font-semibold text-white">
+                      New Angels Senior Secondary School
+                    </span>
+                    <span className="text-slate-500 hidden sm:inline">·</span>
+                    <span className="inline-flex items-center gap-1 text-slate-300">
+                      <MapPin className="h-3 w-3 text-coral shrink-0" /> Pratapgarh, Uttar Pradesh
                     </span>
                   </div>
-
-                  <h2 className="font-heading text-2xl sm:text-4xl lg:text-5xl font-black leading-[1.08] tracking-tight text-white">
-                    CBSE NATIONAL <br className="hidden sm:block" />
-                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-gold via-amber-300 to-coral">
-                      KABADDI CHAMPIONSHIP
-                    </span>{" "}
-                    <span className="inline-block sm:block text-xl sm:text-2xl lg:text-3xl font-extrabold text-slate-200 mt-0.5">
-                      2026–27
-                    </span>
-                  </h2>
                 </div>
-
               </div>
 
               {/* SECONDARY: PORTAL DESCRIPTION */}
@@ -523,15 +495,15 @@ export default function Home() {
       </section>
 
       {/* STATS STRIP */}
-      <section className="border-b border-white/10 bg-obsidian-950/90">
-        <div className="mx-auto grid max-w-7xl grid-cols-2 gap-px bg-white/5 md:grid-cols-4">
+      <section className="border-b border-white/10 bg-obsidian-950/60 backdrop-blur-md">
+        <div className="mx-auto grid max-w-7xl grid-cols-2 gap-px bg-white/10 md:grid-cols-4">
           {[
             { k: "~800", v: "Participants & Officials", icon: Users, tone: "gold" },
             { k: "India + KSA", v: "National & Int'l Teams", icon: Shield, tone: "coral" },
             { k: "3 Mats", v: "Official Kabaddi Courts", icon: Trophy, tone: "gold" },
             { k: "Real-time", v: "Live Digital Scoring", icon: Activity, tone: "live" },
           ].map((s) => (
-            <div key={s.v} className="bg-obsidian-950 px-5 py-6 sm:px-6">
+            <div key={s.v} className="bg-obsidian-950/70 backdrop-blur-sm px-5 py-6 sm:px-6">
               <div className="flex items-center gap-2">
                 <s.icon className="h-4 w-4 text-gold/80" />
                 <p className="font-heading text-2xl font-black text-white sm:text-3xl tabular-nums">
@@ -548,7 +520,7 @@ export default function Home() {
 
       {/* RECENT ANNOUNCEMENTS BANNER (if any) */}
       {announcements.length > 0 && (
-        <section className="border-b border-white/10 bg-gold/5 py-4">
+        <section className="border-b border-white/10 bg-gold/10 backdrop-blur-sm py-4">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3 overflow-hidden">
@@ -572,39 +544,30 @@ export default function Home() {
       )}
 
       {/* HOST SCHOOL SHOWCASE & CAMPUS PHOTOS */}
-      <section className="border-b border-white/10 bg-gradient-to-b from-obsidian-950 via-obsidian-900/70 to-obsidian-950 py-14 md:py-20 relative overflow-hidden">
+      <section className="border-b border-white/10 bg-obsidian-950/50 backdrop-blur-sm py-14 md:py-20 relative overflow-hidden">
         {/* Ambient background court lines */}
-        <div className="absolute inset-0 bg-kabaddi-court-subtle pointer-events-none opacity-40" />
+        <div className="absolute inset-0 bg-kabaddi-court-subtle pointer-events-none opacity-30" />
 
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 md:px-8 space-y-10">
-          {/* SECTION HEADER WITH SCHOOL LOGO */}
+          {/* SECTION HEADER */}
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-            <div className="flex items-start sm:items-center gap-4">
-              <div className="relative shrink-0 rounded-2xl border border-gold/30 bg-white/[0.05] p-2 backdrop-blur-md shadow-[0_0_15px_rgba(245,158,11,0.15)]">
-                <img
-                  src={schoolLogo}
-                  alt="New Angels Senior Secondary School Emblem"
-                  className="h-14 w-14 sm:h-16 sm:w-16 md:h-20 md:w-20 object-contain drop-shadow-sm"
-                />
+            <div className="max-w-2xl space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-gold/40 bg-gold/10 px-2.5 py-1 text-xs font-heading font-extrabold uppercase tracking-widest text-gold shadow-sm">
+                  <Building className="h-3.5 w-3.5 text-gold" /> HOST SCHOOL
+                </span>
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-slate-300">
+                  <MapPin className="h-3.5 w-3.5 text-coral shrink-0" /> Pratapgarh, Uttar Pradesh
+                </span>
               </div>
-              <div className="space-y-1.5 min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center gap-1.5 rounded-md border border-gold/40 bg-gold/10 px-2.5 py-1 text-xs font-heading font-extrabold uppercase tracking-widest text-gold shadow-sm">
-                    <Building className="h-3.5 w-3.5 text-gold" /> HOST INSTITUTION &amp; CAMPUS
-                  </span>
-                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-slate-300">
-                    <MapPin className="h-3.5 w-3.5 text-coral shrink-0" /> Pratapgarh, Uttar Pradesh
-                  </span>
-                </div>
 
-                <h2 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight text-white">
-                  Welcome to New Angels Senior Secondary School
-                </h2>
+              <h2 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight text-white">
+                Welcome to New Angels Senior Secondary School
+              </h2>
 
-                <p className="text-sm sm:text-base text-slate-300 font-body leading-relaxed pt-1">
-                  Proud host of the CBSE National Kabaddi Championship 2026–27 in Pratapgarh, Uttar Pradesh.
-                </p>
-              </div>
+              <p className="text-sm sm:text-base text-slate-300 font-body leading-relaxed pt-1">
+                Proud host of the CBSE National Kabaddi Championship 2026–27 in Pratapgarh, Uttar Pradesh.
+              </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-3 shrink-0">
@@ -740,7 +703,7 @@ export default function Home() {
       {/* -------------------------------------------------------------------------- */}
       {/* OFFICIAL PHOTOGRAPHY / ACTION CAPTURED ON THE MAT                          */}
       {/* -------------------------------------------------------------------------- */}
-      <section className="border-t border-white/10 bg-obsidian-950/70 py-14 md:py-20 relative overflow-hidden">
+      <section className="border-t border-white/10 bg-obsidian-950/60 backdrop-blur-md py-14 md:py-20 relative overflow-hidden">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8">
           <div className="flex flex-col items-center text-center gap-2 mb-8 sm:mb-10">
             <div className="flex items-center gap-2">
@@ -1215,9 +1178,9 @@ export default function Home() {
       })()}
 
       {/* BOTTOM CTA: COACHES & PARTICIPANTS */}
-      <section className="border-t border-white/10 bg-obsidian-950/80 py-14 md:py-16">
+      <section className="border-t border-white/10 bg-obsidian-950/70 backdrop-blur-md py-14 md:py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8">
-          <div className="rounded-2xl border border-gold/30 bg-gradient-to-br from-gold/10 via-obsidian-900 to-obsidian p-8 md:p-12 text-center relative overflow-hidden">
+          <div className="rounded-2xl border border-gold/30 bg-gradient-to-br from-gold/10 via-obsidian-900/90 to-obsidian-950/95 p-8 md:p-12 text-center relative overflow-hidden backdrop-blur-md">
             <div className="relative z-10 max-w-2xl mx-auto space-y-3">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-gold/20 px-3 py-1 text-xs font-heading font-bold text-gold">
                 <Trophy className="h-3.5 w-3.5" /> OFFICIAL PARTICIPANT PORTAL

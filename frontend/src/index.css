@@ -218,6 +218,32 @@
   .qr-print { position: fixed; inset: 0; margin: auto; height: max-content; }
 }
 
+@keyframes kenBurnsSlow {
+  0% {
+    transform: scale(1);
+  }
+  100% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes kenBurnsPan {
+  0% {
+    transform: scale(1.05) translate(0, 0);
+  }
+  100% {
+    transform: scale(1.02) translate(-1%, 0.5%);
+  }
+}
+
+.animate-ken-burns-slow {
+  animation: kenBurnsSlow linear forwards;
+}
+
+.animate-ken-burns-pan {
+  animation: kenBurnsPan linear forwards;
+}
+
 /* Reduced Motion Override */
 @media (prefers-reduced-motion: reduce) {
   .bracket-animated,
@@ -230,7 +256,9 @@
   .champion-aura,
   .confetti-burst,
   .animate-live-dot,
-  .animate-pulse {
+  .animate-pulse,
+  .animate-ken-burns-slow,
+  .animate-ken-burns-pan {
     animation: none !important;
     transition: none !important;
     transform: none !important;

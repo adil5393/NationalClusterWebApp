@@ -170,7 +170,7 @@ export default function TeamPortal() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-5xl px-4 sm:px-6 md:px-8 py-20 bg-kabaddi-court min-h-screen">
+      <div className="mx-auto max-w-5xl px-4 sm:px-6 md:px-8 py-20 min-h-screen">
         <Spinner label="Loading team portal & schedule…" />
       </div>
     );
@@ -179,7 +179,7 @@ export default function TeamPortal() {
   if (notFound || !team) {
     return (
       <div
-        className="mx-auto max-w-5xl px-4 sm:px-6 md:px-8 py-20 bg-kabaddi-court min-h-screen text-slate-100"
+        className="mx-auto max-w-5xl px-4 sm:px-6 md:px-8 py-20 min-h-screen text-slate-100"
         data-testid="team-portal-notfound"
       >
         <EmptyState title="Team not found" hint="This team portal does not exist in the tournament records." />
@@ -199,7 +199,7 @@ export default function TeamPortal() {
 
   return (
     <div
-      className="mx-auto max-w-6xl px-4 sm:px-6 md:px-8 py-10 md:py-14 text-slate-100 bg-kabaddi-court min-h-screen"
+      className="mx-auto max-w-6xl px-4 sm:px-6 md:px-8 py-10 md:py-14 text-slate-100 min-h-screen"
       data-testid="team-portal"
     >
       {/* BACK LINK */}

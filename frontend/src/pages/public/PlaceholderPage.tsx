@@ -36,7 +36,7 @@ export function PlaceholderPage({ title, section }: SectionProps) {
 
   return (
     <div
-      className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8 py-10 md:py-14 text-slate-100 bg-kabaddi-court min-h-screen"
+      className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8 py-10 md:py-14 text-slate-100 min-h-screen"
       data-testid={`placeholder-${normSection}`}
     >
       {/* SECTION BREADCRUMB */}

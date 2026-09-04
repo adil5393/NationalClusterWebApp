@@ -178,12 +178,12 @@ export default function About() {
   return (
     <div
       data-testid="public-about"
-      className="min-h-screen bg-obsidian text-slate-100 bg-kabaddi-court overflow-x-hidden"
+      className="min-h-screen text-slate-100 overflow-x-hidden"
     >
       {/* -------------------------------------------------------------------------- */}
       {/* 1. CINEMATIC CHAMPIONSHIP HERO                                              */}
       {/* -------------------------------------------------------------------------- */}
-      <section className="relative isolate overflow-hidden border-b border-white/10 bg-arena-glow pt-12 pb-16 sm:pt-16 sm:pb-24">
+      <section className="relative isolate overflow-hidden border-b border-white/10 bg-arena-glow/40 pt-12 pb-16 sm:pt-16 sm:pb-24">
         {/* Subtle background court grid & radial spotlight */}
         <div className="absolute inset-0 bg-kabaddi-court-subtle opacity-60 pointer-events-none" />
 

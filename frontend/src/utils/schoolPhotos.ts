@@ -17,7 +17,7 @@ export const SCHOOL_CATEGORIES: readonly SchoolCategory[] = [
 // the homepage download every one of them at once. Originals are untouched;
 // re-run that script after adding new photos there.
 const photoModules = import.meta.glob<string>(
-  "/src/assets/images-optimized/school/**/*.webp",
+  "/src/assets/images-optimized/school/**/*.{webp,jpg,jpeg,png,avif,WEBP,JPG,JPEG,PNG,AVIF}",
   {
     eager: true,
     query: "?url",
@@ -75,6 +75,35 @@ export const schoolPhotos: Record<SchoolCategory, string[]> = discoverSchoolPhot
 
 export function getSchoolPhotos(category: SchoolCategory): string[] {
   return schoolPhotos[category] || [];
+}
+
+// Discover all background photos for the cinematic hero background
+function discoverBackgroundPhotos(): string[] {
+  const entries: Array<{ path: string; url: string }> = [];
+
+  for (const [rawPath, url] of Object.entries(photoModules)) {
+    if (typeof url !== "string" || !url) continue;
+
+    const normalizedPath = rawPath.replace(/\\/g, "/");
+    if (normalizedPath.toLowerCase().includes("/school/background/")) {
+      entries.push({ path: normalizedPath, url });
+    }
+  }
+
+  entries.sort((a, b) =>
+    a.path.localeCompare(b.path, undefined, {
+      numeric: true,
+      sensitivity: "base",
+    })
+  );
+
+  return entries.map((e) => e.url);
+}
+
+export const backgroundPhotos: string[] = discoverBackgroundPhotos();
+
+export function getBackgroundPhotos(): string[] {
+  return backgroundPhotos;
 }
 
 export interface SchoolCategoryMeta {
