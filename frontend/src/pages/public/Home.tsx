@@ -32,6 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog } from "@/components/ui/dialog";
 import { formatDate, priorityTone } from "@/lib/meta";
 import { cn } from "@/lib/utils";
+import schoolLogo from "@/assets/logo/Document_from_Adil_Shahid-removebg-preview.png";
 
 interface LiveMatch {
   id: number;
@@ -320,20 +321,29 @@ export default function Home() {
               <div className="space-y-4">
                 
                 {/* 1. HOST SCHOOL IDENTITY */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1.5 rounded-md border border-gold/40 bg-gold/10 px-2.5 py-0.5 text-[11px] font-heading font-extrabold uppercase tracking-widest text-gold shadow-sm">
-                      <Building className="h-3.5 w-3.5 text-gold" /> Host Institution &amp; Venue
-                    </span>
+                <div className="flex items-start sm:items-center gap-3.5 sm:gap-4.5">
+                  <div className="relative shrink-0 rounded-2xl border border-gold/30 bg-white/[0.06] p-1.5 sm:p-2 backdrop-blur-md shadow-[0_0_20px_rgba(245,158,11,0.2)]">
+                    <img
+                      src={schoolLogo}
+                      alt="New Angels Senior Secondary School Emblem"
+                      className="h-14 w-14 sm:h-16 sm:w-16 md:h-20 md:w-20 object-contain drop-shadow-md"
+                    />
                   </div>
-                  
-                  <h1 className="font-heading text-2xl sm:text-4xl lg:text-[2.6rem] font-black leading-[1.1] tracking-tight text-white uppercase">
-                    New Angels Senior Secondary School
-                  </h1>
-                  
-                  <div className="flex items-center gap-1.5 text-sm sm:text-base font-semibold text-coral">
-                    <MapPin className="h-4 w-4 text-coral shrink-0" />
-                    <span>Pratapgarh, Uttar Pradesh</span>
+                  <div className="space-y-1 min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1.5 rounded-md border border-gold/40 bg-gold/10 px-2.5 py-0.5 text-[11px] font-heading font-extrabold uppercase tracking-widest text-gold shadow-sm">
+                        <Building className="h-3.5 w-3.5 text-gold" /> Host Institution &amp; Venue
+                      </span>
+                    </div>
+                    
+                    <h1 className="font-heading text-2xl sm:text-3xl md:text-4xl lg:text-[2.5rem] font-black leading-[1.1] tracking-tight text-white uppercase">
+                      New Angels Senior Secondary School
+                    </h1>
+                    
+                    <div className="flex items-center gap-1.5 text-sm sm:text-base font-semibold text-coral">
+                      <MapPin className="h-4 w-4 text-coral shrink-0" />
+                      <span>Pratapgarh, Uttar Pradesh</span>
+                    </div>
                   </div>
                 </div>
 
@@ -567,25 +577,34 @@ export default function Home() {
         <div className="absolute inset-0 bg-kabaddi-court-subtle pointer-events-none opacity-40" />
 
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 md:px-8 space-y-10">
-          {/* SECTION HEADER */}
+          {/* SECTION HEADER WITH SCHOOL LOGO */}
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-            <div className="max-w-2xl space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-md border border-gold/40 bg-gold/10 px-2.5 py-1 text-xs font-heading font-extrabold uppercase tracking-widest text-gold shadow-sm">
-                  <Building className="h-3.5 w-3.5 text-gold" /> HOST SCHOOL
-                </span>
-                <span className="inline-flex items-center gap-1 text-xs font-semibold text-slate-300">
-                  <MapPin className="h-3.5 w-3.5 text-coral shrink-0" /> Pratapgarh, Uttar Pradesh
-                </span>
+            <div className="flex items-start sm:items-center gap-4">
+              <div className="relative shrink-0 rounded-2xl border border-gold/30 bg-white/[0.05] p-2 backdrop-blur-md shadow-[0_0_15px_rgba(245,158,11,0.15)]">
+                <img
+                  src={schoolLogo}
+                  alt="New Angels Senior Secondary School Emblem"
+                  className="h-14 w-14 sm:h-16 sm:w-16 md:h-20 md:w-20 object-contain drop-shadow-sm"
+                />
               </div>
+              <div className="space-y-1.5 min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 rounded-md border border-gold/40 bg-gold/10 px-2.5 py-1 text-xs font-heading font-extrabold uppercase tracking-widest text-gold shadow-sm">
+                    <Building className="h-3.5 w-3.5 text-gold" /> HOST INSTITUTION &amp; CAMPUS
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-slate-300">
+                    <MapPin className="h-3.5 w-3.5 text-coral shrink-0" /> Pratapgarh, Uttar Pradesh
+                  </span>
+                </div>
 
-              <h2 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight text-white">
-                Welcome to New Angels Senior Secondary School
-              </h2>
+                <h2 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight text-white">
+                  Welcome to New Angels Senior Secondary School
+                </h2>
 
-              <p className="text-sm sm:text-base text-slate-300 font-body leading-relaxed pt-1">
-                Proud host of the CBSE National Kabaddi Championship 2026–27 in Pratapgarh, Uttar Pradesh.
-              </p>
+                <p className="text-sm sm:text-base text-slate-300 font-body leading-relaxed pt-1">
+                  Proud host of the CBSE National Kabaddi Championship 2026–27 in Pratapgarh, Uttar Pradesh.
+                </p>
+              </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-3 shrink-0">

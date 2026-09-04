@@ -15,6 +15,7 @@ import {
   Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import schoolLogo from "@/assets/logo/Document_from_Adil_Shahid-removebg-preview.png";
 
 const NAV = [
   { to: "/", label: "Home" },
@@ -45,7 +46,7 @@ export function PublicLayout() {
               <Trophy className="h-3 w-3" /> OFFICIAL TOURNAMENT PORTAL
             </span>
             <span className="truncate text-[11px] text-slate-400">
-              CBSE National Kabaddi Championship 2026–27 · Host School Campus
+              CBSE National Kabaddi Championship 2026–27 · Host: New Angels Sr. Sec. School, Pratapgarh
             </span>
           </div>
           <div className="hidden sm:flex items-center gap-4 text-[11px] font-medium shrink-0">
@@ -69,11 +70,12 @@ export function PublicLayout() {
               className="flex items-center gap-3 shrink-0 group"
               data-testid="brand-logo"
             >
-              <div className="relative grid h-10 w-10 place-items-center rounded-lg border border-gold/40 bg-gradient-to-br from-gold/20 via-obsidian to-obsidian text-gold shadow-[0_0_15px_-3px_rgba(245,158,11,0.25)] transition-transform group-hover:scale-105">
-                <Trophy className="h-5 w-5 text-gold" />
-                <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-coral text-[8px] font-black text-white">
-                  ★
-                </span>
+              <div className="relative grid h-10 w-10 place-items-center rounded-lg border border-gold/40 bg-white/[0.06] p-1 shadow-[0_0_15px_-3px_rgba(245,158,11,0.25)] transition-transform group-hover:scale-105">
+                <img
+                  src={schoolLogo}
+                  alt="New Angels Senior Secondary School Emblem"
+                  className="h-full w-full object-contain drop-shadow"
+                />
               </div>
               <div className="leading-tight">
                 <div className="flex items-center gap-1.5">
@@ -85,7 +87,7 @@ export function PublicLayout() {
                   </span>
                 </div>
                 <span className="block text-[11px] font-heading font-extrabold tracking-widest text-slate-400">
-                  CHAMPIONSHIP <span className="text-gold">2026–27</span>
+                  NEW ANGELS SR. SEC. SCHOOL
                 </span>
               </div>
             </Link>
@@ -200,30 +202,34 @@ export function PublicLayout() {
         <div className="absolute inset-0 bg-kabaddi-court-subtle pointer-events-none opacity-40" />
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 md:px-8 py-12 md:py-16">
           <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
-            {/* COLUMN 1: TOURNAMENT IDENTITY */}
+            {/* COLUMN 1: TOURNAMENT & HOST IDENTITY */}
             <div className="space-y-3">
               <div className="flex items-center gap-2.5">
-                <div className="grid h-8 w-8 place-items-center rounded-md bg-gold text-obsidian font-heading font-black text-sm">
-                  NK
+                <div className="grid h-10 w-10 place-items-center rounded-lg border border-gold/30 bg-white/[0.05] p-1 shrink-0">
+                  <img
+                    src={schoolLogo}
+                    alt="New Angels Sr. Sec. School"
+                    className="h-full w-full object-contain"
+                  />
                 </div>
                 <div>
                   <span className="block font-heading text-sm font-black tracking-tight text-white">
-                    CBSE NATIONAL KABADDI
+                    NEW ANGELS SR. SEC. SCHOOL
                   </span>
                   <span className="block text-[10px] font-heading font-bold tracking-widest text-gold">
-                    CHAMPIONSHIP 2026–27
+                    HOST · PRATAPGARH, UP
                   </span>
                 </div>
               </div>
               <p className="text-xs leading-relaxed text-slate-400">
                 Official digital event operations and broadcast scoring platform for the National Cluster Kabaddi Tournament.
               </p>
-              <div className="pt-1 flex items-center gap-2">
+              <div className="pt-1 flex flex-wrap items-center gap-1.5">
                 <span className="inline-flex items-center gap-1 rounded border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-medium text-slate-300">
-                  <Shield className="h-3 w-3 text-gold" /> CBSE Affiliated
+                  <Shield className="h-3 w-3 text-gold" /> CBSE Affiliated 2130850/06
                 </span>
                 <span className="inline-flex items-center gap-1 rounded border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-medium text-slate-300">
-                  <Trophy className="h-3 w-3 text-coral" /> National Level
+                  <Trophy className="h-3 w-3 text-coral" /> National Host
                 </span>
               </div>
             </div>
