@@ -1,15 +1,19 @@
 """Public, read-only endpoints. These expose ONLY non-sensitive fields and never
 leak internal organizer data (procurement, knowledge base, contacts, notes)."""
 import re
+import time
+import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..auth_utils import verify_password
 from ..database import get_db
+from ..image_utils import optimize_image
 
 router = APIRouter(prefix="/api/public", tags=["public"])
 
@@ -343,7 +347,14 @@ def public_team_detail(team_id: int, db: Session = Depends(get_db)):
     ]
     has_hidden_contacts = any(c.phone for c in team.coaches)
     participants = [
-        {"full_name": p.full_name, "role": p.role, "age_group": p.age_group} for p in team.participants
+        {
+            "id": p.id,
+            "full_name": p.full_name,
+            "role": p.role,
+            "age_group": p.age_group,
+            "photo_url": p.photo_url,
+        }
+        for p in team.participants
     ]
 
     accommodation = []
@@ -436,6 +447,7 @@ from pathlib import Path
 
 VALID_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 ASSETS_ABOUT_DIR = Path(__file__).resolve().parent.parent.parent / "assets" / "about"
+ASSETS_PARTICIPANTS_DIR = Path(__file__).resolve().parent.parent.parent / "assets" / "participants"
 
 
 def _natural_sort_key(p: Path):
@@ -460,4 +472,72 @@ def public_about_images():
     # proxies /api/* to the backend; a bare /assets/ request never leaves nginx
     # (it tries to serve from the static frontend build and 404s there).
     return [f"/api/assets/about/{img.name}" for img in images]
+
+
+# Wrong-registration-number attempts per participant_id, in-memory only (fine
+# at this app's scale, and resets on restart — same "no persistence needed"
+# tradeoff already accepted by reveal_team_contacts above having no limiter
+# at all). Guards the one new unauthenticated disk-write surface this file
+# exposes: without it, someone could brute-force a participant's
+# registration number to plant a photo on their record.
+_PHOTO_UPLOAD_WINDOW_SECONDS = 15 * 60
+_PHOTO_UPLOAD_MAX_ATTEMPTS = 8
+_failed_photo_attempts: dict[int, list[float]] = {}
+
+
+def _photo_upload_rate_limited(participant_id: int) -> bool:
+    now = time.time()
+    attempts = [t for t in _failed_photo_attempts.get(participant_id, []) if now - t < _PHOTO_UPLOAD_WINDOW_SECONDS]
+    _failed_photo_attempts[participant_id] = attempts
+    return len(attempts) >= _PHOTO_UPLOAD_MAX_ATTEMPTS
+
+
+def _record_failed_photo_attempt(participant_id: int) -> None:
+    _failed_photo_attempts.setdefault(participant_id, []).append(time.time())
+
+
+@router.post("/participants/{participant_id}/photo")
+async def upload_participant_photo(
+    participant_id: int,
+    registration_no: str = Form(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """A coach/manager uploads a photo for one of their own participants,
+    proving they're entitled to by typing that participant's registration
+    number — no login. Mirrors reveal_team_contacts' "type a secret to
+    unlock an action" shape above, just with a per-record secret instead of
+    an admin password."""
+    participant = db.get(models.Participant, participant_id)
+    if not participant:
+        raise HTTPException(404, "Participant not found")
+
+    if _photo_upload_rate_limited(participant_id):
+        raise HTTPException(429, "Too many attempts — try again later")
+
+    submitted = registration_no.strip().lower()
+    actual = (participant.registration_no or "").strip().lower()
+    if not actual or submitted != actual:
+        _record_failed_photo_attempt(participant_id)
+        raise HTTPException(401, "Registration number does not match")
+
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in VALID_IMAGE_EXTENSIONS:
+        raise HTTPException(400, "Unsupported file type (use JPG, PNG, or WEBP)")
+
+    ASSETS_PARTICIPANTS_DIR.mkdir(parents=True, exist_ok=True)
+    content = optimize_image(await file.read(), ext)
+    name = f"participant-{participant_id}-{uuid.uuid4().hex[:8]}{ext}"
+
+    old_filename = participant.photo_filename
+    (ASSETS_PARTICIPANTS_DIR / name).write_bytes(content)
+    participant.photo_filename = name
+    db.commit()
+
+    if old_filename:
+        old_path = ASSETS_PARTICIPANTS_DIR / old_filename
+        if old_path.exists() and old_path.is_file():
+            old_path.unlink()
+
+    return {"photo_url": participant.photo_url}
 

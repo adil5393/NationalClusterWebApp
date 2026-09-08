@@ -16,9 +16,10 @@ import {
   Trophy,
   Lock,
   ImageIcon,
+  Camera,
 } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api, assetUrl } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,7 +45,7 @@ interface TeamDetail {
   photos: { thumbnail: string; view: string }[];
   coaches: Coach[];
   has_hidden_contacts?: boolean;
-  participants: { full_name: string; role?: string; age_group?: string }[];
+  participants: { id: number; full_name: string; role?: string; age_group?: string; photo_url?: string | null }[];
   accommodation: { room?: string; floor?: string; building?: string; notes?: string }[];
   transport: {
     vehicle?: string;
@@ -116,6 +117,10 @@ export default function TeamPortal() {
   const [contactsRevealed, setContactsRevealed] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
   const [failedPhotoIndexes, setFailedPhotoIndexes] = useState<Set<number>>(new Set());
+  const [photoTarget, setPhotoTarget] = useState<TeamDetail["participants"][number] | null>(null);
+  const [photoRegNo, setPhotoRegNo] = useState("");
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -157,6 +162,45 @@ export default function TeamPortal() {
   const hideContacts = () => {
     setTeam((t) => (t ? { ...t, coaches: t.coaches.map((c) => ({ ...c, phone: undefined })) } : t));
     setContactsRevealed(false);
+  };
+
+  const closePhotoDialog = () => {
+    setPhotoTarget(null);
+    setPhotoRegNo("");
+    setPhotoFile(null);
+  };
+
+  const uploadParticipantPhoto = async () => {
+    if (!photoTarget) return;
+    if (!photoRegNo.trim()) return toast.error("Enter the participant's registration number");
+    if (!photoFile) return toast.error("Choose or take a photo");
+    setPhotoBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("registration_no", photoRegNo.trim());
+      fd.append("file", photoFile);
+      const r = await api.post<{ photo_url: string }>(`/public/participants/${photoTarget.id}/photo`, fd, {
+        headers: { "Content-Type": undefined } as any,
+      });
+      setTeam((t) =>
+        t
+          ? {
+              ...t,
+              participants: t.participants.map((p) =>
+                p.id === photoTarget.id ? { ...p, photo_url: r.data.photo_url } : p,
+              ),
+            }
+          : t,
+      );
+      toast.success("Photo uploaded");
+      closePhotoDialog();
+    } catch (e: any) {
+      if (e?.response?.status === 401) toast.error("Registration number didn't match");
+      else if (e?.response?.status === 429) toast.error("Too many attempts — try again later");
+      else toast.error("Could not upload photo");
+    } finally {
+      setPhotoBusy(false);
+    }
   };
 
   const share = async () => {
@@ -490,9 +534,29 @@ export default function TeamPortal() {
                       .sort((a, b) => a.full_name.localeCompare(b.full_name))
                       .map((p, i) => (
                         <li key={i} className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs">
-                          <span className="font-body text-slate-200">
-                            <span className="font-mono text-slate-500 mr-1.5">{i + 1}.</span>{" "}
-                            <span className="font-semibold text-white">{p.full_name}</span>
+                          <span className="flex items-center gap-2.5 font-body text-slate-200 min-w-0">
+                            <button
+                              type="button"
+                              onClick={() => setPhotoTarget(p)}
+                              title={p.photo_url ? "Update photo" : "Add photo"}
+                              data-testid={`participant-photo-btn-${p.id}`}
+                              className="grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-full border border-white/10 bg-obsidian-900 hover:border-gold/50 transition-colors"
+                            >
+                              {p.photo_url ? (
+                                <img
+                                  src={assetUrl(p.photo_url)}
+                                  alt=""
+                                  className="h-full w-full object-cover"
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <Camera className="h-3 w-3 text-slate-500" />
+                              )}
+                            </button>
+                            <span className="min-w-0 truncate">
+                              <span className="font-mono text-slate-500 mr-1.5">{i + 1}.</span>
+                              <span className="font-semibold text-white">{p.full_name}</span>
+                            </span>
                           </span>
                           {p.role && (
                             <span className="shrink-0 rounded bg-white/5 px-2 py-0.5 text-[10px] font-mono font-medium text-slate-400">
@@ -544,6 +608,52 @@ export default function TeamPortal() {
               data-testid="submit-reveal-contacts-btn"
             >
               {revealBusy ? "Verifying…" : "Reveal"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* PARTICIPANT PHOTO UPLOAD — gated by that participant's own registration number */}
+      <Dialog
+        open={!!photoTarget}
+        onClose={closePhotoDialog}
+        title={photoTarget ? `Photo for ${photoTarget.full_name}` : "Upload Photo"}
+        testId="participant-photo-dialog"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-slate-400 font-body">
+            Enter this athlete's registration number to confirm you're authorized to add their photo.
+          </p>
+          <div>
+            <Input
+              placeholder="Registration number"
+              value={photoRegNo}
+              onChange={(e) => setPhotoRegNo(e.target.value)}
+              data-testid="participant-photo-regno-input"
+              autoFocus
+            />
+          </div>
+          <div>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
+              data-testid="participant-photo-file-input"
+              className="block w-full text-xs text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-white/20"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+            <Button variant="outline" size="sm" onClick={closePhotoDialog}>
+              Cancel
+            </Button>
+            <Button
+              variant="gold"
+              size="sm"
+              onClick={uploadParticipantPhoto}
+              disabled={photoBusy}
+              data-testid="submit-participant-photo-btn"
+            >
+              {photoBusy ? "Uploading…" : "Upload"}
             </Button>
           </div>
         </div>

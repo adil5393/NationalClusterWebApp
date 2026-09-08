@@ -8,6 +8,7 @@ from datetime import datetime
 from sqlalchemy import (
     Boolean,
     Column,
+    Date,
     DateTime,
     ForeignKey,
     Integer,
@@ -164,8 +165,21 @@ class Participant(TimestampMixin, Base):
     # what the Matches builder's "present" counts read from.
     is_present = Column(Boolean, nullable=False, default=False)
     checked_in_at = Column(DateTime(timezone=True))
+    # Set via the public /public/participants/{id}/photo upload (gated by
+    # registration_no, see public.py) — a coach/manager uploads this for
+    # their own roster, no admin action needed.
+    photo_filename = Column(String(120))
+    # ID-card fields — populated by the attendance-list import (see
+    # imports.py's fathername/dob/Class columns) or editable by an admin.
+    father_name = Column(String(200))
+    date_of_birth = Column(Date)
+    student_class = Column(String(40))
 
     team = relationship("Team", back_populates="participants")
+
+    @property
+    def photo_url(self) -> "str | None":
+        return f"/api/assets/participants/{self.photo_filename}" if self.photo_filename else None
 
 
 class Coach(TimestampMixin, Base):

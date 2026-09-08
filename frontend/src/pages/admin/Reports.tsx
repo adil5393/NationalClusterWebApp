@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Download, FileSpreadsheet, Trash2, Layers, RefreshCw, CheckSquare, Bus, ShieldCheck, UserCog } from "lucide-react";
+import { AlertTriangle, Download, FileSpreadsheet, Trash2, Layers, RefreshCw, CheckSquare, Bus, ShieldCheck, UserCog, IdCard } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -48,12 +48,14 @@ function ReportDownloadCard({
   description,
   href,
   testId,
+  fileLabel = ".xlsx",
 }: {
   icon: React.ElementType;
   title: string;
   description: string;
   href: string;
   testId: string;
+  fileLabel?: string;
 }) {
   return (
     <a
@@ -68,7 +70,7 @@ function ReportDownloadCard({
         <p className="font-heading font-bold text-white text-sm">{title}</p>
         <p className="mt-0.5 text-xs text-slate-400 font-body">{description}</p>
         <span className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-heading font-bold text-gold">
-          <Download className="h-3 w-3" /> Download .xlsx
+          <Download className="h-3 w-3" /> Download {fileLabel}
         </span>
       </div>
     </a>
@@ -177,6 +179,16 @@ export default function Reports() {
                 description="Which school delegations have arrived at the venue."
                 href={`${BACKEND}/api/export/arrival.xlsx`}
                 testId="download-arrival-report-btn"
+              />
+            )}
+            {teamsAccess.canView && (
+              <ReportDownloadCard
+                icon={IdCard}
+                title="All ID Cards"
+                description="Every participant's printable ID card, tournament-wide, one PDF (large file, may take a couple minutes)."
+                href={`${BACKEND}/api/export/idcards/all.pdf`}
+                testId="download-all-idcards-btn"
+                fileLabel=".pdf"
               />
             )}
             {staffAccess.canView && (

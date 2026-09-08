@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, CheckCircle2, Circle, Upload, Download, Users, Search, Filter, FileSpreadsheet } from "lucide-react";
+import { Plus, Pencil, Trash2, CheckCircle2, Circle, Upload, Download, Users, Search, Filter, FileSpreadsheet, IdCard } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,9 @@ interface Participant {
   age_group?: string;
   is_present?: boolean;
   notes?: string;
+  father_name?: string;
+  date_of_birth?: string;
+  student_class?: string;
 }
 
 interface Coach {
@@ -476,6 +479,15 @@ export default function Participants() {
                     )}
                   </div>
 
+                  <div className="border-t border-white/10 pt-2.5">
+                    <a
+                      href={`${BASE_URL}/api/export/idcards/participant/${p.id}.pdf`}
+                      className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-white/15 bg-white/5 text-xs font-semibold text-slate-200 hover:bg-white/10"
+                      data-testid={`download-idcard-mobile-${p.id}`}
+                    >
+                      <IdCard className="h-3.5 w-3.5 text-gold" /> Download ID Card
+                    </a>
+                  </div>
                   {canEdit && (
                     <div className="grid grid-cols-2 gap-2 border-t border-white/10 pt-2.5">
                       <Button
@@ -579,6 +591,14 @@ export default function Participants() {
                       </TD>
                       <TD className="text-right">
                         <div className="flex items-center justify-end gap-1">
+                          <a
+                            href={`${BASE_URL}/api/export/idcards/participant/${p.id}.pdf`}
+                            className="inline-flex items-center justify-center gap-2 rounded-md font-body tracking-wide transition-colors text-slate-400 hover:bg-white/10 hover:text-white h-8 w-8 p-0"
+                            data-testid={`download-idcard-${p.id}`}
+                            title="Download ID Card (PDF)"
+                          >
+                            <IdCard className="h-3.5 w-3.5" />
+                          </a>
                           {canEdit && (
                             <Button
                               variant="ghost"
@@ -960,6 +980,32 @@ export default function Participants() {
                 value={form.registration_no ?? ""}
                 onChange={(e) => set("registration_no", e.target.value)}
                 placeholder="CBSE-2026-XXXX"
+              />
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div>
+              <Label>Father's Name</Label>
+              <Input
+                value={form.father_name ?? ""}
+                onChange={(e) => set("father_name", e.target.value)}
+                placeholder="e.g. Suresh Sharma"
+              />
+            </div>
+            <div>
+              <Label>Date of Birth</Label>
+              <Input
+                type="date"
+                value={form.date_of_birth ?? ""}
+                onChange={(e) => set("date_of_birth", e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Class</Label>
+              <Input
+                value={form.student_class ?? ""}
+                onChange={(e) => set("student_class", e.target.value)}
+                placeholder="e.g. Class X"
               />
             </div>
           </div>

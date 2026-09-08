@@ -26,12 +26,18 @@ export const api = axios.create({
   withCredentials: true,
 });
 
-// A 401 means the session cookie is missing/expired — bounce back to the login
-// screen rather than letting every admin page fail silently or show stale data.
+// A 401 from the organizer portal means the session cookie is missing/expired
+// — bounce back to the login screen rather than letting every admin page fail
+// silently or show stale data. Scoped to /admin routes only: public pages
+// (team portal reveal-contacts, participant photo upload) also get 401s for
+// their own reasons — a wrong password/registration number, not an expired
+// admin session — and must handle those locally instead of being yanked to
+// the organizer login screen.
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error?.response?.status === 401 && !window.location.pathname.startsWith("/admin/login")) {
+    const path = window.location.pathname;
+    if (error?.response?.status === 401 && path.startsWith("/admin") && !path.startsWith("/admin/login")) {
       window.location.href = "/admin/login";
     }
     return Promise.reject(error);

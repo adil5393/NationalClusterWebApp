@@ -256,15 +256,17 @@ def _region_from_address(value) -> "str | None":
     return parts[-3] or None
 
 
-def _age_from_dob(value) -> "int | None":
+def _parse_dob(value) -> "date | None":
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
-    dob = None
     if isinstance(value, (datetime, date)):
-        dob = value if isinstance(value, date) and not isinstance(value, datetime) else value.date()
-    else:
-        dob = pd.to_datetime(str(value).strip(), format="%d-%m-%Y", errors="coerce")
-        dob = dob.date() if dob is not None and not pd.isna(dob) else None
+        return value if isinstance(value, date) and not isinstance(value, datetime) else value.date()
+    dob = pd.to_datetime(str(value).strip(), format="%d-%m-%Y", errors="coerce")
+    return dob.date() if dob is not None and not pd.isna(dob) else None
+
+
+def _age_from_dob(value) -> "int | None":
+    dob = _parse_dob(value)
     if dob is None:
         return None
     today = date.today()
@@ -370,24 +372,33 @@ async def import_attendance_list(file: UploadFile = File(...), db: Session = Dep
             errors.append(f"Row {i + 2}: unknown school code '{code}'")
             continue
 
+        dob = _parse_dob(row.get("dob"))
         age = _age_from_dob(row.get("dob"))
         age_group = _val(row, "agegroup")
+        father_name = _val(row, "fathername")
+        student_class = _val(row, "Class")
         participant = existing_by_reg.get(reg_no)
         if participant is None:
             participant = models.Participant(
                 registration_no=reg_no, team_id=team.id, full_name=full_name,
                 gender="Male", age=age, age_group=age_group, role="Player",
+                father_name=father_name, date_of_birth=dob, student_class=student_class,
             )
             db.add(participant)
             existing_by_reg[reg_no] = participant
             participants_created += 1
         else:
             changed = (participant.team_id != team.id or participant.full_name != full_name
-                       or participant.age != age or participant.age_group != age_group)
+                       or participant.age != age or participant.age_group != age_group
+                       or participant.father_name != father_name or participant.date_of_birth != dob
+                       or participant.student_class != student_class)
             participant.team_id = team.id
             participant.full_name = full_name
             participant.age = age
             participant.age_group = age_group
+            participant.father_name = father_name
+            participant.date_of_birth = dob
+            participant.student_class = student_class
             if changed:
                 participants_updated += 1
 

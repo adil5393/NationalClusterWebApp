@@ -1,5 +1,5 @@
 """Pydantic schemas + controlled vocabularies shared by public and admin APIs."""
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Literal, Optional
 
@@ -478,6 +478,9 @@ class ParticipantBase(BaseModel):
     age_group: Optional[str] = None
     role: Optional[str] = None
     notes: Optional[str] = None
+    father_name: Optional[str] = None
+    date_of_birth: Optional[date] = None
+    student_class: Optional[str] = None
 
 
 class ParticipantCreate(ParticipantBase):
@@ -492,6 +495,9 @@ class ParticipantUpdate(BaseModel):
     age_group: Optional[str] = None
     role: Optional[str] = None
     notes: Optional[str] = None
+    father_name: Optional[str] = None
+    date_of_birth: Optional[date] = None
+    student_class: Optional[str] = None
 
 
 class ParticipantRead(ORMModel, ParticipantBase):
@@ -499,6 +505,7 @@ class ParticipantRead(ORMModel, ParticipantBase):
     registration_no: Optional[str] = None
     is_present: bool = False
     checked_in_at: Optional[datetime] = None
+    photo_url: Optional[str] = None
 
 
 class AttendanceUpdate(BaseModel):

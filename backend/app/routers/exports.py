@@ -3,12 +3,12 @@ import csv
 import io
 
 import openpyxl
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import models
+from .. import id_card, models
 from ..database import get_db
 from ..excel_styler import (
     ALIGN_CENTER,
@@ -31,10 +31,12 @@ from ..excel_styler import (
     style_section_bar,
 )
 from ..security import require_admin, require_module
+from .public import ASSETS_PARTICIPANTS_DIR
 
 router = APIRouter(prefix="/api/export", tags=["export"])
 
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+PDF_MEDIA_TYPE = "application/pdf"
 
 
 def _csv_response(header, rows, filename):
@@ -639,3 +641,69 @@ def export_organizer_users_xlsx(db: Session = Depends(get_db)):
         media_type=XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": 'attachment; filename="organizer_users_report.xlsx"'},
     )
+
+
+def _pdf_response(content: bytes, filename: str) -> StreamingResponse:
+    return StreamingResponse(
+        iter([content]),
+        media_type=PDF_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _photo_path(participant: models.Participant):
+    if not participant.photo_filename:
+        return None
+    return ASSETS_PARTICIPANTS_DIR / participant.photo_filename
+
+
+@router.get("/idcards/participant/{participant_id}.pdf", dependencies=[Depends(require_module("teams"))])
+def export_idcard_participant(participant_id: int, db: Session = Depends(get_db)):
+    participant = db.get(models.Participant, participant_id)
+    if not participant:
+        raise HTTPException(404, "Participant not found")
+    card = id_card.render_id_card_page(participant, participant.team, _photo_path(participant))
+    pdf = id_card.build_pdf([card])
+    return _pdf_response(pdf, f"idcard-{participant.registration_no or participant.id}.pdf")
+
+
+@router.get("/idcards/team/{team_id}.pdf", dependencies=[Depends(require_module("teams"))])
+def export_idcard_team(team_id: int, db: Session = Depends(get_db)):
+    team = db.get(models.Team, team_id)
+    if not team:
+        raise HTTPException(404, "Team not found")
+    participants = sorted(team.participants, key=lambda p: p.full_name)
+    if not participants:
+        raise HTTPException(404, "This team has no participants to generate cards for")
+    cards = [id_card.render_id_card(p, team, _photo_path(p)) for p in participants]
+    sheets = id_card.build_team_sheets(cards)
+    pdf = id_card.build_pdf(sheets)
+    return _pdf_response(pdf, f"idcards-{team.school_code or team.id}.pdf")
+
+
+@router.get("/idcards/all.pdf", dependencies=[Depends(require_module("teams"))])
+def export_idcard_all(db: Session = Depends(get_db)):
+    teams = {t.id: t for t in db.query(models.Team).all()}
+    participants = (
+        db.query(models.Participant)
+        .order_by(models.Participant.team_id, models.Participant.full_name)
+        .all()
+    )
+    if not participants:
+        raise HTTPException(404, "No participants to generate cards for")
+    # Lower DPI here only — this bulk export is a reference/backup document,
+    # not what you'd feed a badge printer for 1000+ cards at once (use the
+    # per-team download for that); see id_card.BULK_PRINT_DPI.
+    dpi = id_card.BULK_PRINT_DPI
+    sheets: list = []
+    current_team_id = None
+    current_team_cards: list = []
+    for p in participants:
+        if p.team_id != current_team_id:
+            sheets.extend(id_card.build_team_sheets(current_team_cards, dpi=dpi))
+            current_team_id = p.team_id
+            current_team_cards = []
+        current_team_cards.append(id_card.render_id_card(p, teams[p.team_id], _photo_path(p)))
+    sheets.extend(id_card.build_team_sheets(current_team_cards, dpi=dpi))
+    pdf = id_card.build_pdf(sheets, dpi=dpi)
+    return _pdf_response(pdf, "idcards-all-teams.pdf")
