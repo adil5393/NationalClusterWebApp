@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, CheckCircle2, Circle, Upload, Download, Users, Search, Filter, FileSpreadsheet, IdCard } from "lucide-react";
+import { Plus, Pencil, Trash2, CheckCircle2, Circle, Upload, Download, Users, Search, Filter, FileSpreadsheet, IdCard, ImageOff } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ interface Participant {
   father_name?: string;
   date_of_birth?: string;
   student_class?: string;
+  photo_url?: string | null;
 }
 
 interface Coach {
@@ -162,6 +163,17 @@ export default function Participants() {
     await api.delete(`/participants/${id}`);
     toast.success("Participant deleted");
     load();
+  };
+
+  const removePhoto = async (p: Participant) => {
+    if (!confirm(`Remove ${p.full_name}'s photo?`)) return;
+    try {
+      await api.delete(`/participants/${p.id}/photo`);
+      setParticipants((rows) => rows.map((r) => (r.id === p.id ? { ...r, photo_url: null } : r)));
+      toast.success("Photo removed");
+    } catch {
+      toast.error("Could not remove photo");
+    }
   };
 
   const toggleAttendance = async (p: Participant) => {
@@ -479,14 +491,26 @@ export default function Participants() {
                     )}
                   </div>
 
-                  <div className="border-t border-white/10 pt-2.5">
+                  <div className="border-t border-white/10 pt-2.5 flex gap-2">
                     <a
                       href={`${BASE_URL}/api/export/idcards/participant/${p.id}.pdf`}
-                      className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-white/15 bg-white/5 text-xs font-semibold text-slate-200 hover:bg-white/10"
+                      className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md border border-white/15 bg-white/5 text-xs font-semibold text-slate-200 hover:bg-white/10"
                       data-testid={`download-idcard-mobile-${p.id}`}
                     >
                       <IdCard className="h-3.5 w-3.5 text-gold" /> Download ID Card
                     </a>
+                    {canEdit && p.photo_url && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 shrink-0"
+                        onClick={() => removePhoto(p)}
+                        data-testid={`remove-photo-mobile-${p.id}`}
+                        title="Remove Uploaded Photo"
+                      >
+                        <ImageOff className="h-3.5 w-3.5 text-red-400" />
+                      </Button>
+                    )}
                   </div>
                   {canEdit && (
                     <div className="grid grid-cols-2 gap-2 border-t border-white/10 pt-2.5">
@@ -599,6 +623,17 @@ export default function Participants() {
                           >
                             <IdCard className="h-3.5 w-3.5" />
                           </a>
+                          {canEdit && p.photo_url && (
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => removePhoto(p)}
+                              data-testid={`remove-photo-${p.id}`}
+                              title="Remove Uploaded Photo"
+                            >
+                              <ImageOff className="h-3.5 w-3.5 text-red-400" />
+                            </Button>
+                          )}
                           {canEdit && (
                             <Button
                               variant="ghost"

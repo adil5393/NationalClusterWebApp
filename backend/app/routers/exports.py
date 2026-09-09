@@ -672,7 +672,7 @@ def export_idcard_team(team_id: int, db: Session = Depends(get_db)):
     team = db.get(models.Team, team_id)
     if not team:
         raise HTTPException(404, "Team not found")
-    participants = sorted(team.participants, key=lambda p: p.full_name)
+    participants = sorted(team.participants, key=id_card.sort_key)
     if not participants:
         raise HTTPException(404, "This team has no participants to generate cards for")
     cards = [id_card.render_id_card(p, team, _photo_path(p)) for p in participants]
@@ -686,7 +686,7 @@ def export_idcard_all(db: Session = Depends(get_db)):
     teams = {t.id: t for t in db.query(models.Team).all()}
     participants = (
         db.query(models.Participant)
-        .order_by(models.Participant.team_id, models.Participant.full_name)
+        .order_by(models.Participant.team_id)
         .all()
     )
     if not participants:
@@ -697,13 +697,23 @@ def export_idcard_all(db: Session = Depends(get_db)):
     dpi = id_card.BULK_PRINT_DPI
     sheets: list = []
     current_team_id = None
-    current_team_cards: list = []
+    current_team_group: list = []
+
+    def _flush():
+        if not current_team_group:
+            return
+        # sort each team's group (age group, then name) before rendering, so
+        # cards print in a sensible order within each team's own sheets
+        ordered = sorted(current_team_group, key=id_card.sort_key)
+        cards = [id_card.render_id_card(p, teams[current_team_id], _photo_path(p)) for p in ordered]
+        sheets.extend(id_card.build_team_sheets(cards, dpi=dpi))
+
     for p in participants:
         if p.team_id != current_team_id:
-            sheets.extend(id_card.build_team_sheets(current_team_cards, dpi=dpi))
+            _flush()
             current_team_id = p.team_id
-            current_team_cards = []
-        current_team_cards.append(id_card.render_id_card(p, teams[p.team_id], _photo_path(p)))
-    sheets.extend(id_card.build_team_sheets(current_team_cards, dpi=dpi))
+            current_team_group = []
+        current_team_group.append(p)
+    _flush()
     pdf = id_card.build_pdf(sheets, dpi=dpi)
     return _pdf_response(pdf, "idcards-all-teams.pdf")

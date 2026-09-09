@@ -16,9 +16,23 @@ need to be re-measured, there's no dynamic layout here by design (it's a
 fixed print template, not a flowable document).
 """
 import io
+import re
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
+
+_AGE_GROUP_NUM_RE = re.compile(r"(\d+)")
+
+
+def sort_key(participant) -> tuple:
+    """Age group ascending (Under 14 before Under 17 before Under 19), then
+    alphabetical by name within that group — how a printed sheet of cards
+    should be ordered, not the plain alphabetical-only order the admin table
+    uses. Age groups with no parseable number (or none set) sort last."""
+    age_group = participant.age_group or ""
+    m = _AGE_GROUP_NUM_RE.search(age_group)
+    rank = int(m.group(1)) if m else 9999
+    return (rank, age_group, participant.full_name)
 
 TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "assets" / "templates" / "id_card_template.png"
 # All box/line coordinates below are measured in this native template
@@ -115,21 +129,24 @@ PHOTO_BOX = (364, 466, 660, 776)
 
 FONT_BOLD_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 VALUE_COLOR = (15, 23, 42)
-VALUE_MAX_SIZE = 36
-VALUE_MIN_SIZE = 18
-VALUE_X = 430
-VALUE_MAX_WIDTH = 520
+VALUE_MAX_SIZE = 32
+VALUE_MIN_SIZE = 16
+VALUE_X = 425
+VALUE_MAX_WIDTH = 535
 
-# (field key, baseline y) — value text is drawn just above each printed
-# underline, left-aligned starting at VALUE_X.
+# (field key, [baseline y, ...]) — value text is drawn just above each
+# printed underline, left-aligned starting at VALUE_X. School Name gets two
+# lines on this template (it's the one field long enough to regularly need
+# wrapping — a school's full name rarely fits in one line at a readable
+# size), everything else is a single line.
 FIELD_LINES = [
-    ("name", 947),
-    ("father_name", 1014),
-    ("dob", 1075),
-    ("uid", 1136),
-    ("class_", 1198),
-    ("category", 1268),
-    ("school", 1328),
+    ("name", [939]),
+    ("father_name", [987]),
+    ("dob", [1037]),
+    ("uid", [1088]),
+    ("class_", [1139]),
+    ("category", [1188]),
+    ("school", [1235, 1280]),
 ]
 
 
@@ -143,11 +160,65 @@ def _fit_font(draw: ImageDraw.ImageDraw, text: str, max_width: int) -> ImageFont
     return ImageFont.truetype(FONT_BOLD_PATH, VALUE_MIN_SIZE)
 
 
-def _draw_value(draw: ImageDraw.ImageDraw, baseline_y: int, text: "str | None") -> None:
+def _wrap_to_lines(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, max_width: int, max_lines: int) -> list[str]:
+    """Greedy word-wrap into at most max_lines lines that each fit max_width
+    at the given font. If it still doesn't fit within max_lines, the last
+    line is truncated with an ellipsis rather than overflowing the card."""
+    words = text.split()
+    lines: list[str] = []
+    current = ""
+    for word in words:
+        candidate = f"{current} {word}".strip()
+        if draw.textlength(candidate, font=font) <= max_width:
+            current = candidate
+        else:
+            if current:
+                lines.append(current)
+            current = word
+            if len(lines) == max_lines:
+                break
+    if current and len(lines) < max_lines:
+        lines.append(current)
+    if not lines:
+        lines = [text]
+
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+    # if words remain unplaced (broke out of the loop above, or the wrap
+    # simply produced more lines than allowed), mark the last line truncated
+    consumed = " ".join(lines)
+    if len(consumed) < len(text.rstrip()):
+        last = lines[max_lines - 1]
+        while draw.textlength(last + "…", font=font) > max_width and len(last) > 1:
+            last = last[:-1].rstrip()
+        lines[max_lines - 1] = last + "…"
+    return lines
+
+
+def _fit_font_multiline(draw: ImageDraw.ImageDraw, text: str, max_width: int, max_lines: int) -> tuple[ImageFont.FreeTypeFont, list[str]]:
+    size = VALUE_MAX_SIZE
+    while size > VALUE_MIN_SIZE:
+        font = ImageFont.truetype(FONT_BOLD_PATH, size)
+        if draw.textlength(text, font=font) <= max_width:
+            return font, [text]
+        lines = _wrap_to_lines(draw, text, font, max_width, max_lines)
+        if len(lines) <= max_lines and all(draw.textlength(line, font=font) <= max_width for line in lines):
+            return font, lines
+        size -= 2
+    font = ImageFont.truetype(FONT_BOLD_PATH, VALUE_MIN_SIZE)
+    return font, _wrap_to_lines(draw, text, font, max_width, max_lines)
+
+
+def _draw_value(draw: ImageDraw.ImageDraw, baseline_ys: list[int], text: "str | None") -> None:
     if not text:
         return
-    font = _fit_font(draw, text, VALUE_MAX_WIDTH)
-    draw.text((VALUE_X, baseline_y), text, font=font, fill=VALUE_COLOR, anchor="ls")
+    if len(baseline_ys) == 1:
+        font = _fit_font(draw, text, VALUE_MAX_WIDTH)
+        draw.text((VALUE_X, baseline_ys[0]), text, font=font, fill=VALUE_COLOR, anchor="ls")
+        return
+    font, lines = _fit_font_multiline(draw, text, VALUE_MAX_WIDTH, len(baseline_ys))
+    for baseline_y, line in zip(baseline_ys, lines):
+        draw.text((VALUE_X, baseline_y), line, font=font, fill=VALUE_COLOR, anchor="ls")
 
 
 def _paste_photo(card: Image.Image, photo_path: "Path | None") -> None:
@@ -196,8 +267,8 @@ def render_id_card(participant, team, photo_path: "Path | None" = None) -> Image
         "category": participant.age_group,
         "school": team.school or team.name,
     }
-    for key, baseline_y in FIELD_LINES:
-        _draw_value(draw, baseline_y, values.get(key))
+    for key, baseline_ys in FIELD_LINES:
+        _draw_value(draw, baseline_ys, values.get(key))
 
     return card
 

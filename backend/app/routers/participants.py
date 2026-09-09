@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..database import get_db
+from .public import ASSETS_PARTICIPANTS_DIR
 
 router = APIRouter(prefix="/api/participants", tags=["participants"])
 
@@ -45,3 +46,22 @@ def delete_participant(participant_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Participant not found")
     db.delete(p)
     db.commit()
+
+
+@router.delete("/{participant_id}/photo", response_model=schemas.ParticipantRead)
+def delete_participant_photo(participant_id: int, db: Session = Depends(get_db)):
+    """Admin-side removal — e.g. a wrong/inappropriate photo uploaded via the
+    public /public/participants/{id}/photo endpoint. Clears the DB reference
+    and deletes the file from disk; safe to call even if the file is already
+    gone (idempotent)."""
+    p = db.get(models.Participant, participant_id)
+    if not p:
+        raise HTTPException(404, "Participant not found")
+    if p.photo_filename:
+        path = ASSETS_PARTICIPANTS_DIR / p.photo_filename
+        if path.exists() and path.is_file():
+            path.unlink()
+        p.photo_filename = None
+        db.commit()
+        db.refresh(p)
+    return p
