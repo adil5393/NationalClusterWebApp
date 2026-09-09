@@ -68,21 +68,20 @@ def _print_size_px(dpi: int) -> tuple[int, int]:
 # --- A4 sheet layout (per-team / all-teams downloads) ---------------------
 # The org wants at least 9 cards per A4 portrait sheet, so cards there are
 # printed smaller than the standalone single-card download: a 3x3 grid of
-# 6x8.5cm cards (barely narrower than 7x10, same 0.7-ish aspect ratio) with
-# even margins/gutters, chosen so the whole grid divides A4 (21 x 29.7cm)
-# exactly with no leftover slack:
-#   horizontal: 4 gaps (left margin + 2 gutters + right margin) x 0.75cm
-#               + 3 cards x 6.0cm = 3 + 18 = 21cm
-#   vertical:   4 gaps x 1.05cm + 3 cards x 8.5cm = 4.2 + 25.5 = 29.7cm
+# 6.5x9cm cards with even margins/gutters, chosen so the whole grid divides
+# A4 (21 x 29.7cm) exactly with no leftover slack:
+#   horizontal: 4 gaps (left margin + 2 gutters + right margin) x 0.375cm
+#               + 3 cards x 6.5cm = 1.5 + 19.5 = 21cm
+#   vertical:   4 gaps x 0.675cm + 3 cards x 9.0cm = 2.7 + 27 = 29.7cm
 A4_WIDTH_CM = 21.0
 A4_HEIGHT_CM = 29.7
 SHEET_COLS = 3
 SHEET_ROWS = 3
 CARDS_PER_SHEET = SHEET_COLS * SHEET_ROWS
-SHEET_CARD_WIDTH_CM = 6.0
-SHEET_CARD_HEIGHT_CM = 8.5
-SHEET_MARGIN_X_CM = 0.75
-SHEET_MARGIN_Y_CM = 1.05
+SHEET_CARD_WIDTH_CM = 6.5
+SHEET_CARD_HEIGHT_CM = 9.0
+SHEET_MARGIN_X_CM = 0.375
+SHEET_MARGIN_Y_CM = 0.675
 
 
 def _a4_size_px(dpi: int) -> tuple[int, int]:
