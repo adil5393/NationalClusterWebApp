@@ -37,18 +37,6 @@ services:
     depends_on:
       - backend
     ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - certbot_www:/var/www/certbot
-      - letsencrypt:/etc/letsencrypt:ro
-  certbot:
-    image: certbot/certbot:latest
-    volumes:
-      - certbot_www:/var/www/certbot
-      - letsencrypt:/etc/letsencrypt
-
+        - "127.0.0.1:8081:80"
 volumes:
   pgdata:
-  certbot_www:
-  letsencrypt:

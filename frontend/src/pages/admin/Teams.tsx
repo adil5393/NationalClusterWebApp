@@ -73,22 +73,28 @@ function AgeGroupCountsCell({ counts }: { counts?: Record<string, number> }) {
   const entries = Object.entries(counts ?? {}).sort(
     ([a], [b]) => ageGroupRank(a) - ageGroupRank(b) || a.localeCompare(b),
   );
-  if (entries.length === 0) return <span className="text-slate-500">—</span>;
+  if (entries.length === 0) return <span className="text-slate-500 text-xs">—</span>;
   return (
-    <div className="space-y-0.5 min-w-[110px]">
-      {entries.map(([group, count]) => (
-        <div key={group} className="flex items-center justify-between gap-2 text-xs">
-          <span className="text-slate-400 truncate">{group}</span>
+    <div className="flex flex-wrap gap-1 min-w-0 max-w-[150px]">
+      {entries.map(([group, count]) => {
+        const shortGroup = group.replace(/under\s*(\d+)/i, "U$1");
+        const isBelow = count < MIN_SQUAD_SIZE;
+        return (
           <span
+            key={group}
+            title={`${group}: ${count} athletes (${isBelow ? "below min squad size" : "complete squad"})`}
             className={cn(
-              "font-mono font-bold tabular-nums rounded px-1 text-[11px]",
-              count < MIN_SQUAD_SIZE ? "bg-red-500/15 text-red-400" : "bg-emerald-500/15 text-emerald-400",
+              "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-mono font-bold border",
+              isBelow
+                ? "border-red-500/30 bg-red-500/15 text-red-300"
+                : "border-emerald-500/30 bg-emerald-500/15 text-emerald-300",
             )}
           >
-            {count}
+            <span className="text-slate-400 font-heading">{shortGroup}:</span>
+            <span className="tabular-nums">{count}</span>
           </span>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -105,31 +111,37 @@ function LastYearAwardsCell({
   const awards = team.last_year_awards ?? [];
   const content =
     awards.length === 0 ? (
-      <span className="inline-flex items-center gap-1 rounded border border-white/5 bg-white/[0.02] px-2 py-0.5 text-[11px] font-medium text-slate-500">
+      <span className="inline-flex items-center gap-1 rounded border border-white/5 bg-white/[0.02] px-2 py-0.5 text-[10px] font-medium text-slate-500 whitespace-nowrap">
         <Trophy className="h-3 w-3 shrink-0 text-slate-500" /> Awards: None
       </span>
     ) : (
       <div className="flex flex-wrap gap-1 max-w-full">
-        {awards.map((a) => (
-          <span
-            key={a.age_group}
-            className={cn(
-              "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-heading font-bold",
-              AWARD_TONE[a.award],
-            )}
-          >
-            <Trophy className="h-3 w-3 shrink-0" /> {AWARD_LABEL[a.award]} · {a.age_group}
-          </span>
-        ))}
+        {awards.map((a) => {
+          const shortGroup = (a.age_group || "").replace(/under\s*(\d+)/i, "U$1");
+          const label = AWARD_LABEL[a.award as AwardPosition] || a.award;
+          return (
+            <span
+              key={a.age_group}
+              title={`${label} · ${a.age_group}`}
+              className={cn(
+                "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-heading font-bold whitespace-nowrap",
+                AWARD_TONE[a.award as AwardPosition] || "border border-gold/40 bg-gold/15 text-gold",
+              )}
+            >
+              <Trophy className="h-3 w-3 shrink-0" /> {label} · {shortGroup || a.age_group}
+            </span>
+          );
+        })}
       </div>
     );
   if (!canEdit) return content;
   return (
     <button
+      type="button"
       onClick={onEdit}
       data-testid={`edit-awards-${team.id}`}
-      className="text-left hover:opacity-80 transition-opacity max-w-full"
-      title="Edit last year's awards"
+      className="text-left hover:opacity-80 transition-opacity max-w-full cursor-pointer"
+      title={awards.length === 0 ? "Add last year's awards" : "Edit last year's awards"}
     >
       {content}
     </button>
@@ -147,17 +159,25 @@ function ActiveCell({
 }) {
   const active = team.is_active !== false;
   const badge = (
-    <Badge tone={active ? "green" : "red"} size="sm">
+    <span
+      className={cn(
+        "inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-heading font-bold tracking-wide transition-colors",
+        active
+          ? "border border-emerald-500/40 bg-emerald-500/15 text-emerald-400"
+          : "border border-red-500/40 bg-red-500/15 text-red-400",
+      )}
+    >
       {active ? "Active" : "Inactive"}
-    </Badge>
+    </span>
   );
   if (!canEdit) return badge;
   return (
     <button
+      type="button"
       onClick={() => onToggle(team)}
       data-testid={`active-toggle-${team.id}`}
       title={active ? "Mark inactive" : "Mark active"}
-      className="hover:opacity-80 transition-opacity"
+      className="hover:opacity-80 transition-opacity shrink-0"
     >
       {badge}
     </button>
@@ -175,17 +195,25 @@ function ArrivedCell({
 }) {
   const arrived = team.has_arrived === true;
   const badge = (
-    <Badge tone={arrived ? "green" : "slate"} size="sm">
+    <span
+      className={cn(
+        "inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-heading font-bold tracking-wide transition-colors whitespace-nowrap",
+        arrived
+          ? "border border-emerald-500/40 bg-emerald-500/15 text-emerald-400"
+          : "border border-slate-600/40 bg-slate-800/80 text-slate-400",
+      )}
+    >
       {arrived ? "Arrived" : "Not Arrived"}
-    </Badge>
+    </span>
   );
   if (!canEdit) return badge;
   return (
     <button
+      type="button"
       onClick={() => onToggle(team)}
       data-testid={`arrived-toggle-${team.id}`}
       title={arrived ? "Mark not arrived" : "Mark arrived"}
-      className="hover:opacity-80 transition-opacity"
+      className="hover:opacity-80 transition-opacity shrink-0"
     >
       {badge}
     </button>
@@ -204,33 +232,35 @@ function AgeGroupActiveCell({
   const groups = Object.keys(team.age_group_counts ?? {}).sort(
     (a, b) => ageGroupRank(a) - ageGroupRank(b) || a.localeCompare(b),
   );
-  if (groups.length === 0) return <span className="text-slate-500">—</span>;
+  if (groups.length === 0) return <span className="text-slate-500 text-xs">—</span>;
   const inactive = new Set(team.inactive_age_groups ?? []);
   return (
-    <div className="flex flex-wrap gap-1 max-w-full">
+    <div className="flex flex-wrap gap-1 min-w-0 max-w-[130px]">
       {groups.map((g) => {
         const active = !inactive.has(g);
+        const shortG = g.replace(/under\s*(\d+)/i, "U$1");
         const pill = (
           <span
             key={g}
             className={cn(
-              "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-heading font-bold",
+              "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-heading font-bold border transition-colors",
               active
-                ? "border border-emerald-500/40 bg-emerald-500/15 text-emerald-400"
-                : "border border-red-500/40 bg-red-500/15 text-red-400",
+                ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-400"
+                : "border-red-500/40 bg-red-500/15 text-red-400 line-through opacity-70",
             )}
           >
-            {g}
+            {shortG}
           </span>
         );
-        if (!canEdit) return pill;
+        if (!canEdit) return <span key={g} title={`${g}: ${active ? "Active" : "Inactive"}`}>{pill}</span>;
         return (
           <button
             key={g}
+            type="button"
             onClick={() => onToggle(team, g, !active)}
             data-testid={`age-group-active-toggle-${team.id}-${g}`}
-            title={active ? `Mark inactive for ${g}` : `Mark active for ${g}`}
-            className="hover:opacity-80 transition-opacity"
+            title={active ? `Mark ${g} inactive` : `Mark ${g} active`}
+            className="hover:opacity-80 transition-opacity shrink-0"
           >
             {pill}
           </button>
@@ -405,14 +435,23 @@ function AccommodationCell({ t }: { t: Team }) {
   const status = t.accommodation_status ?? "none";
   const locations = t.accommodation_locations ?? [];
   return (
-    <div className="min-w-[120px]">
-      <Badge tone={ACCOMMODATION_TONE[status]} size="sm">
+    <div className="min-w-0 max-w-[120px]">
+      <span
+        className={cn(
+          "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border",
+          status === "full"
+            ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-400"
+            : status === "partial"
+            ? "border-amber-500/30 bg-amber-500/15 text-amber-400"
+            : "border-white/10 bg-white/5 text-slate-400",
+        )}
+      >
         {ACCOMMODATION_LABEL[status]}
-      </Badge>
+      </span>
       {locations.length > 0 && (
-        <div className="mt-1 space-y-0.5 text-[11px] text-slate-400 font-body">
+        <div className="mt-0.5 space-y-0.5 text-[10px] text-slate-400 font-body">
           {locations.map((loc, i) => (
-            <div key={i} className="truncate" title={`${loc.room ?? "Unknown room"} · ${loc.building ?? "Unknown building"}`}>
+            <div key={i} className="truncate" title={`${loc.room ?? "Room"} · ${loc.building ?? ""}`}>
               <span className="font-semibold text-slate-300">{loc.room ?? "Room"}</span>
               {loc.building && <span className="text-slate-500"> · {loc.building}</span>}
               {!loc.whole_team && <span className="text-slate-500 font-mono"> ({loc.count})</span>}
@@ -851,24 +890,21 @@ export default function AdminTeams() {
             </div>
 
             {/* DESKTOP: PROFESSIONAL OPERATIONS TABLE */}
-            <div className="hidden lg:block w-full min-w-0">
-              <Table>
+            <div className="hidden lg:block w-full min-w-0 overflow-x-hidden">
+              <Table className="w-full text-xs">
                 <THead>
                   <TR>
-                    <TH className="w-12">#</TH>
-                    <TH>Team & School</TH>
-                    <TH>Status</TH>
-                    <TH>Arrived</TH>
-                    <TH>Last Year Awards</TH>
-                    <TH>Region</TH>
-                    <TH>Country</TH>
-                    <TH className="text-right">Athletes</TH>
-                    <TH>Squad by Age</TH>
-                    <TH>Active by Age Group</TH>
-                    <TH>Accommodation</TH>
-                    <TH>Stay</TH>
-                    <TH>Contact</TH>
-                    <TH className="text-right">Actions</TH>
+                    <TH className="w-8 px-1.5 py-2 text-center text-xs">#</TH>
+                    <TH className="px-2 py-2 text-xs min-w-0">Team & School</TH>
+                    <TH className="px-1.5 py-2 text-xs w-20">Cluster</TH>
+                    <TH className="px-1.5 py-2 text-xs text-center w-16">Active</TH>
+                    <TH className="px-1.5 py-2 text-xs text-center w-20">Arrival</TH>
+                    <TH className="px-1.5 py-2 text-xs">Squad by Age</TH>
+                    <TH className="px-1.5 py-2 text-xs">Age Active</TH>
+                    <TH className="px-1.5 py-2 text-xs">Awards</TH>
+                    <TH className="px-1.5 py-2 text-xs">Accom & Stay</TH>
+                    <TH className="px-1.5 py-2 text-xs">Contact</TH>
+                    <TH className="px-1.5 py-2 text-right text-xs w-28">Actions</TH>
                   </TR>
                 </THead>
                 <TBody>
@@ -876,58 +912,70 @@ export default function AdminTeams() {
                     const isIndia = (t.country || "").toLowerCase() === "india";
                     return (
                       <TR key={t.id} data-testid={`team-row-${t.id}`}>
-                        <TD className="text-slate-500 font-mono text-xs">{i + 1}</TD>
-                        <TD>
-                          <div className="flex items-center gap-2.5">
+                        <TD className="px-1.5 py-2 text-slate-500 font-mono text-[11px] text-center w-8">{i + 1}</TD>
+                        <TD className="px-2 py-2 min-w-0 max-w-[170px] xl:max-w-[240px]">
+                          <div className="flex items-center gap-2 min-w-0">
                             <TeamAvatar name={t.name} size="xs" tone={isIndia ? "gold" : "coral"} />
-                            <div>
-                              <p className="font-heading font-bold text-white text-sm">{t.name}</p>
-                              {t.school && <p className="text-xs text-slate-400 font-body truncate">{t.school}</p>}
-                              {t.school_code && <p className="font-mono text-[10px] text-slate-500">#{t.school_code}</p>}
-                              {t.affiliation_number && (
-                                <p className="font-mono text-[10px] text-slate-500">Aff #{t.affiliation_number}</p>
+                            <div className="min-w-0 flex-1">
+                              <p className="font-heading font-bold text-white text-xs truncate" title={t.name}>{t.name}</p>
+                              {t.school && t.school !== t.name && (
+                                <p className="text-[11px] text-slate-400 font-body truncate leading-tight" title={t.school}>{t.school}</p>
+                              )}
+                              {(t.school_code || t.affiliation_number) && (
+                                <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-500 truncate">
+                                  {t.school_code && <span>#{t.school_code}</span>}
+                                  {t.school_code && t.affiliation_number && <span>·</span>}
+                                  {t.affiliation_number && <span title={`Affiliation #${t.affiliation_number}`}>Aff: {t.affiliation_number}</span>}
+                                </div>
                               )}
                             </div>
                           </div>
                         </TD>
-                        <TD>
+                        <TD className="px-1.5 py-2 min-w-0 max-w-[100px] xl:max-w-[120px]">
+                          <div className="space-y-0.5 min-w-0">
+                            <p className="text-slate-300 font-body text-xs truncate font-medium" title={t.region || "—"}>{t.region || "—"}</p>
+                            <span className={cn("inline-flex items-center rounded px-1 py-0.2 text-[9px] font-bold font-heading", isIndia ? "border border-gold/30 bg-gold/15 text-gold" : "border border-coral/30 bg-coral/15 text-coral")} title={t.country || "General"}>
+                              {t.country || "General"}
+                            </span>
+                          </div>
+                        </TD>
+                        <TD className="px-1.5 py-2 text-center w-16">
                           <ActiveCell team={t} canEdit={canEdit} onToggle={toggleActive} />
                         </TD>
-                        <TD>
+                        <TD className="px-1.5 py-2 text-center w-20">
                           <ArrivedCell team={t} canEdit={canEdit} onToggle={toggleArrived} />
                         </TD>
-                        <TD>
-                          <LastYearAwardsCell
-                            team={t}
-                            canEdit={canEdit}
-                            onEdit={() => setAwardsTeam(t)}
-                          />
+                        <TD className="px-1.5 py-2 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-bold text-white text-xs tabular-nums shrink-0" title={`Total Athletes: ${t.member_count ?? 0}`}>
+                              {t.member_count ?? 0}
+                            </span>
+                            <AgeGroupCountsCell counts={t.age_group_counts} />
+                          </div>
                         </TD>
-                        <TD className="text-slate-300 font-body text-xs">{t.region || "—"}</TD>
-                        <TD>
-                          <Badge tone={isIndia ? "gold" : "coral"} size="sm">
-                            {t.country || "General"}
-                          </Badge>
-                        </TD>
-                        <TD className="text-right font-mono font-bold text-white">
-                          {t.member_count ?? 0}
-                        </TD>
-                        <TD>
-                          <AgeGroupCountsCell counts={t.age_group_counts} />
-                        </TD>
-                        <TD>
+                        <TD className="px-1.5 py-2 min-w-0">
                           <AgeGroupActiveCell team={t} canEdit={canEdit} onToggle={toggleAgeGroupActive} />
                         </TD>
-                        <TD>
-                          <AccommodationCell t={t} />
+                        <TD className="px-1.5 py-2 min-w-0">
+                          <LastYearAwardsCell team={t} canEdit={canEdit} onEdit={() => setAwardsTeam(t)} />
                         </TD>
-                        <TD className="text-slate-300 text-xs font-body">{t.stay || "—"}</TD>
-                        <TD className="text-slate-300 text-xs font-body">{t.contact_name || "—"}</TD>
-                        <TD className="text-right">
-                          <div className="flex items-center justify-end gap-1">
+                        <TD className="px-1.5 py-2 min-w-0 max-w-[120px]">
+                          <AccommodationCell t={t} />
+                          {t.stay && (
+                            <p className="text-[10px] text-slate-400 font-mono truncate mt-0.5" title={`Stay: ${t.stay}`}>
+                              Stay: {t.stay}
+                            </p>
+                          )}
+                        </TD>
+                        <TD className="px-1.5 py-2 text-slate-300 text-xs font-body min-w-0 max-w-[100px]">
+                          <p className="truncate" title={t.contact_name || "—"}>{t.contact_name || "—"}</p>
+                          {t.contact_phone && <p className="font-mono text-[10px] text-slate-500 truncate" title={t.contact_phone}>{t.contact_phone}</p>}
+                        </TD>
+                        <TD className="px-1.5 py-2 text-right w-28">
+                          <div className="flex items-center justify-end gap-0.5">
                             <Button
                               variant="ghost"
-                              size="icon-sm"
+                              className="h-7 w-7 p-0 shrink-0"
                               onClick={() => setQrTeam({ id: t.id, name: t.name })}
                               data-testid={`qr-team-${t.id}`}
                               title="Generate Team QR"
@@ -936,16 +984,21 @@ export default function AdminTeams() {
                             </Button>
                             <Button
                               variant="ghost"
-                              size="icon-sm"
+                              className="h-7 w-7 p-0 shrink-0 relative"
                               onClick={() => setPhotosTeam(t)}
                               data-testid={`manage-photos-${t.id}`}
                               title={`Manage Photos (${t.photos?.length ?? 0})`}
                             >
                               <ImageIcon className="h-3.5 w-3.5 text-slate-300" />
+                              {t.photos && t.photos.length > 0 && (
+                                <span className="absolute -top-0.5 -right-0.5 h-3 min-w-3 px-0.5 rounded-full bg-gold text-[8px] font-mono font-black text-obsidian flex items-center justify-center">
+                                  {t.photos.length}
+                                </span>
+                              )}
                             </Button>
                             <a
                               href={`${BASE_URL}/api/export/idcards/team/${t.id}.pdf`}
-                              className="inline-flex items-center justify-center gap-2 rounded-md font-body tracking-wide transition-colors text-slate-400 hover:bg-white/10 hover:text-white h-8 w-8 p-0"
+                              className="inline-flex items-center justify-center rounded text-slate-400 hover:bg-white/10 hover:text-white h-7 w-7 p-0 transition-colors shrink-0"
                               data-testid={`download-team-idcards-${t.id}`}
                               title="Download Team ID Cards (PDF)"
                             >
@@ -954,7 +1007,7 @@ export default function AdminTeams() {
                             {canEdit && (
                               <Button
                                 variant="ghost"
-                                size="icon-sm"
+                                className="h-7 w-7 p-0 shrink-0"
                                 onClick={() => {
                                   setForm(t);
                                   setOpen(true);
@@ -968,7 +1021,7 @@ export default function AdminTeams() {
                             {canEdit && (
                               <Button
                                 variant="ghost"
-                                size="icon-sm"
+                                className="h-7 w-7 p-0 shrink-0 hover:bg-red-500/15"
                                 onClick={() => remove(t.id)}
                                 data-testid={`delete-team-${t.id}`}
                                 title="Delete Team"

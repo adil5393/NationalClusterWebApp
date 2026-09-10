@@ -375,7 +375,7 @@ export function AdminLayout() {
         </header>
 
         {/* OPERATIONS CONTENT OUTLET */}
-        <main className="flex-1 p-4 sm:p-6 md:p-8">
+        <main className="flex-1 p-4 sm:p-6 lg:p-4 xl:p-6">
           <PermissionsContext.Provider value={me}>
             <Outlet />
           </PermissionsContext.Provider>
