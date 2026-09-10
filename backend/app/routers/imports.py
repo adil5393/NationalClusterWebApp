@@ -1,12 +1,16 @@
 """Bulk import of teams and participants from CSV / XLSX spreadsheets."""
 import io
+import re
 from datetime import date, datetime
 
 import pandas as pd
+import requests
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from .. import models
+from ..config import settings
 from ..database import get_db
 
 router = APIRouter(prefix="/api/import", tags=["import"])
@@ -107,32 +111,10 @@ def _find_col(columns, *prefixes: str) -> "str | None":
     return None
 
 
-@router.post("/team-details")
-async def import_team_details(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    """The school registration form (backend/assets/data/form.xlsx is a sample
-    of its shape): one row per school with its school code, coach(es) +
-    manager, contact info, team photo link, and stay (fooding/lodging)
-    arrangement. Updates the matching Team —
-    looked up by school_code first, falling back to affiliation_number for a
-    row whose "School Code" cell is actually that school's affiliation
-    number instead — and upserts Coach rows tagged role="Coach"/"Manager" —
-    re-uploading a corrected sheet is safe, existing rows are only ever
-    updated in place, never duplicated or deleted. Multiple coaches/numbers
-    are comma-separated in their own cell and paired by position; a coach
-    past the last given number is still added, just with no phone captured.
-
-    Deliberately does NOT create a Team for a school code this doesn't
-    already know — a team has to exist first (via the attendance-list roster
-    import, which is the actual source of truth for who's attending) before
-    there's anywhere to attach a coach or photo to. Unrecognized codes are
-    reported back instead, so the organizer knows which schools still need
-    their roster imported."""
-    content = await file.read()
-    try:
-        df = pd.read_excel(io.BytesIO(content)) if (file.filename or "").lower().endswith((".xlsx", ".xls")) else pd.read_csv(io.BytesIO(content))
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(400, f"Could not parse file: {e}")
-
+def _import_team_details_df(df: pd.DataFrame, db: Session) -> dict:
+    """Shared upsert logic behind both /team-details (uploaded file) and
+    /team-details/sheet (live Google Sheet) — identical processing either
+    way, they only differ in how the DataFrame is obtained."""
     col_school_name = _find_col(df.columns, "school name")
     col_coach_name = _find_col(df.columns, "coach name")
     col_manager_name = _find_col(df.columns, "manager name")
@@ -220,12 +202,110 @@ async def import_team_details(file: UploadFile = File(...), db: Session = Depend
     db.commit()
     return {
         "entity": "team-details",
-        "teams": {"updated": teams_updated},
+        "teams": {
+            # Every row with a School Code cell — whether or not it matched an
+            # existing Team — so the caller can show "N schools found in the
+            # sheet" regardless of how many actually updated something.
+            "in_sheet": teams_updated + len(unmatched_school_codes),
+            "updated": teams_updated,
+        },
         "coaches": {"created": coaches_created, "updated": coaches_updated},
         "photos": {"added": photos_added},
         "unmatched_school_codes": unmatched_school_codes,
         "errors": errors,
     }
+
+
+@router.post("/team-details")
+async def import_team_details(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """The school registration form (backend/assets/data/form.xlsx is a sample
+    of its shape): one row per school with its school code, coach(es) +
+    manager, contact info, team photo link, and stay (fooding/lodging)
+    arrangement. Updates the matching Team —
+    looked up by school_code first, falling back to affiliation_number for a
+    row whose "School Code" cell is actually that school's affiliation
+    number instead — and upserts Coach rows tagged role="Coach"/"Manager" —
+    re-uploading a corrected sheet is safe, existing rows are only ever
+    updated in place, never duplicated or deleted. Multiple coaches/numbers
+    are comma-separated in their own cell and paired by position; a coach
+    past the last given number is still added, just with no phone captured.
+
+    Deliberately does NOT create a Team for a school code this doesn't
+    already know — a team has to exist first (via the attendance-list roster
+    import, which is the actual source of truth for who's attending) before
+    there's anywhere to attach a coach or photo to. Unrecognized codes are
+    reported back instead, so the organizer knows which schools still need
+    their roster imported.
+
+    See import_team_details_from_sheet below for the live-Google-Sheet
+    equivalent of this same upsert — this stays as the file-upload fallback."""
+    content = await file.read()
+    try:
+        df = pd.read_excel(io.BytesIO(content)) if (file.filename or "").lower().endswith((".xlsx", ".xls")) else pd.read_csv(io.BytesIO(content))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, f"Could not parse file: {e}")
+    return _import_team_details_df(df, db)
+
+
+class SheetSyncRequest(BaseModel):
+    # Optional — omit to resync the org's configured sheet (settings.team_details_sheet_url);
+    # pass one only to sync a different, one-off sheet.
+    sheet_url: "str | None" = None
+
+
+_SHEET_ID_RE = re.compile(r"/d/([a-zA-Z0-9_-]+)")
+_SHEET_GID_RE = re.compile(r"[#&?]gid=(\d+)")
+
+
+def _parse_sheet_url(sheet_url: str) -> "tuple[str, str | None]":
+    m = _SHEET_ID_RE.search(sheet_url.strip())
+    if not m:
+        raise HTTPException(400, "Couldn't find a sheet ID in that link — paste the full Google Sheets share URL.")
+    gid_m = _SHEET_GID_RE.search(sheet_url)
+    return m.group(1), (gid_m.group(1) if gid_m else None)
+
+
+def _fetch_sheet_csv(sheet_url: str) -> pd.DataFrame:
+    """Google's unauthenticated CSV export of one sheet tab — works only when
+    the sheet is shared "Anyone with the link – Viewer" (or public); a
+    private sheet 200s with an HTML sign-in page instead of CSV, which is why
+    this checks the response's content-type rather than just its status code."""
+    sheet_id, gid = _parse_sheet_url(sheet_url)
+    export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+    if gid:
+        export_url += f"&gid={gid}"
+    try:
+        resp = requests.get(export_url, timeout=15)
+    except requests.RequestException as e:
+        raise HTTPException(502, f"Could not reach Google Sheets: {e}")
+    if resp.status_code != 200 or "csv" not in resp.headers.get("content-type", ""):
+        raise HTTPException(
+            400,
+            "Could not read that sheet as CSV — make sure it's shared as \"Anyone with the link – Viewer\" "
+            "and the link is correct.",
+        )
+    try:
+        return pd.read_csv(io.BytesIO(resp.content))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, f"Could not parse the sheet's data: {e}")
+
+
+@router.post("/team-details/sheet")
+async def import_team_details_from_sheet(payload: SheetSyncRequest = SheetSyncRequest(), db: Session = Depends(get_db)):
+    """Same upsert as import_team_details above, just sourced from a live
+    Google Sheet instead of an uploaded file — no download/upload round-trip,
+    just re-sync anytime the sheet changes. Defaults to the org's configured
+    sheet (settings.team_details_sheet_url, set once via the
+    TEAM_DETAILS_SHEET_URL env var) so the organizer portal's "Resync"
+    button needs no input; pass sheet_url explicitly to sync a different,
+    one-off sheet instead. Only the first tab is read unless the URL
+    includes a #gid=... fragment (i.e. the link you get after clicking a
+    specific tab)."""
+    sheet_url = payload.sheet_url or settings.team_details_sheet_url
+    if not sheet_url:
+        raise HTTPException(400, "No Google Sheet is configured (TEAM_DETAILS_SHEET_URL) — pass sheet_url instead.")
+    df = _fetch_sheet_csv(sheet_url)
+    return _import_team_details_df(df, db)
 
 
 REQUIRED_STUDENT_SHEET_COLUMNS = {"schcode", "SchoolName", "registrationNo", "studentname", "gender", "dob"}

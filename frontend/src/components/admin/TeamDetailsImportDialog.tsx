@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { UploadCloud, FileSpreadsheet, CheckCircle2, AlertTriangle } from "lucide-react";
+import { UploadCloud, FileSpreadsheet, CheckCircle2, AlertTriangle, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
 interface Result {
-  teams: { updated: number };
+  teams: { in_sheet: number; updated: number };
   coaches: { created: number; updated: number };
   photos: { added: number };
   unmatched_school_codes: { school_code: string; school_name: string }[];
@@ -22,9 +22,22 @@ export function TeamDetailsImportDialog({
   onClose: () => void;
   onDone: () => void;
 }) {
+  const [mode, setMode] = useState<"sheet" | "file">("sheet");
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<Result | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const applyResult = (data: Result) => {
+    setResult(data);
+    if (data.unmatched_school_codes.length > 0) {
+      toast.warning(
+        `${data.teams.in_sheet} school(s) found — ${data.unmatched_school_codes.length} have no matching team yet`,
+      );
+    } else {
+      toast.success(`${data.teams.in_sheet} school(s) found — synced ${data.teams.updated} teams`);
+    }
+    onDone();
+  };
 
   const upload = async () => {
     if (!file) return toast.error("Choose the school registration form .xlsx file");
@@ -34,15 +47,22 @@ export function TeamDetailsImportDialog({
     fd.append("file", file);
     try {
       const r = await api.post("/import/team-details", fd, { headers: { "Content-Type": undefined } as any });
-      setResult(r.data);
-      if (r.data.unmatched_school_codes.length > 0) {
-        toast.warning(`${r.data.unmatched_school_codes.length} school code(s) have no matching team yet`);
-      } else {
-        toast.success(`Synced ${r.data.teams.updated} teams`);
-      }
-      onDone();
+      applyResult(r.data);
     } catch (e: any) {
       toast.error(e?.response?.data?.detail ?? "Import failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sync = async () => {
+    setBusy(true);
+    setResult(null);
+    try {
+      const r = await api.post("/import/team-details/sheet", {});
+      applyResult(r.data);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Sync failed");
     } finally {
       setBusy(false);
     }
@@ -63,24 +83,54 @@ export function TeamDetailsImportDialog({
           <p className="text-slate-400 text-[11px] leading-relaxed border-t border-white/5 pt-1.5">
             Matches teams by School Code — a team has to already exist (import the attendance/roster
             list first) before this can attach a coach, manager, or photo to it. Codes with no matching
-            team are reported below instead of being skipped silently. Re-uploading a corrected sheet is
-            safe, existing rows are only ever updated, never duplicated.
+            team are reported below instead of being skipped silently. Re-syncing is safe, existing rows
+            are only ever updated, never duplicated.
           </p>
         </div>
 
-        <label className="flex h-28 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-white/15 bg-obsidian-950 p-4 text-xs text-slate-400 hover:border-gold hover:text-white transition-all">
-          <UploadCloud className="h-7 w-7 text-gold" />
-          <span className="font-semibold text-center truncate max-w-full">
-            {file ? file.name : "Click or drag the registration form (.csv, .xlsx) to upload"}
-          </span>
-          <input
-            type="file"
-            accept=".csv,.xlsx,.xls"
-            className="hidden"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            data-testid="team-details-import-file-input"
-          />
-        </label>
+        <div className="flex gap-1.5 rounded-lg border border-white/10 bg-obsidian-950 p-1" data-testid="team-details-import-mode-toggle">
+          <button
+            type="button"
+            onClick={() => setMode("sheet")}
+            className={`flex-1 rounded-md py-1.5 text-xs font-semibold transition-colors ${
+              mode === "sheet" ? "bg-gold text-obsidian-950" : "text-slate-400 hover:text-white"
+            }`}
+            data-testid="team-details-import-mode-sheet"
+          >
+            Google Sheet
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("file")}
+            className={`flex-1 rounded-md py-1.5 text-xs font-semibold transition-colors ${
+              mode === "file" ? "bg-gold text-obsidian-950" : "text-slate-400 hover:text-white"
+            }`}
+            data-testid="team-details-import-mode-file"
+          >
+            Upload File
+          </button>
+        </div>
+
+        {mode === "sheet" ? (
+          <div className="rounded-xl border border-white/10 bg-obsidian-950 p-3.5 text-xs text-slate-400">
+            Pulls the latest data straight from the school registration form's Google Sheet — nothing to
+            upload, just hit Resync whenever the sheet has new responses.
+          </div>
+        ) : (
+          <label className="flex h-28 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-white/15 bg-obsidian-950 p-4 text-xs text-slate-400 hover:border-gold hover:text-white transition-all">
+            <UploadCloud className="h-7 w-7 text-gold" />
+            <span className="font-semibold text-center truncate max-w-full">
+              {file ? file.name : "Click or drag the registration form (.csv, .xlsx) to upload"}
+            </span>
+            <input
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              className="hidden"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              data-testid="team-details-import-file-input"
+            />
+          </label>
+        )}
 
         {result && (
           <div className="space-y-3">
@@ -91,6 +141,9 @@ export function TeamDetailsImportDialog({
               <div className="flex items-center gap-2 font-heading font-bold text-emerald-400">
                 <CheckCircle2 className="h-4 w-4" /> Import Complete
               </div>
+              <p className="font-mono">
+                Schools found in sheet: <strong className="text-white">{result.teams.in_sheet}</strong>
+              </p>
               <p className="font-mono">
                 Teams updated: <strong className="text-white">{result.teams.updated}</strong>
               </p>
@@ -142,11 +195,19 @@ export function TeamDetailsImportDialog({
           <Button
             variant="gold"
             size="sm"
-            onClick={upload}
-            disabled={busy || !file}
+            onClick={mode === "sheet" ? sync : upload}
+            disabled={busy || (mode === "file" && !file)}
             data-testid="run-team-details-import-btn"
           >
-            {busy ? "Importing…" : "Start Import"}
+            {busy ? (
+              mode === "sheet" ? "Syncing…" : "Importing…"
+            ) : mode === "sheet" ? (
+              <span className="flex items-center gap-1.5">
+                <RefreshCw className="h-3.5 w-3.5" /> Resync
+              </span>
+            ) : (
+              "Start Import"
+            )}
           </Button>
         </div>
       </div>

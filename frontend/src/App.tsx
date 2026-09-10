@@ -5,6 +5,7 @@ import { PublicLayout } from "@/components/public/PublicLayout";
 import { AdminLayout } from "@/components/admin/AdminLayout";
 import { ComingSoon } from "@/components/admin/ComingSoon";
 import { Spinner } from "@/components/ui/feedback";
+import { ScrollToTop } from "@/components/ScrollToTop";
 
 // Public route lazy imports
 const Home = lazy(() => import("@/pages/public/Home"));
@@ -61,6 +62,7 @@ function RouteFallback() {
 export default function App() {
   return (
     <Suspense fallback={<RouteFallback />}>
+      <ScrollToTop />
       <Routes>
         <Route element={<PublicLayout />}>
           <Route
