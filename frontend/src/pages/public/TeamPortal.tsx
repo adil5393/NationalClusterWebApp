@@ -118,9 +118,10 @@ export default function TeamPortal() {
   const [photoIndex, setPhotoIndex] = useState(0);
   const [failedPhotoIndexes, setFailedPhotoIndexes] = useState<Set<number>>(new Set());
   const [photoTarget, setPhotoTarget] = useState<TeamDetail["participants"][number] | null>(null);
-  const [photoRegNo, setPhotoRegNo] = useState("");
+  const [photoDob, setPhotoDob] = useState("");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoAttemptsLeft, setPhotoAttemptsLeft] = useState<number | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -166,18 +167,21 @@ export default function TeamPortal() {
 
   const closePhotoDialog = () => {
     setPhotoTarget(null);
-    setPhotoRegNo("");
+    setPhotoDob("");
     setPhotoFile(null);
+    setPhotoAttemptsLeft(null);
   };
+
+  const DOB_RE = /^\d{2}\/\d{2}\/\d{4}$/;
 
   const uploadParticipantPhoto = async () => {
     if (!photoTarget) return;
-    if (!photoRegNo.trim()) return toast.error("Enter the participant's registration number");
+    if (!DOB_RE.test(photoDob.trim())) return toast.error("Enter date of birth as DD/MM/YYYY");
     if (!photoFile) return toast.error("Choose or take a photo");
     setPhotoBusy(true);
     try {
       const fd = new FormData();
-      fd.append("registration_no", photoRegNo.trim());
+      fd.append("date_of_birth", photoDob.trim());
       fd.append("file", photoFile);
       const r = await api.post<{ photo_url: string }>(`/public/participants/${photoTarget.id}/photo`, fd, {
         headers: { "Content-Type": undefined } as any,
@@ -195,9 +199,18 @@ export default function TeamPortal() {
       toast.success("Photo uploaded");
       closePhotoDialog();
     } catch (e: any) {
-      if (e?.response?.status === 401) toast.error("Registration number didn't match");
-      else if (e?.response?.status === 429) toast.error("Too many attempts — try again later");
-      else toast.error("Could not upload photo");
+      const status = e?.response?.status;
+      const detail = e?.response?.data?.detail;
+      const remaining = typeof detail?.attempts_remaining === "number" ? detail.attempts_remaining : null;
+      if (status === 401 || status === 400) {
+        setPhotoAttemptsLeft(remaining);
+        toast.error(typeof detail?.message === "string" ? detail.message : "Date of birth didn't match");
+      } else if (status === 429) {
+        setPhotoAttemptsLeft(0);
+        toast.error("Too many attempts — try again later");
+      } else {
+        toast.error("Could not upload photo");
+      }
     } finally {
       setPhotoBusy(false);
     }
@@ -613,7 +626,7 @@ export default function TeamPortal() {
         </div>
       </Dialog>
 
-      {/* PARTICIPANT PHOTO UPLOAD — gated by that participant's own registration number */}
+      {/* PARTICIPANT PHOTO UPLOAD — gated by that participant's own date of birth */}
       <Dialog
         open={!!photoTarget}
         onClose={closePhotoDialog}
@@ -622,17 +635,24 @@ export default function TeamPortal() {
       >
         <div className="space-y-4">
           <p className="text-xs text-slate-400 font-body">
-            Enter this athlete's registration number to confirm you're authorized to add their photo.
+            Enter this athlete's date of birth to confirm you're authorized to add their photo.
           </p>
           <div>
             <Input
-              placeholder="Registration number"
-              value={photoRegNo}
-              onChange={(e) => setPhotoRegNo(e.target.value)}
-              data-testid="participant-photo-regno-input"
+              placeholder="Date of birth (DD/MM/YYYY)"
+              value={photoDob}
+              onChange={(e) => setPhotoDob(e.target.value)}
+              data-testid="participant-photo-dob-input"
               autoFocus
             />
           </div>
+          {photoAttemptsLeft !== null && (
+            <p className="text-xs font-semibold text-red-400" data-testid="participant-photo-attempts-warning">
+              {photoAttemptsLeft > 0
+                ? `Date of birth didn't match — ${photoAttemptsLeft} attempt${photoAttemptsLeft === 1 ? "" : "s"} left.`
+                : "Too many failed attempts — try again later."}
+            </p>
+          )}
           <div>
             <input
               type="file"

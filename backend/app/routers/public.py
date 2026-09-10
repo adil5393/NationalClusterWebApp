@@ -474,14 +474,14 @@ def public_about_images():
     return [f"/api/assets/about/{img.name}" for img in images]
 
 
-# Wrong-registration-number attempts per participant_id, in-memory only (fine
+# Wrong-date-of-birth attempts per participant_id, in-memory only (fine
 # at this app's scale, and resets on restart — same "no persistence needed"
 # tradeoff already accepted by reveal_team_contacts above having no limiter
 # at all). Guards the one new unauthenticated disk-write surface this file
-# exposes: without it, someone could brute-force a participant's
-# registration number to plant a photo on their record.
+# exposes: without it, someone could brute-force a participant's date of
+# birth to plant a photo on their record.
 _PHOTO_UPLOAD_WINDOW_SECONDS = 15 * 60
-_PHOTO_UPLOAD_MAX_ATTEMPTS = 8
+_PHOTO_UPLOAD_MAX_ATTEMPTS = 5
 _failed_photo_attempts: dict[int, list[float]] = {}
 
 
@@ -492,20 +492,24 @@ def _photo_upload_rate_limited(participant_id: int) -> bool:
     return len(attempts) >= _PHOTO_UPLOAD_MAX_ATTEMPTS
 
 
-def _record_failed_photo_attempt(participant_id: int) -> None:
-    _failed_photo_attempts.setdefault(participant_id, []).append(time.time())
+def _record_failed_photo_attempt(participant_id: int) -> int:
+    """Records the attempt and returns how many more are allowed before the
+    rate limiter kicks in, so callers can warn the user before they're locked out."""
+    attempts = _failed_photo_attempts.setdefault(participant_id, [])
+    attempts.append(time.time())
+    return max(0, _PHOTO_UPLOAD_MAX_ATTEMPTS - len(attempts))
 
 
 @router.post("/participants/{participant_id}/photo")
 async def upload_participant_photo(
     participant_id: int,
-    registration_no: str = Form(...),
+    date_of_birth: str = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
     """A coach/manager uploads a photo for one of their own participants,
-    proving they're entitled to by typing that participant's registration
-    number — no login. Mirrors reveal_team_contacts' "type a secret to
+    proving they're entitled to by typing that participant's date of birth
+    (dd/mm/yyyy) — no login. Mirrors reveal_team_contacts' "type a secret to
     unlock an action" shape above, just with a per-record secret instead of
     an admin password."""
     participant = db.get(models.Participant, participant_id)
@@ -515,11 +519,15 @@ async def upload_participant_photo(
     if _photo_upload_rate_limited(participant_id):
         raise HTTPException(429, "Too many attempts — try again later")
 
-    submitted = registration_no.strip().lower()
-    actual = (participant.registration_no or "").strip().lower()
-    if not actual or submitted != actual:
-        _record_failed_photo_attempt(participant_id)
-        raise HTTPException(401, "Registration number does not match")
+    try:
+        submitted_dob = datetime.strptime(date_of_birth.strip(), "%d/%m/%Y").date()
+    except ValueError:
+        remaining = _record_failed_photo_attempt(participant_id)
+        raise HTTPException(400, {"message": "Date of birth must be in dd/mm/yyyy format", "attempts_remaining": remaining})
+
+    if not participant.date_of_birth or submitted_dob != participant.date_of_birth:
+        remaining = _record_failed_photo_attempt(participant_id)
+        raise HTTPException(401, {"message": "Date of birth does not match", "attempts_remaining": remaining})
 
     ext = Path(file.filename or "").suffix.lower()
     if ext not in VALID_IMAGE_EXTENSIONS:
