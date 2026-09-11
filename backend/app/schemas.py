@@ -510,6 +510,9 @@ class ParticipantRead(ORMModel, ParticipantBase):
 
 class AttendanceUpdate(BaseModel):
     present: bool
+    # Required only when flipping an already-present member back to absent
+    # (see routers/attendance.py) — marking someone present needs no password.
+    admin_password: "str | None" = None
 
 
 # --- Coaches / Managers ---
@@ -1010,3 +1013,42 @@ class TaskUpdate(BaseModel):
         if v is not None and v not in TASK_STATUSES:
             raise ValueError(f"Invalid status '{v}'")
         return v
+
+
+# --- Payments (registration-fee billing/payment/refund ledger, see routers/payments.py) ---
+class BillCreate(BaseModel):
+    # Rs. charged per newly-billed member; defaults to receipt.REGISTRATION_FEE
+    # (500) when omitted. Applies uniformly to every member this bill covers.
+    per_member_amount: Optional[int] = None
+    discount: Optional[int] = 0  # flat Rs. knocked off the computed subtotal
+    payment_date: Optional[date] = None  # invoice date; defaults to today
+
+
+class PaymentCreate(BaseModel):
+    amount: int  # Rs. actually received now; capped at the team's outstanding balance
+    payment_mode: str  # "Cash" | "UPI"
+    transaction_id: Optional[str] = None  # required when payment_mode == "UPI"
+    payment_date: Optional[date] = None  # defaults to today
+
+
+class RefundCreate(BaseModel):
+    amount: int
+    reason: str
+    payment_mode: str  # "Cash" | "UPI"
+    transaction_id: Optional[str] = None  # required when payment_mode == "UPI"
+    payment_date: Optional[date] = None  # defaults to today
+
+
+class PaymentRead(ORMModel):
+    id: int
+    team_id: int
+    kind: str
+    amount: int
+    payment_mode: Optional[str] = None
+    transaction_id: Optional[str] = None
+    payment_date: date
+    reason: Optional[str] = None
+    members: Optional[list] = None
+    subtotal: Optional[int] = None
+    discount: Optional[int] = None
+    created_at: datetime

@@ -88,6 +88,48 @@ class Team(TimestampMixin, Base):
     transport = relationship("TransportAssignment", back_populates="team")
     last_year_awards = relationship("TeamLastYearAward", back_populates="team", cascade="all, delete-orphan")
     inactive_age_groups = relationship("TeamInactiveAgeGroup", back_populates="team", cascade="all, delete-orphan")
+    payments = relationship("Payment", back_populates="team", cascade="all, delete-orphan", order_by="Payment.id")
+
+
+class Payment(TimestampMixin, Base):
+    """One transaction in a team's registration-fee ledger (routers/payments.py,
+    printed via receipt.py). An append-only ledger — rows are never edited or
+    deleted — so a team's financial history is always exactly the sum of its
+    rows, and a re-printed document stays faithful to what actually happened
+    even if attendance changes afterwards. Three kinds:
+
+    - BILL: an invoice — declares what a set of members owe, but doesn't mean
+      money has changed hands yet (no payment_mode/transaction_id). `members`
+      snapshots exactly who it charged for ({"kind": "participant"|"coach",
+      "id", "name", "role"} per member), so a later bill's UI can compute
+      "who's present but not yet billed" by diffing against every prior
+      BILL's members for that team. `subtotal` (per-member amount x count)
+      and `discount` are kept alongside the final `amount` (subtotal minus
+      discount) so a re-printed invoice shows the same breakdown later.
+    - PAYMENT: money actually received against the team's outstanding
+      balance (total BILL amount minus total PAYMENT amount so far) — free-form,
+      capped at that balance, supports partial payments over multiple rows.
+    - REFUND: money returned, free-form, capped at the team's net-received
+      total (total PAYMENT minus total REFUND so far).
+
+    BILL/PAYMENT/REFUND each populate a different subset of the optional
+    columns below (members+subtotal+discount / payment_mode+transaction_id /
+    payment_mode+transaction_id+reason respectively) — see routers/payments.py
+    for the exact validation per kind."""
+    __tablename__ = "payments"
+    id = Column(Integer, primary_key=True)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    kind = Column(String(10), nullable=False)  # "BILL" | "PAYMENT" | "REFUND"
+    amount = Column(Integer, nullable=False)  # Rs., always positive regardless of kind
+    payment_mode = Column(String(10))  # "Cash" | "UPI" — PAYMENT/REFUND only, null for BILL
+    transaction_id = Column(String(100))  # UPI reference; null for Cash or for a BILL
+    payment_date = Column(Date, nullable=False)
+    reason = Column(Text)  # REFUND only
+    members = Column(JSON)  # BILL only
+    subtotal = Column(Integer)  # BILL only: per_member_amount x member count, before discount
+    discount = Column(Integer)  # BILL only: flat Rs. knocked off subtotal to get `amount`
+
+    team = relationship("Team", back_populates="payments")
 
 
 class TeamPhoto(TimestampMixin, Base):

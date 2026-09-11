@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Pencil, Trash2, QrCode, Upload, Trophy, X, Shield, Users, Search, ImageIcon, IdCard } from "lucide-react";
+import { Plus, Pencil, Trash2, QrCode, Upload, Trophy, X, Shield, Users, Search, ImageIcon, IdCard, Receipt } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { QRDialog } from "@/components/admin/QRDialog";
 import { ImportDialog } from "@/components/admin/ImportDialog";
 import { AttendanceImportDialog } from "@/components/admin/AttendanceImportDialog";
 import { TeamDetailsImportDialog } from "@/components/admin/TeamDetailsImportDialog";
+import { ReceiptDialog } from "@/components/admin/ReceiptDialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { useModuleAccess } from "@/lib/permissions";
@@ -471,6 +472,7 @@ export default function AdminTeams() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [qrTeam, setQrTeam] = useState<{ id: number; name: string } | null>(null);
+  const [receiptTeam, setReceiptTeam] = useState<{ id: number; name: string } | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [attendanceImportOpen, setAttendanceImportOpen] = useState(false);
   const [teamDetailsImportOpen, setTeamDetailsImportOpen] = useState(false);
@@ -1004,6 +1006,15 @@ export default function AdminTeams() {
                             >
                               <IdCard className="h-3.5 w-3.5" />
                             </a>
+                            <Button
+                              variant="ghost"
+                              className="h-7 w-7 p-0 shrink-0"
+                              onClick={() => setReceiptTeam({ id: t.id, name: t.name })}
+                              data-testid={`generate-receipt-${t.id}`}
+                              title="Billing & Refunds"
+                            >
+                              <Receipt className="h-3.5 w-3.5 text-slate-300" />
+                            </Button>
                             {canEdit && (
                               <Button
                                 variant="ghost"
@@ -1147,6 +1158,8 @@ export default function AdminTeams() {
         url={qrTeam ? `${window.location.origin}/teams/${qrTeam.id}` : ""}
         title={qrTeam?.name ?? ""}
       />
+
+      <ReceiptDialog open={receiptTeam !== null} onClose={() => setReceiptTeam(null)} team={receiptTeam} />
 
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} type="teams" onDone={load} />
       <AttendanceImportDialog open={attendanceImportOpen} onClose={() => setAttendanceImportOpen(false)} onDone={load} />

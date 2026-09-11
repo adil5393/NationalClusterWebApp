@@ -98,10 +98,12 @@ credentials.json
 *test*.py
 backend/make_school_images.py
 # Runtime-uploaded content (gallery/participant/team photos) lives under
-# here and is never committed — but id_card_template.png is a versioned
-# design asset the app needs to exist on every checkout, so it's carved out.
+# here and is never committed — but id_card_template.png and the receipt's
+# school-logo monogram are versioned design assets the app needs to exist on
+# every checkout, so they're carved out.
 backend/assets/*
 !backend/assets/templates/
+!backend/assets/monogram/
 
 frontend/public/images/
 

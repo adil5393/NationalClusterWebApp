@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Download, FileSpreadsheet, Trash2, Layers, RefreshCw, CheckSquare, Bus, ShieldCheck, UserCog, IdCard } from "lucide-react";
+import { AlertTriangle, Download, FileSpreadsheet, Trash2, Layers, RefreshCw, CheckSquare, Bus, ShieldCheck, UserCog, IdCard, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -179,6 +179,15 @@ export default function Reports() {
                 description="Which school delegations have arrived at the venue."
                 href={`${BACKEND}/api/export/arrival.xlsx`}
                 testId="download-arrival-report-btn"
+              />
+            )}
+            {teamsAccess.canView && (
+              <ReportDownloadCard
+                icon={Wallet}
+                title="Payments Ledger"
+                description="Per-team registration-fee billing, refunds & net collected."
+                href={`${BACKEND}/api/export/payments.xlsx`}
+                testId="download-payments-report-btn"
               />
             )}
             {teamsAccess.canView && (

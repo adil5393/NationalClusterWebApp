@@ -717,3 +717,199 @@ def export_idcard_all(db: Session = Depends(get_db)):
     _flush()
     pdf = id_card.build_pdf(sheets, dpi=dpi)
     return _pdf_response(pdf, "idcards-all-teams.pdf")
+
+
+@router.get("/payments.xlsx", dependencies=[Depends(require_module("teams"))])
+def export_payments_xlsx(db: Session = Depends(get_db)):
+    """Per-team registration-fee ledger — total billed, total paid, balance
+    due, total refunded, net collected, and the most recent date of each
+    transaction kind — one row per team that has at least one payment
+    record. Individual transactions live in the Organizer Portal's Bill/
+    Payment/Refund dialog (routers/payments.py); this is the roll-up for
+    finance tracking."""
+    teams = db.query(models.Team).order_by(models.Team.name).all()
+    rows = []
+    for t in teams:
+        bills = [p for p in t.payments if p.kind == "BILL"]
+        pays = [p for p in t.payments if p.kind == "PAYMENT"]
+        refunds = [p for p in t.payments if p.kind == "REFUND"]
+        if not bills and not pays and not refunds:
+            continue
+        billed = sum(p.amount for p in bills)
+        paid = sum(p.amount for p in pays)
+        refunded = sum(p.amount for p in refunds)
+        rows.append({
+            "team": t, "billed": billed, "paid": paid, "refunded": refunded,
+            "balance_due": billed - paid, "net_collected": paid - refunded,
+            "last_bill": max((p.payment_date for p in bills), default=None),
+            "last_payment": max((p.payment_date for p in pays), default=None),
+            "last_refund": max((p.payment_date for p in refunds), default=None),
+            "transaction_count": len(t.payments),
+        })
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Payments Ledger"
+    max_cols = 11
+
+    next_row = style_header_banner(
+        ws,
+        tournament_name="REGISTRATION FEE LEDGER",
+        subtitle="Per-Team Billing, Payments, Refunds & Net Collection",
+        badge_text="OFFICIAL FINANCE EXPORT",
+        max_col=max_cols,
+        start_row=1,
+    )
+
+    total_billed = sum(r["billed"] for r in rows)
+    total_paid = sum(r["paid"] for r in rows)
+    total_refunded = sum(r["refunded"] for r in rows)
+    cards = [
+        ("Teams Billed", len(rows), "With Transactions"),
+        ("Total Billed", f"Rs. {total_billed:,}", "Invoiced"),
+        ("Total Paid", f"Rs. {total_paid:,}", "Received"),
+        ("Net Collected", f"Rs. {total_paid - total_refunded:,}", "Paid − Refunded"),
+    ]
+    next_row = style_kpi_cards(ws, cards, start_row=next_row, card_width_cols=1)
+
+    next_row = style_section_bar(ws, "Team-Wise Ledger", next_row, max_col=max_cols, icon="💰")
+
+    headers = [
+        ("SCHOOL / TEAM", 30, ALIGN_HEADER_LEFT),
+        ("SCHOOL CODE", 14, ALIGN_HEADER_CENTER),
+        ("TOTAL BILLED (RS.)", 16, ALIGN_HEADER_CENTER),
+        ("TOTAL PAID (RS.)", 16, ALIGN_HEADER_CENTER),
+        ("BALANCE DUE (RS.)", 16, ALIGN_HEADER_CENTER),
+        ("TOTAL REFUNDED (RS.)", 16, ALIGN_HEADER_CENTER),
+        ("NET COLLECTED (RS.)", 16, ALIGN_HEADER_CENTER),
+        ("LAST BILL DATE", 16, ALIGN_HEADER_CENTER),
+        ("LAST PAYMENT DATE", 16, ALIGN_HEADER_CENTER),
+        ("LAST REFUND DATE", 16, ALIGN_HEADER_CENTER),
+        ("TRANSACTIONS", 14, ALIGN_HEADER_CENTER),
+    ]
+
+    ws.row_dimensions[next_row].height = 22
+    for col_idx, (th_label, _, align) in enumerate(headers, start=1):
+        cell = ws.cell(row=next_row, column=col_idx, value=th_label)
+        cell.font = FONT_TH
+        cell.fill = FILL_TH_PRIMARY
+        cell.alignment = align
+        cell.border = BORDER_HEADER
+    next_row += 1
+
+    def _fmt_date(d):
+        return d.strftime("%d-%b-%Y") if d else "—"
+
+    for idx, r in enumerate(rows, start=1):
+        ws.row_dimensions[next_row].height = 20
+        fill = FILL_ZEBRA_EVEN if idx % 2 == 0 else FILL_ZEBRA_ODD
+
+        row_data = [
+            (r["team"].name, ALIGN_LEFT, FONT_TD_BOLD),
+            (r["team"].school_code or "—", ALIGN_CENTER, FONT_TD),
+            (r["billed"], ALIGN_CENTER, FONT_TD),
+            (r["paid"], ALIGN_CENTER, FONT_TD),
+            (r["balance_due"], ALIGN_CENTER, FONT_TD_BOLD),
+            (r["refunded"], ALIGN_CENTER, FONT_TD),
+            (r["net_collected"], ALIGN_CENTER, FONT_TD_BOLD),
+            (_fmt_date(r["last_bill"]), ALIGN_CENTER, FONT_TD),
+            (_fmt_date(r["last_payment"]), ALIGN_CENTER, FONT_TD),
+            (_fmt_date(r["last_refund"]), ALIGN_CENTER, FONT_TD),
+            (r["transaction_count"], ALIGN_CENTER, FONT_TD),
+        ]
+
+        for col_idx, (val, align, font) in enumerate(row_data, start=1):
+            cell = ws.cell(row=next_row, column=col_idx, value=val)
+            cell.font = font
+            cell.alignment = align
+            cell.fill = fill
+            cell.border = BORDER_CELL
+        next_row += 1
+
+    ws.row_dimensions[next_row].height = 12
+    next_row += 1
+    style_footer(ws, next_row, max_col=max_cols)
+
+    auto_fit_columns(ws, min_width=8, max_width=45, extra_padding=3)
+    enable_sheet_ergonomics(ws, freeze_pane="A7")
+
+    # ---------- Second sheet: every transaction as its own dated row ----------
+    ws2 = wb.create_sheet("Transaction Detail")
+    max_cols2 = 7
+
+    next_row2 = style_header_banner(
+        ws2,
+        tournament_name="TRANSACTION DETAIL",
+        subtitle="Every Bill, Payment & Refund, One Row Each",
+        badge_text="OFFICIAL FINANCE EXPORT",
+        max_col=max_cols2,
+        start_row=1,
+    )
+    next_row2 = style_section_bar(ws2, "All Transactions (Chronological, Per Team)", next_row2, max_col=max_cols2, icon="🧾")
+
+    headers2 = [
+        ("SCHOOL / TEAM", 30, ALIGN_HEADER_LEFT),
+        ("SCHOOL CODE", 14, ALIGN_HEADER_CENTER),
+        ("DATE", 16, ALIGN_HEADER_CENTER),
+        ("TYPE", 12, ALIGN_HEADER_CENTER),
+        ("AMOUNT (RS.)", 16, ALIGN_HEADER_CENTER),
+        ("PAYMENT MODE", 14, ALIGN_HEADER_CENTER),
+        ("REFERENCE / NOTE", 34, ALIGN_HEADER_LEFT),
+    ]
+    ws2.row_dimensions[next_row2].height = 22
+    for col_idx, (th_label, _, align) in enumerate(headers2, start=1):
+        cell = ws2.cell(row=next_row2, column=col_idx, value=th_label)
+        cell.font = FONT_TH
+        cell.fill = FILL_TH_PRIMARY
+        cell.alignment = align
+        cell.border = BORDER_HEADER
+    freeze_row2 = next_row2 + 1
+    next_row2 += 1
+
+    kind_labels = {"BILL": "Bill", "PAYMENT": "Payment", "REFUND": "Refund"}
+    txn_rows = []
+    for r in rows:
+        for p in sorted(r["team"].payments, key=lambda p: (p.payment_date, p.id)):
+            if p.kind == "BILL":
+                reference = f"{len(p.members)} member{'s' if len(p.members) != 1 else ''}" if p.members else "—"
+            elif p.kind == "REFUND":
+                reference = p.reason or "—"
+            else:
+                reference = p.transaction_id or "—"
+            txn_rows.append((r["team"], p, reference))
+
+    for idx, (team, p, reference) in enumerate(txn_rows, start=1):
+        ws2.row_dimensions[next_row2].height = 20
+        fill = FILL_ZEBRA_EVEN if idx % 2 == 0 else FILL_ZEBRA_ODD
+        row_data2 = [
+            (team.name, ALIGN_LEFT, FONT_TD_BOLD),
+            (team.school_code or "—", ALIGN_CENTER, FONT_TD),
+            (p.payment_date.strftime("%d-%b-%Y"), ALIGN_CENTER, FONT_TD),
+            (kind_labels.get(p.kind, p.kind), ALIGN_CENTER, FONT_TD_BOLD),
+            (p.amount, ALIGN_CENTER, FONT_TD),
+            (p.payment_mode or "—", ALIGN_CENTER, FONT_TD),
+            (reference, ALIGN_LEFT, FONT_TD),
+        ]
+        for col_idx, (val, align, font) in enumerate(row_data2, start=1):
+            cell = ws2.cell(row=next_row2, column=col_idx, value=val)
+            cell.font = font
+            cell.alignment = align
+            cell.fill = fill
+            cell.border = BORDER_CELL
+        next_row2 += 1
+
+    ws2.row_dimensions[next_row2].height = 12
+    next_row2 += 1
+    style_footer(ws2, next_row2, max_col=max_cols2)
+
+    auto_fit_columns(ws2, min_width=8, max_width=45, extra_padding=3)
+    enable_sheet_ergonomics(ws2, freeze_pane=f"A{freeze_row2}")
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type=XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": 'attachment; filename="payments_ledger.xlsx"'},
+    )

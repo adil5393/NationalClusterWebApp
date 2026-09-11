@@ -66,6 +66,11 @@ export default function Participants() {
   const [form, setForm] = useState<Partial<Participant>>(empty);
   const [coachOpen, setCoachOpen] = useState(false);
   const [coachForm, setCoachForm] = useState<Partial<Coach>>(emptyCoach);
+  const [pendingUnmark, setPendingUnmark] = useState<
+    { kind: "participant" | "coach"; id: number; name: string; role: string } | null
+  >(null);
+  const [unmarkPassword, setUnmarkPassword] = useState("");
+  const [unmarkBusy, setUnmarkBusy] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -177,13 +182,18 @@ export default function Participants() {
   };
 
   const toggleAttendance = async (p: Participant) => {
-    const next = !p.is_present;
-    setParticipants((rows) => rows.map((r) => (r.id === p.id ? { ...r, is_present: next } : r)));
+    if (p.is_present) {
+      // Unmarking a verified-present member is locked behind an admin
+      // password — see pendingUnmark/confirmUnmark below.
+      setPendingUnmark({ kind: "participant", id: p.id, name: p.full_name, role: p.role || "Player" });
+      return;
+    }
+    setParticipants((rows) => rows.map((r) => (r.id === p.id ? { ...r, is_present: true } : r)));
     try {
-      await api.post(`/participants/${p.id}/attendance`, { present: next });
+      await api.post(`/participants/${p.id}/attendance`, { present: true });
     } catch {
       toast.error("Could not update attendance");
-      setParticipants((rows) => rows.map((r) => (r.id === p.id ? { ...r, is_present: p.is_present } : r)));
+      setParticipants((rows) => rows.map((r) => (r.id === p.id ? { ...r, is_present: false } : r)));
     }
   };
 
@@ -212,13 +222,46 @@ export default function Participants() {
   };
 
   const toggleCoachAttendance = async (c: Coach) => {
-    const next = !c.is_present;
-    setCoaches((rows) => rows.map((r) => (r.id === c.id ? { ...r, is_present: next } : r)));
+    if (c.is_present) {
+      setPendingUnmark({ kind: "coach", id: c.id, name: c.full_name, role: c.role || "Coach" });
+      return;
+    }
+    setCoaches((rows) => rows.map((r) => (r.id === c.id ? { ...r, is_present: true } : r)));
     try {
-      await api.post(`/coaches/${c.id}/attendance`, { present: next });
+      await api.post(`/coaches/${c.id}/attendance`, { present: true });
     } catch {
       toast.error("Could not update attendance");
-      setCoaches((rows) => rows.map((r) => (r.id === c.id ? { ...r, is_present: c.is_present } : r)));
+      setCoaches((rows) => rows.map((r) => (r.id === c.id ? { ...r, is_present: false } : r)));
+    }
+  };
+
+  const closeUnmarkDialog = () => {
+    setPendingUnmark(null);
+    setUnmarkPassword("");
+  };
+
+  const confirmUnmark = async () => {
+    if (!pendingUnmark) return;
+    if (!unmarkPassword.trim()) return toast.error("Enter the admin password");
+    setUnmarkBusy(true);
+    try {
+      const path =
+        pendingUnmark.kind === "participant"
+          ? `/participants/${pendingUnmark.id}/attendance`
+          : `/coaches/${pendingUnmark.id}/attendance`;
+      await api.post(path, { present: false, admin_password: unmarkPassword.trim() });
+      if (pendingUnmark.kind === "participant") {
+        setParticipants((rows) => rows.map((r) => (r.id === pendingUnmark.id ? { ...r, is_present: false } : r)));
+      } else {
+        setCoaches((rows) => rows.map((r) => (r.id === pendingUnmark.id ? { ...r, is_present: false } : r)));
+      }
+      toast.success(`${pendingUnmark.name} marked absent`);
+      closeUnmarkDialog();
+    } catch (e: any) {
+      if (e?.response?.status === 401) toast.error(e.response?.data?.detail ?? "Incorrect admin password");
+      else toast.error("Could not update attendance");
+    } finally {
+      setUnmarkBusy(false);
     }
   };
 
@@ -1144,6 +1187,50 @@ export default function Participants() {
       </Dialog>
 
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} type="participants" onDone={load} />
+
+      <Dialog
+        open={!!pendingUnmark}
+        onClose={closeUnmarkDialog}
+        title="Confirm: Mark Absent"
+        testId="unmark-attendance-dialog"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-slate-400 font-body">
+            This removes the member below from this team's registration-fee receipt. Requires an admin
+            account's password to confirm.
+          </p>
+          <div className="rounded-xl border border-white/10 bg-obsidian-950 p-3.5 space-y-1">
+            <p className="font-heading font-bold text-white">{pendingUnmark?.name}</p>
+            <p className="text-xs text-slate-400">{pendingUnmark?.role}</p>
+            <p className="font-mono text-sm text-gold">− Rs. 500 from receipt total</p>
+          </div>
+          <div>
+            <Label>Admin Password</Label>
+            <Input
+              type="password"
+              value={unmarkPassword}
+              onChange={(e) => setUnmarkPassword(e.target.value)}
+              data-testid="unmark-admin-password-input"
+              autoFocus
+              onKeyDown={(e) => e.key === "Enter" && confirmUnmark()}
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+            <Button variant="outline" size="sm" onClick={closeUnmarkDialog}>
+              Cancel
+            </Button>
+            <Button
+              variant="gold"
+              size="sm"
+              onClick={confirmUnmark}
+              disabled={unmarkBusy}
+              data-testid="confirm-unmark-attendance-btn"
+            >
+              {unmarkBusy ? "Verifying…" : "Confirm Mark Absent"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }
