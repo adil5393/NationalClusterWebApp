@@ -17,6 +17,13 @@ services:
   backend:
     build: ./backend
     restart: unless-stopped
+    # Runtime-uploaded content (participant/gallery photos) is written under
+    # /app/assets at runtime — without this bind mount it lives only in the
+    # container's writable layer and is silently wiped on the next
+    # `up --build`/recreate. Bind-mounting (not a named volume) keeps it
+    # visible/backupable directly from the host at ./backend/assets.
+    volumes:
+      - ./backend/assets:/app/assets
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       CORS_ORIGINS: ${CORS_ORIGINS}
