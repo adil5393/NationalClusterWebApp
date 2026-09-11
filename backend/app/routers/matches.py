@@ -602,20 +602,23 @@ def generate_bracket(tournament_id: int, payload: schemas.GenerateBracketRequest
         if bye_ids:
             raise HTTPException(400, "Byes aren't supported for a whole-season League plan — every team plays Round 1's pools")
 
-        from ..pool_logic import MIN_POOL_SIZE, distribute_pool_sizes
+        from ..pool_logic import MIN_POOL_SIZE, distribute_pool_sizes_power_of_two
         from .pools import _generate_pool_matches
 
+        teams_per_pool = payload.teams_per_pool or MIN_POOL_SIZE
         try:
-            sizes = distribute_pool_sizes(len(playing_ids), payload.teams_per_pool or MIN_POOL_SIZE)
+            sizes = distribute_pool_sizes_power_of_two(len(playing_ids), teams_per_pool)
         except ValueError as e:
             raise HTTPException(400, str(e))
         pool_count = len(sizes)
-        if pool_count < 2 or (pool_count & (pool_count - 1)) != 0:
-            raise HTTPException(
-                400,
-                f"{pool_count} pools isn't a power of two — adjust the team count or teams-per-pool "
-                "so Round 1 lands on 2, 4, 8, etc. pools",
-            )
+        naive_pool_count = len(playing_ids) // teams_per_pool
+        pools_note = (
+            f"{naive_pool_count} pools at {teams_per_pool}/pool isn't a power of two — "
+            f"adjusted to {pool_count} pools of {min(sizes)}-{max(sizes)} teams each so Round 2's "
+            "knockout bracket can pair pools cleanly."
+            if pool_count != naive_pool_count
+            else None
+        )
 
         round_.entrants = [db.get(models.Team, tid) for tid in playing_ids]
         pools: list[models.Pool] = []
@@ -660,7 +663,10 @@ def generate_bracket(tournament_id: int, payload: schemas.GenerateBracketRequest
 
         _plan_knockout_rounds(db, tournament_id, 3, current, whole_season=True)
         db.commit()
-        return _tournament_dict(t, db, with_rounds=True)
+        result = _tournament_dict(t, db, with_rounds=True)
+        if pools_note:
+            result["pools_note"] = pools_note
+        return result
 
     current: list[tuple[str, int | None]] = _place_byes(team_ids, payload.bye_team_ids)
     _plan_knockout_rounds(db, tournament_id, 1, current, payload.whole_season)
