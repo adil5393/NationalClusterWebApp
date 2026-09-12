@@ -119,9 +119,13 @@ export default function TeamPortal() {
   const [failedPhotoIndexes, setFailedPhotoIndexes] = useState<Set<number>>(new Set());
   const [photoTarget, setPhotoTarget] = useState<TeamDetail["participants"][number] | null>(null);
   const [photoDob, setPhotoDob] = useState("");
+  const [photoAdminPassword, setPhotoAdminPassword] = useState("");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoAttemptsLeft, setPhotoAttemptsLeft] = useState<number | null>(null);
+  // Once a participant already has a photo, replacing it locks behind an
+  // admin password instead of DOB — see backend routers/public.py.
+  const photoLocked = !!photoTarget?.photo_url;
 
   useEffect(() => {
     setLoading(true);
@@ -168,6 +172,7 @@ export default function TeamPortal() {
   const closePhotoDialog = () => {
     setPhotoTarget(null);
     setPhotoDob("");
+    setPhotoAdminPassword("");
     setPhotoFile(null);
     setPhotoAttemptsLeft(null);
   };
@@ -176,12 +181,17 @@ export default function TeamPortal() {
 
   const uploadParticipantPhoto = async () => {
     if (!photoTarget) return;
-    if (!DOB_RE.test(photoDob.trim())) return toast.error("Enter date of birth as DD/MM/YYYY");
+    if (photoLocked) {
+      if (!photoAdminPassword.trim()) return toast.error("Enter the admin password");
+    } else if (!DOB_RE.test(photoDob.trim())) {
+      return toast.error("Enter date of birth as DD/MM/YYYY");
+    }
     if (!photoFile) return toast.error("Choose or take a photo");
     setPhotoBusy(true);
     try {
       const fd = new FormData();
-      fd.append("date_of_birth", photoDob.trim());
+      if (photoLocked) fd.append("admin_password", photoAdminPassword.trim());
+      else fd.append("date_of_birth", photoDob.trim());
       fd.append("file", photoFile);
       const r = await api.post<{ photo_url: string }>(`/public/participants/${photoTarget.id}/photo`, fd, {
         headers: { "Content-Type": undefined } as any,
@@ -204,7 +214,8 @@ export default function TeamPortal() {
       const remaining = typeof detail?.attempts_remaining === "number" ? detail.attempts_remaining : null;
       if (status === 401 || status === 400) {
         setPhotoAttemptsLeft(remaining);
-        toast.error(typeof detail?.message === "string" ? detail.message : "Date of birth didn't match");
+        const fallback = photoLocked ? "Incorrect admin password" : "Date of birth didn't match";
+        toast.error(typeof detail?.message === "string" ? detail.message : fallback);
       } else if (status === 429) {
         setPhotoAttemptsLeft(0);
         toast.error("Too many attempts — try again later");
@@ -646,7 +657,8 @@ export default function TeamPortal() {
         </div>
       </Dialog>
 
-      {/* PARTICIPANT PHOTO UPLOAD — gated by that participant's own date of birth */}
+      {/* PARTICIPANT PHOTO UPLOAD — first upload gated by date of birth; once a
+          photo exists, replacing it locks behind an admin password instead */}
       <Dialog
         open={!!photoTarget}
         onClose={closePhotoDialog}
@@ -654,22 +666,41 @@ export default function TeamPortal() {
         testId="participant-photo-dialog"
       >
         <div className="space-y-4">
-          <p className="text-xs text-slate-400 font-body">
-            Enter this athlete's date of birth to confirm you're authorized to add their photo.
-          </p>
+          {photoLocked ? (
+            <p className="text-xs text-slate-400 font-body flex items-start gap-1.5">
+              <Lock className="h-3.5 w-3.5 text-gold shrink-0 mt-0.5" />
+              This athlete already has a photo. Enter the organizer admin password to replace it.
+            </p>
+          ) : (
+            <p className="text-xs text-slate-400 font-body">
+              Enter this athlete's date of birth to confirm you're authorized to add their photo.
+            </p>
+          )}
           <div>
-            <Input
-              placeholder="Date of birth (DD/MM/YYYY)"
-              value={photoDob}
-              onChange={(e) => setPhotoDob(e.target.value)}
-              data-testid="participant-photo-dob-input"
-              autoFocus
-            />
+            {photoLocked ? (
+              <Input
+                type="password"
+                placeholder="Admin password"
+                value={photoAdminPassword}
+                onChange={(e) => setPhotoAdminPassword(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && uploadParticipantPhoto()}
+                data-testid="participant-photo-admin-password-input"
+                autoFocus
+              />
+            ) : (
+              <Input
+                placeholder="Date of birth (DD/MM/YYYY)"
+                value={photoDob}
+                onChange={(e) => setPhotoDob(e.target.value)}
+                data-testid="participant-photo-dob-input"
+                autoFocus
+              />
+            )}
           </div>
           {photoAttemptsLeft !== null && (
             <p className="text-xs font-semibold text-red-400" data-testid="participant-photo-attempts-warning">
               {photoAttemptsLeft > 0
-                ? `Date of birth didn't match — ${photoAttemptsLeft} attempt${photoAttemptsLeft === 1 ? "" : "s"} left.`
+                ? `${photoLocked ? "Incorrect admin password" : "Date of birth didn't match"} — ${photoAttemptsLeft} attempt${photoAttemptsLeft === 1 ? "" : "s"} left.`
                 : "Too many failed attempts — try again later."}
             </p>
           )}

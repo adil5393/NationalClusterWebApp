@@ -474,12 +474,13 @@ def public_about_images():
     return [f"/api/assets/about/{img.name}" for img in images]
 
 
-# Wrong-date-of-birth attempts per participant_id, in-memory only (fine
-# at this app's scale, and resets on restart — same "no persistence needed"
-# tradeoff already accepted by reveal_team_contacts above having no limiter
-# at all). Guards the one new unauthenticated disk-write surface this file
-# exposes: without it, someone could brute-force a participant's date of
-# birth to plant a photo on their record.
+# Wrong-date-of-birth OR wrong-admin-password attempts per participant_id,
+# in-memory only (fine at this app's scale, and resets on restart — same
+# "no persistence needed" tradeoff already accepted by reveal_team_contacts
+# above having no limiter at all). Guards the one new unauthenticated
+# disk-write surface this file exposes: without it, someone could brute-force
+# a participant's date of birth (for a first upload) or an admin password
+# (to replace an existing photo).
 _PHOTO_UPLOAD_WINDOW_SECONDS = 15 * 60
 _PHOTO_UPLOAD_MAX_ATTEMPTS = 5
 _failed_photo_attempts: dict[int, list[float]] = {}
@@ -500,18 +501,30 @@ def _record_failed_photo_attempt(participant_id: int) -> int:
     return max(0, _PHOTO_UPLOAD_MAX_ATTEMPTS - len(attempts))
 
 
+def _verify_any_admin_password(db: Session, password: str) -> bool:
+    admins = (
+        db.query(models.OrganizerUser)
+        .filter(models.OrganizerUser.is_active.is_(True), models.OrganizerUser.is_admin.is_(True))
+        .all()
+    )
+    return any(verify_password(password, u.password_hash) for u in admins)
+
+
 @router.post("/participants/{participant_id}/photo")
 async def upload_participant_photo(
     participant_id: int,
-    date_of_birth: str = Form(...),
+    date_of_birth: "str | None" = Form(None),
+    admin_password: "str | None" = Form(None),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
-    """A coach/manager uploads a photo for one of their own participants,
-    proving they're entitled to by typing that participant's date of birth
-    (dd/mm/yyyy) — no login. Mirrors reveal_team_contacts' "type a secret to
-    unlock an action" shape above, just with a per-record secret instead of
-    an admin password."""
+    """A coach/manager uploads a participant's FIRST photo by typing that
+    participant's date of birth (dd/mm/yyyy) — no login. Once a photo
+    exists, it's locked: replacing it needs an admin account's password
+    instead (same "type an admin password to unlock" shape as
+    reveal_team_contacts above) — otherwise anyone who merely knows the DOB
+    (which isn't especially secret — classmates, other parents) could keep
+    swapping the photo out after the fact."""
     participant = db.get(models.Participant, participant_id)
     if not participant:
         raise HTTPException(404, "Participant not found")
@@ -519,15 +532,28 @@ async def upload_participant_photo(
     if _photo_upload_rate_limited(participant_id):
         raise HTTPException(429, "Too many attempts — try again later")
 
-    try:
-        submitted_dob = datetime.strptime(date_of_birth.strip(), "%d/%m/%Y").date()
-    except ValueError:
-        remaining = _record_failed_photo_attempt(participant_id)
-        raise HTTPException(400, {"message": "Date of birth must be in dd/mm/yyyy format", "attempts_remaining": remaining})
+    if participant.photo_filename:
+        if not admin_password or not _verify_any_admin_password(db, admin_password):
+            remaining = _record_failed_photo_attempt(participant_id)
+            raise HTTPException(
+                401,
+                {
+                    "message": "This participant already has a photo — an admin password is required to replace it.",
+                    "attempts_remaining": remaining,
+                },
+            )
+    else:
+        if not date_of_birth:
+            raise HTTPException(400, "date_of_birth is required to upload a participant's first photo")
+        try:
+            submitted_dob = datetime.strptime(date_of_birth.strip(), "%d/%m/%Y").date()
+        except ValueError:
+            remaining = _record_failed_photo_attempt(participant_id)
+            raise HTTPException(400, {"message": "Date of birth must be in dd/mm/yyyy format", "attempts_remaining": remaining})
 
-    if not participant.date_of_birth or submitted_dob != participant.date_of_birth:
-        remaining = _record_failed_photo_attempt(participant_id)
-        raise HTTPException(401, {"message": "Date of birth does not match", "attempts_remaining": remaining})
+        if not participant.date_of_birth or submitted_dob != participant.date_of_birth:
+            remaining = _record_failed_photo_attempt(participant_id)
+            raise HTTPException(401, {"message": "Date of birth does not match", "attempts_remaining": remaining})
 
     ext = Path(file.filename or "").suffix.lower()
     if ext not in VALID_IMAGE_EXTENSIONS:

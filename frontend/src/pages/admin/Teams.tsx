@@ -57,7 +57,6 @@ interface Team {
   age_group_counts?: Record<string, number>;
   present_counts?: Record<string, number>;
   is_active?: boolean;
-  has_arrived?: boolean;
   inactive_age_groups?: string[];
   last_year_awards?: LastYearAward[];
   photos?: { id: number; url: string }[];
@@ -178,42 +177,6 @@ function ActiveCell({
       onClick={() => onToggle(team)}
       data-testid={`active-toggle-${team.id}`}
       title={active ? "Mark inactive" : "Mark active"}
-      className="hover:opacity-80 transition-opacity shrink-0"
-    >
-      {badge}
-    </button>
-  );
-}
-
-function ArrivedCell({
-  team,
-  canEdit,
-  onToggle,
-}: {
-  team: Team;
-  canEdit: boolean;
-  onToggle: (team: Team) => void;
-}) {
-  const arrived = team.has_arrived === true;
-  const badge = (
-    <span
-      className={cn(
-        "inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-heading font-bold tracking-wide transition-colors whitespace-nowrap",
-        arrived
-          ? "border border-emerald-500/40 bg-emerald-500/15 text-emerald-400"
-          : "border border-slate-600/40 bg-slate-800/80 text-slate-400",
-      )}
-    >
-      {arrived ? "Arrived" : "Not Arrived"}
-    </span>
-  );
-  if (!canEdit) return badge;
-  return (
-    <button
-      type="button"
-      onClick={() => onToggle(team)}
-      data-testid={`arrived-toggle-${team.id}`}
-      title={arrived ? "Mark not arrived" : "Mark arrived"}
       className="hover:opacity-80 transition-opacity shrink-0"
     >
       {badge}
@@ -527,15 +490,6 @@ export default function AdminTeams() {
     }
   };
 
-  const toggleArrived = async (t: Team) => {
-    try {
-      await api.put(`/teams/${t.id}`, { has_arrived: t.has_arrived !== true });
-      load(true);
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail ?? "Could not update arrival status");
-    }
-  };
-
   const toggleAgeGroupActive = async (t: Team, ageGroup: string, active: boolean) => {
     try {
       await api.put(`/teams/${t.id}/age-groups/${encodeURIComponent(ageGroup)}/active`, { is_active: active });
@@ -721,7 +675,6 @@ export default function AdminTeams() {
                       {/* Primary status badges */}
                       <div className="shrink-0 flex flex-col items-end gap-1">
                         <ActiveCell team={t} canEdit={canEdit} onToggle={toggleActive} />
-                        <ArrivedCell team={t} canEdit={canEdit} onToggle={toggleArrived} />
                       </div>
                     </div>
 
@@ -900,7 +853,6 @@ export default function AdminTeams() {
                     <TH className="px-2 py-2 text-xs min-w-0">Team & School</TH>
                     <TH className="px-1.5 py-2 text-xs w-20">Cluster</TH>
                     <TH className="px-1.5 py-2 text-xs text-center w-16">Active</TH>
-                    <TH className="px-1.5 py-2 text-xs text-center w-20">Arrival</TH>
                     <TH className="px-1.5 py-2 text-xs">Squad by Age</TH>
                     <TH className="px-1.5 py-2 text-xs">Age Active</TH>
                     <TH className="px-1.5 py-2 text-xs">Awards</TH>
@@ -943,9 +895,6 @@ export default function AdminTeams() {
                         </TD>
                         <TD className="px-1.5 py-2 text-center w-16">
                           <ActiveCell team={t} canEdit={canEdit} onToggle={toggleActive} />
-                        </TD>
-                        <TD className="px-1.5 py-2 text-center w-20">
-                          <ArrivedCell team={t} canEdit={canEdit} onToggle={toggleArrived} />
                         </TD>
                         <TD className="px-1.5 py-2 min-w-0">
                           <div className="flex items-center gap-1.5">
