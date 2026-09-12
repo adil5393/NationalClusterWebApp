@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Pencil, Trash2, QrCode, Upload, Trophy, X, Shield, Users, Search, ImageIcon, IdCard, Receipt } from "lucide-react";
+import { Plus, Pencil, Trash2, QrCode, Upload, Trophy, X, Shield, Users, Search, ImageIcon, IdCard, Receipt, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -965,6 +965,14 @@ export default function AdminTeams() {
                               }
                             >
                               <IdCard className="h-3.5 w-3.5" />
+                            </a>
+                            <a
+                              href={`${BASE_URL}/api/export/idcards/team/${t.id}/sheet-12x18.pdf`}
+                              className="inline-flex items-center justify-center rounded h-7 w-7 p-0 transition-colors shrink-0 text-slate-400 hover:bg-white/10 hover:text-white"
+                              data-testid={`download-team-idcards-12x18-${t.id}`}
+                              title="Download Team ID Cards — 12x18in Sheet (PDF)"
+                            >
+                              <Printer className="h-3.5 w-3.5" />
                             </a>
                             <Button
                               variant="ghost"

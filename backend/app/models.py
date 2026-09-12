@@ -211,6 +211,12 @@ class Participant(TimestampMixin, Base):
     # registration_no, see public.py) — a coach/manager uploads this for
     # their own roster, no admin action needed.
     photo_filename = Column(String(120))
+    # True only once a photo has gone through the manual crop-confirm step
+    # (see face_crop.py / TeamPortal.tsx's cropper) — lets the roster tell a
+    # deliberately-framed photo apart from a legacy one uploaded before that
+    # step existed (those default to False and were never re-confirmed), so
+    # a coach/admin can see which photos are done and don't need revisiting.
+    photo_finalized = Column(Boolean, nullable=False, default=False, server_default="false")
     # ID-card fields — populated by the attendance-list import (see
     # imports.py's fathername/dob/Class columns) or editable by an admin.
     father_name = Column(String(200))

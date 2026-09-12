@@ -1,6 +1,7 @@
 """Spreadsheet (CSV & Executive XLSX) exports for room allocation and participant lists."""
 import csv
 import io
+import itertools
 
 import openpyxl
 from fastapi import APIRouter, Depends, HTTPException
@@ -657,6 +658,27 @@ def _photo_path(participant: models.Participant):
     return ASSETS_PARTICIPANTS_DIR / participant.photo_filename
 
 
+def _team_sheets(
+    participants: list[models.Participant],
+    team: models.Team,
+    layout: "id_card.SheetLayout",
+    dpi: int,
+) -> list:
+    """Renders one team's cards and lays them into sheets, starting a fresh
+    sheet at every age-group boundary — a sheet must never mix age groups,
+    even if that leaves the previous group's last sheet partially empty.
+    `participants` is sorted by id_card.sort_key first (age group, then
+    name), so same-age-group participants are already contiguous and a
+    plain itertools.groupby is enough to split on that boundary."""
+    ordered = sorted(participants, key=id_card.sort_key)
+    sheets: list = []
+    for _age_group, group_iter in itertools.groupby(ordered, key=lambda p: p.age_group):
+        group = list(group_iter)
+        cards = [id_card.render_id_card(p, team, _photo_path(p)) for p in group]
+        sheets.extend(id_card.build_team_sheets(cards, layout=layout, dpi=dpi))
+    return sheets
+
+
 @router.get("/idcards/participant/{participant_id}.pdf", dependencies=[Depends(require_module("teams"))])
 def export_idcard_participant(participant_id: int, db: Session = Depends(get_db)):
     participant = db.get(models.Participant, participant_id)
@@ -672,13 +694,26 @@ def export_idcard_team(team_id: int, db: Session = Depends(get_db)):
     team = db.get(models.Team, team_id)
     if not team:
         raise HTTPException(404, "Team not found")
-    participants = sorted(team.participants, key=id_card.sort_key)
-    if not participants:
+    if not team.participants:
         raise HTTPException(404, "This team has no participants to generate cards for")
-    cards = [id_card.render_id_card(p, team, _photo_path(p)) for p in participants]
-    sheets = id_card.build_team_sheets(cards)
+    sheets = _team_sheets(team.participants, team, id_card.A4_SHEET, id_card.PRINT_DPI)
     pdf = id_card.build_pdf(sheets)
     return _pdf_response(pdf, f"idcards-{team.school_code or team.id}.pdf")
+
+
+@router.get("/idcards/team/{team_id}/sheet-12x18.pdf", dependencies=[Depends(require_module("teams"))])
+def export_idcard_team_12x18(team_id: int, db: Session = Depends(get_db)):
+    """Same per-team card set as /idcards/team/{id}.pdf, laid out on 12x18in
+    print-shop stock instead of A4 (id_card.SHEET_12X18) — 16 cards/sheet
+    instead of 9, for shops printing larger runs on bigger paper."""
+    team = db.get(models.Team, team_id)
+    if not team:
+        raise HTTPException(404, "Team not found")
+    if not team.participants:
+        raise HTTPException(404, "This team has no participants to generate cards for")
+    sheets = _team_sheets(team.participants, team, id_card.SHEET_12X18, id_card.PRINT_DPI)
+    pdf = id_card.build_pdf(sheets)
+    return _pdf_response(pdf, f"idcards-{team.school_code or team.id}-12x18.pdf")
 
 
 @router.get("/idcards/all.pdf", dependencies=[Depends(require_module("teams"))])
@@ -702,11 +737,7 @@ def export_idcard_all(db: Session = Depends(get_db)):
     def _flush():
         if not current_team_group:
             return
-        # sort each team's group (age group, then name) before rendering, so
-        # cards print in a sensible order within each team's own sheets
-        ordered = sorted(current_team_group, key=id_card.sort_key)
-        cards = [id_card.render_id_card(p, teams[current_team_id], _photo_path(p)) for p in ordered]
-        sheets.extend(id_card.build_team_sheets(cards, dpi=dpi))
+        sheets.extend(_team_sheets(current_team_group, teams[current_team_id], id_card.A4_SHEET, dpi))
 
     for p in participants:
         if p.team_id != current_team_id:

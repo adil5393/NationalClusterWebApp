@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..auth_utils import verify_password
 from ..database import get_db
+from ..face_crop import suggest_crop
 from ..image_utils import optimize_image
 
 router = APIRouter(prefix="/api/public", tags=["public"])
@@ -379,6 +380,7 @@ def public_team_detail(team_id: int, db: Session = Depends(get_db)):
             "role": p.role,
             "age_group": p.age_group,
             "photo_url": p.photo_url,
+            "photo_finalized": p.photo_finalized,
         }
         for p in team.participants
     ]
@@ -536,11 +538,33 @@ def _verify_any_admin_password(db: Session, password: str) -> bool:
     return any(verify_password(password, u.password_hash) for u in admins)
 
 
+_MAX_CROP_SUGGESTION_BYTES = 20 * 1024 * 1024
+
+
+@router.post("/participants/photo-crop-suggestion")
+async def photo_crop_suggestion(file: UploadFile = File(...)):
+    """Runs face detection on a not-yet-uploaded photo and returns a
+    suggested crop box (as 0-1 fractions of the image) for the manual
+    cropper in the upload dialog to start from — this never saves or
+    validates anything about the participant, it's a stateless preview step
+    the frontend calls before the real POST /participants/{id}/photo."""
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in VALID_IMAGE_EXTENSIONS:
+        raise HTTPException(400, "Unsupported file type (use JPG, PNG, or WEBP)")
+
+    content = await file.read()
+    if len(content) > _MAX_CROP_SUGGESTION_BYTES:
+        raise HTTPException(400, "Image is too large")
+
+    return suggest_crop(content)
+
+
 @router.post("/participants/{participant_id}/photo")
 async def upload_participant_photo(
     participant_id: int,
     date_of_birth: "str | None" = Form(None),
     admin_password: "str | None" = Form(None),
+    cropped: bool = Form(False),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
@@ -592,6 +616,10 @@ async def upload_participant_photo(
     old_filename = participant.photo_filename
     (ASSETS_PARTICIPANTS_DIR / name).write_bytes(content)
     participant.photo_filename = name
+    # `cropped` is only true when the file already went through the manual
+    # crop-confirm dialog client-side — that's the one signal that tells a
+    # deliberately-framed photo apart from a raw/legacy upload.
+    participant.photo_finalized = cropped
     db.commit()
 
     if old_filename:
@@ -599,5 +627,5 @@ async def upload_participant_photo(
         if old_path.exists() and old_path.is_file():
             old_path.unlink()
 
-    return {"photo_url": participant.photo_url}
+    return {"photo_url": participant.photo_url, "photo_finalized": participant.photo_finalized}
 

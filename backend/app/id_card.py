@@ -17,6 +17,7 @@ fixed print template, not a flowable document).
 """
 import io
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -65,7 +66,7 @@ def _print_size_px(dpi: int) -> tuple[int, int]:
     return (round(CARD_WIDTH_CM * _CM_TO_IN * dpi), round(CARD_HEIGHT_CM * _CM_TO_IN * dpi))
 
 
-# --- A4 sheet layout (per-team / all-teams downloads) ---------------------
+# --- Sheet layouts (per-team / all-teams downloads) ------------------------
 # The org wants at least 9 cards per A4 portrait sheet, so cards there are
 # printed smaller than the standalone single-card download: a 3x3 grid of
 # 6.5x9cm cards with even margins/gutters, chosen so the whole grid divides
@@ -73,53 +74,84 @@ def _print_size_px(dpi: int) -> tuple[int, int]:
 #   horizontal: 4 gaps (left margin + 2 gutters + right margin) x 0.375cm
 #               + 3 cards x 6.5cm = 1.5 + 19.5 = 21cm
 #   vertical:   4 gaps x 0.675cm + 3 cards x 9.0cm = 2.7 + 27 = 29.7cm
-A4_WIDTH_CM = 21.0
-A4_HEIGHT_CM = 29.7
-SHEET_COLS = 3
-SHEET_ROWS = 3
-CARDS_PER_SHEET = SHEET_COLS * SHEET_ROWS
-SHEET_CARD_WIDTH_CM = 6.5
-SHEET_CARD_HEIGHT_CM = 9.0
-SHEET_MARGIN_X_CM = 0.375
-SHEET_MARGIN_Y_CM = 0.675
+#
+# A second, larger layout (SHEET_12X18) is for print shops running bigger
+# stock — same 6.5x9cm card size, just more of them per page. It's a
+# dataclass (rather than another set of bare module constants like the A4
+# numbers above) so a second sheet size didn't mean duplicating every
+# _a4_size_px/_sheet_card_size_px helper for it too.
+@dataclass(frozen=True)
+class SheetLayout:
+    width_cm: float
+    height_cm: float
+    cols: int
+    rows: int
+    card_width_cm: float
+    card_height_cm: float
+
+    @property
+    def cards_per_sheet(self) -> int:
+        return self.cols * self.rows
+
+    @property
+    def margin_x_cm(self) -> float:
+        """Edge margins and gutters are all this same width — computed
+        rather than hardcoded so the grid always divides the sheet exactly,
+        with no leftover slack on one side."""
+        return (self.width_cm - self.cols * self.card_width_cm) / (self.cols + 1)
+
+    @property
+    def margin_y_cm(self) -> float:
+        return (self.height_cm - self.rows * self.card_height_cm) / (self.rows + 1)
 
 
-def _a4_size_px(dpi: int) -> tuple[int, int]:
-    return (round(A4_WIDTH_CM * _CM_TO_IN * dpi), round(A4_HEIGHT_CM * _CM_TO_IN * dpi))
+A4_SHEET = SheetLayout(width_cm=21.0, height_cm=29.7, cols=3, rows=3, card_width_cm=6.5, card_height_cm=9.0)
+# 12in x 18in print-shop stock (30.48 x 45.72cm), portrait, same 6.5x9cm
+# card as the A4 sheet. 4 cols x 4 rows leaves ~19mm margins/gutters — a 5th
+# row is mathematically possible but only leaves ~1.2mm between cards, too
+# tight to guillotine-cut cleanly, so 4x4 (16 cards/sheet) it is.
+SHEET_12X18 = SheetLayout(width_cm=12 * 2.54, height_cm=18 * 2.54, cols=4, rows=4, card_width_cm=6.5, card_height_cm=9.0)
 
 
-def _sheet_card_size_px(dpi: int) -> tuple[int, int]:
-    return (round(SHEET_CARD_WIDTH_CM * _CM_TO_IN * dpi), round(SHEET_CARD_HEIGHT_CM * _CM_TO_IN * dpi))
+def _sheet_size_px(layout: SheetLayout, dpi: int) -> tuple[int, int]:
+    return (round(layout.width_cm * _CM_TO_IN * dpi), round(layout.height_cm * _CM_TO_IN * dpi))
 
 
-def render_sheet(cards: list[Image.Image], dpi: int = PRINT_DPI) -> Image.Image:
-    """Lays out up to CARDS_PER_SHEET already-rendered cards (native
+def _sheet_card_size_px(layout: SheetLayout, dpi: int) -> tuple[int, int]:
+    return (round(layout.card_width_cm * _CM_TO_IN * dpi), round(layout.card_height_cm * _CM_TO_IN * dpi))
+
+
+def render_sheet(cards: list[Image.Image], layout: SheetLayout = A4_SHEET, dpi: int = PRINT_DPI) -> Image.Image:
+    """Lays out up to layout.cards_per_sheet already-rendered cards (native
     TEMPLATE_SIZE resolution, i.e. straight from render_id_card) into one
-    A4 page, left-to-right then top-to-bottom. Fewer than a full 9 leaves
+    sheet, left-to-right then top-to-bottom. Fewer than a full page leaves
     the remaining grid cells blank — callers are expected to chunk a team's
-    cards into groups of CARDS_PER_SHEET themselves (see build_team_sheets),
-    since a new team must never share a sheet with the previous one."""
-    sheet = Image.new("RGB", _a4_size_px(dpi), "white")
-    card_size = _sheet_card_size_px(dpi)
-    margin_x_px = round(SHEET_MARGIN_X_CM * _CM_TO_IN * dpi)
-    margin_y_px = round(SHEET_MARGIN_Y_CM * _CM_TO_IN * dpi)
-    for i, card in enumerate(cards[:CARDS_PER_SHEET]):
-        row, col = divmod(i, SHEET_COLS)
+    cards into groups of layout.cards_per_sheet themselves (see
+    build_team_sheets), since a new team (or age group) must never share a
+    sheet with what came before it."""
+    sheet = Image.new("RGB", _sheet_size_px(layout, dpi), "white")
+    card_size = _sheet_card_size_px(layout, dpi)
+    margin_x_px = round(layout.margin_x_cm * _CM_TO_IN * dpi)
+    margin_y_px = round(layout.margin_y_cm * _CM_TO_IN * dpi)
+    for i, card in enumerate(cards[: layout.cards_per_sheet]):
+        row, col = divmod(i, layout.cols)
         x = margin_x_px + col * (card_size[0] + margin_x_px)
         y = margin_y_px + row * (card_size[1] + margin_y_px)
         sheet.paste(card.resize(card_size, Image.LANCZOS), (x, y))
     return sheet
 
 
-def build_team_sheets(cards: list[Image.Image], dpi: int = PRINT_DPI) -> list[Image.Image]:
-    """Chunks one team's rendered cards into groups of CARDS_PER_SHEET and
-    lays out one A4 sheet per group — the last, possibly-partial group still
+def build_team_sheets(
+    cards: list[Image.Image], layout: SheetLayout = A4_SHEET, dpi: int = PRINT_DPI
+) -> list[Image.Image]:
+    """Chunks one team's rendered cards into groups of layout.cards_per_sheet
+    and lays out one sheet per group — the last, possibly-partial group still
     gets its own sheet rather than bleeding into whatever comes next."""
     if not cards:
         return []
     return [
-        render_sheet(cards[i : i + CARDS_PER_SHEET], dpi=dpi)
-        for i in range(0, len(cards), CARDS_PER_SHEET)
+        render_sheet(cards[i : i + layout.cards_per_sheet], layout=layout, dpi=dpi)
+        for i in range(0, len(cards), layout.cards_per_sheet)
     ]
 
 

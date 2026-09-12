@@ -17,9 +17,13 @@ import {
   Lock,
   ImageIcon,
   Camera,
+  CheckCircle2,
+  Crop,
 } from "lucide-react";
 import { toast } from "sonner";
+import Cropper, { type Area } from "react-easy-crop";
 import { api, assetUrl } from "@/lib/api";
+import { getCroppedImageBlob } from "@/lib/cropImage";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,7 +49,14 @@ interface TeamDetail {
   photos: { thumbnail: string; view: string }[];
   coaches: Coach[];
   has_hidden_contacts?: boolean;
-  participants: { id: number; full_name: string; role?: string; age_group?: string; photo_url?: string | null }[];
+  participants: {
+    id: number;
+    full_name: string;
+    role?: string;
+    age_group?: string;
+    photo_url?: string | null;
+    photo_finalized?: boolean;
+  }[];
   accommodation: { room?: string; floor?: string; building?: string; notes?: string }[];
   transport: {
     vehicle?: string;
@@ -123,9 +134,26 @@ export default function TeamPortal() {
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoAttemptsLeft, setPhotoAttemptsLeft] = useState<number | null>(null);
+  const [photoObjectUrl, setPhotoObjectUrl] = useState<string | null>(null);
+  const [photoCrop, setPhotoCrop] = useState({ x: 0, y: 0 });
+  const [photoZoom, setPhotoZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
+  const [cropSuggestion, setCropSuggestion] = useState<Area | null>(null);
+  const [detectingFace, setDetectingFace] = useState(false);
+  const [loadingExistingPhoto, setLoadingExistingPhoto] = useState(false);
   // Once a participant already has a photo, replacing it locks behind an
   // admin password instead of DOB — see backend routers/public.py.
   const photoLocked = !!photoTarget?.photo_url;
+  // Matches the ID card's photo box aspect ratio (PHOTO_BOX in id_card.py:
+  // (364, 466, 660, 776) -> 296x310) — the cropper is locked to this so
+  // whatever the coach frames here is exactly what prints on the card.
+  const PHOTO_ASPECT = 296 / 310;
+  // Some uploaded photos turn out to be a whole team/group shot with the
+  // actual participant's face occupying a small corner of the frame (a real
+  // case found in this tournament's data) — a low max zoom would make it
+  // impossible for face-detection (or the coach manually) to crop in tight
+  // enough to fill the box with just that face.
+  const PHOTO_MAX_ZOOM = 8;
 
   useEffect(() => {
     setLoading(true);
@@ -175,6 +203,71 @@ export default function TeamPortal() {
     setPhotoAdminPassword("");
     setPhotoFile(null);
     setPhotoAttemptsLeft(null);
+    if (photoObjectUrl) URL.revokeObjectURL(photoObjectUrl);
+    setPhotoObjectUrl(null);
+    setPhotoCrop({ x: 0, y: 0 });
+    setPhotoZoom(1);
+    setCroppedAreaPixels(null);
+    setCropSuggestion(null);
+    setDetectingFace(false);
+  };
+
+  const onPhotoFileSelected = async (file: File | null) => {
+    setPhotoFile(file);
+    setPhotoCrop({ x: 0, y: 0 });
+    setPhotoZoom(1);
+    setCroppedAreaPixels(null);
+    setCropSuggestion(null);
+    if (photoObjectUrl) URL.revokeObjectURL(photoObjectUrl);
+    if (!file) {
+      setPhotoObjectUrl(null);
+      return;
+    }
+    setPhotoObjectUrl(URL.createObjectURL(file));
+    setDetectingFace(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = await api.post<Area>("/public/participants/photo-crop-suggestion", fd, {
+        headers: { "Content-Type": undefined } as any,
+      });
+      setCropSuggestion({
+        x: r.data.x * 100,
+        y: r.data.y * 100,
+        width: r.data.width * 100,
+        height: r.data.height * 100,
+      });
+    } catch {
+      setCropSuggestion(null); // cropper still works fine with its own default centered crop
+    } finally {
+      setDetectingFace(false);
+    }
+  };
+
+  const editExistingPhoto = async () => {
+    if (!photoTarget?.photo_url) return;
+    setLoadingExistingPhoto(true);
+    try {
+      // The participant thumbnail right above already loaded this exact URL
+      // as a plain <img> (a no-cors request) — reusing the same URL here for
+      // a credentialed XHR makes Chromium serve back that cached opaque
+      // response instead of issuing a fresh CORS-mode request, which surfaces
+      // as a false "No Access-Control-Allow-Origin" error (confirmed via a
+      // headless reproduction: the identical fetch succeeds on a page that
+      // never rendered the <img>, and fails right after one that did). A
+      // cache-busting query param forces a real network request that was
+      // never touched by the <img> load.
+      const bustUrl = `${assetUrl(photoTarget.photo_url)}?_=${Date.now()}`;
+      const resp = await api.get<Blob>(bustUrl, { responseType: "blob" });
+      const blob = resp.data;
+      const ext = blob.type.includes("png") ? "png" : blob.type.includes("webp") ? "webp" : "jpg";
+      await onPhotoFileSelected(new File([blob], `current-photo.${ext}`, { type: blob.type }));
+    } catch (e) {
+      console.error("Could not load existing photo for framing:", e);
+      toast.error("Could not load the current photo for editing");
+    } finally {
+      setLoadingExistingPhoto(false);
+    }
   };
 
   const DOB_RE = /^\d{2}\/\d{2}\/\d{4}$/;
@@ -186,22 +279,32 @@ export default function TeamPortal() {
     } else if (!DOB_RE.test(photoDob.trim())) {
       return toast.error("Enter date of birth as DD/MM/YYYY");
     }
-    if (!photoFile) return toast.error("Choose or take a photo");
+    if (!photoFile || !photoObjectUrl) return toast.error("Choose or take a photo");
     setPhotoBusy(true);
     try {
       const fd = new FormData();
       if (photoLocked) fd.append("admin_password", photoAdminPassword.trim());
       else fd.append("date_of_birth", photoDob.trim());
-      fd.append("file", photoFile);
-      const r = await api.post<{ photo_url: string }>(`/public/participants/${photoTarget.id}/photo`, fd, {
-        headers: { "Content-Type": undefined } as any,
-      });
+      if (croppedAreaPixels) {
+        const blob = await getCroppedImageBlob(photoObjectUrl, croppedAreaPixels);
+        fd.append("file", blob, "photo.jpg");
+        fd.append("cropped", "true");
+      } else {
+        fd.append("file", photoFile);
+      }
+      const r = await api.post<{ photo_url: string; photo_finalized?: boolean }>(
+        `/public/participants/${photoTarget.id}/photo`,
+        fd,
+        { headers: { "Content-Type": undefined } as any },
+      );
       setTeam((t) =>
         t
           ? {
               ...t,
               participants: t.participants.map((p) =>
-                p.id === photoTarget.id ? { ...p, photo_url: r.data.photo_url } : p,
+                p.id === photoTarget.id
+                  ? { ...p, photo_url: r.data.photo_url, photo_finalized: r.data.photo_finalized }
+                  : p,
               ),
             }
           : t,
@@ -567,7 +670,13 @@ export default function TeamPortal() {
                           <button
                             type="button"
                             onClick={() => setPhotoTarget(p)}
-                            title={p.photo_url ? "Update photo" : "Add photo"}
+                            title={
+                              p.photo_url
+                                ? p.photo_finalized
+                                  ? "Photo framed & finalized — click to replace"
+                                  : "Update photo"
+                                : "Add photo"
+                            }
                             data-testid={`participant-photo-btn-${p.id}`}
                             className="relative group shrink-0 h-12 w-12 sm:h-14 sm:w-14 rounded-xl overflow-hidden border border-white/10 bg-obsidian-900/90 hover:border-gold/60 focus:outline-none focus:ring-2 focus:ring-gold/40 transition-all flex items-center justify-center shadow-inner"
                           >
@@ -579,6 +688,9 @@ export default function TeamPortal() {
                                   className="h-full w-full object-cover object-[center_top]"
                                   loading="lazy"
                                 />
+                                {p.photo_finalized && (
+                                  <CheckCircle2 className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-obsidian-950 text-emerald-400" />
+                                )}
                                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                   <Camera className="h-4 w-4 text-white" />
                                 </div>
@@ -669,7 +781,8 @@ export default function TeamPortal() {
           {photoLocked ? (
             <p className="text-xs text-slate-400 font-body flex items-start gap-1.5">
               <Lock className="h-3.5 w-3.5 text-gold shrink-0 mt-0.5" />
-              This athlete already has a photo. Enter the organizer admin password to replace it.
+              This athlete already has a photo. Enter the organizer admin password to replace it or adjust its
+              framing.
             </p>
           ) : (
             <p className="text-xs text-slate-400 font-body">
@@ -704,15 +817,81 @@ export default function TeamPortal() {
                 : "Too many failed attempts — try again later."}
             </p>
           )}
+          {photoLocked && !photoObjectUrl && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={editExistingPhoto}
+              disabled={loadingExistingPhoto}
+              data-testid="edit-existing-photo-framing-btn"
+              className="w-full"
+            >
+              <Crop className="h-4 w-4 text-gold" />
+              {loadingExistingPhoto ? "Loading current photo…" : "Adjust framing of current photo"}
+            </Button>
+          )}
+          {photoLocked && !photoObjectUrl && (
+            <p className="text-center text-[11px] text-slate-500 font-body">— or —</p>
+          )}
           <div>
             <input
               type="file"
               accept="image/jpeg,image/png,image/webp"
-              onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => onPhotoFileSelected(e.target.files?.[0] ?? null)}
               data-testid="participant-photo-file-input"
               className="block w-full text-xs text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-white/20"
             />
           </div>
+          {photoObjectUrl && (
+            <div className="space-y-2">
+              <div className="relative h-56 sm:h-64 w-full rounded-lg overflow-hidden bg-black/40">
+                {detectingFace ? (
+                  <div className="absolute inset-0 flex items-center justify-center text-xs text-slate-300 font-body">
+                    Detecting face…
+                  </div>
+                ) : (
+                  <Cropper
+                    image={photoObjectUrl}
+                    crop={photoCrop}
+                    zoom={photoZoom}
+                    minZoom={1}
+                    maxZoom={PHOTO_MAX_ZOOM}
+                    aspect={PHOTO_ASPECT}
+                    cropShape="rect"
+                    showGrid={false}
+                    onCropChange={setPhotoCrop}
+                    onZoomChange={setPhotoZoom}
+                    onCropComplete={(_area, areaPixels) => setCroppedAreaPixels(areaPixels)}
+                    initialCroppedAreaPercentages={cropSuggestion ?? undefined}
+                  />
+                )}
+              </div>
+              {!detectingFace && (
+                <>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold shrink-0">
+                      Zoom
+                    </span>
+                    <input
+                      type="range"
+                      min={1}
+                      max={PHOTO_MAX_ZOOM}
+                      step={0.01}
+                      value={photoZoom}
+                      onChange={(e) => setPhotoZoom(Number(e.target.value))}
+                      className="flex-1 accent-gold"
+                      data-testid="participant-photo-zoom-slider"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500 font-body">
+                    Drag to reposition and use the slider to zoom — this is exactly how the photo will appear on
+                    the ID card.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
             <Button variant="outline" size="sm" onClick={closePhotoDialog}>
               Cancel
@@ -721,7 +900,7 @@ export default function TeamPortal() {
               variant="gold"
               size="sm"
               onClick={uploadParticipantPhoto}
-              disabled={photoBusy}
+              disabled={photoBusy || detectingFace}
               data-testid="submit-participant-photo-btn"
             >
               {photoBusy ? "Uploading…" : "Upload"}
