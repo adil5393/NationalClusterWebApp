@@ -223,9 +223,10 @@ export default function MatGroundAssignment() {
       if (matFilter === "UNASSIGNED" && m.mat_id !== null && m.mat_id !== undefined) return false;
       if (matFilter !== "ALL" && matFilter !== "UNASSIGNED" && String(m.mat_id) !== matFilter) return false;
 
-      // Status filter
-      if (statusFilter === "SCHEDULED" && (!m.scheduled_at || !m.scheduled_end_at)) return false;
-      if (statusFilter === "UNSCHEDULED" && m.scheduled_at && m.scheduled_end_at) return false;
+      // Status filter — "scheduled" = has a mat AND a date/time (matches the
+      // card badges above; deliberately doesn't require an end time too).
+      if (statusFilter === "SCHEDULED" && !(m.scheduled_at && m.mat_id)) return false;
+      if (statusFilter === "UNSCHEDULED" && m.scheduled_at && m.mat_id) return false;
       if (statusFilter === "LIVE" && m.status !== "ONGOING" && m.status !== "PAUSED") return false;
 
       return true;
@@ -246,9 +247,10 @@ export default function MatGroundAssignment() {
     return map;
   }, [filteredMatches]);
 
-  // Top Metrics
+  // Top Metrics — "scheduled" = has a mat AND a date/time (same rule as the
+  // card badges/filter below; doesn't require an end time too).
   const totalMatches = matches.length;
-  const scheduledCount = matches.filter((m) => m.scheduled_at && m.scheduled_end_at).length;
+  const scheduledCount = matches.filter((m) => m.scheduled_at && m.mat_id).length;
   const unscheduledCount = totalMatches - scheduledCount;
   const matsCount = mats.length;
 
@@ -485,7 +487,12 @@ export default function MatGroundAssignment() {
 
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                       {roundMatches.map((m) => {
-                        const isScheduled = Boolean(m.scheduled_at && m.scheduled_end_at);
+                        // "Scheduled" = has a mat AND a date/time — same rule used
+                        // tournament-wide (public Match Schedule tab, etc.). Deliberately
+                        // NOT requiring an end time too — organizers don't always set
+                        // one, and requiring it made almost every card look "unscheduled"
+                        // even when a mat + start time had genuinely been assigned.
+                        const isScheduled = Boolean(m.scheduled_at && m.mat_id);
                         const durationMins = getSlotDurationMinutes(m.scheduled_at, m.scheduled_end_at);
 
                         return (
@@ -493,8 +500,16 @@ export default function MatGroundAssignment() {
                             key={m.id}
                             data-testid={`mat-ground-match-${m.id}`}
                             className={cn(
-                              "rounded-xl border border-white/10 bg-obsidian-950 p-4 space-y-3 transition-all hover:border-gold/40 hover:shadow-lg flex flex-col justify-between",
-                              m.status === "ONGOING" && "border-emerald-500/40 bg-emerald-950/20"
+                              "rounded-xl border p-4 space-y-3 transition-all hover:shadow-lg flex flex-col justify-between",
+                              // Live matches keep their own emerald treatment; a scheduled
+                              // match (mat + time set) gets a clearly gold card+border so
+                              // it's scannable at a glance against unscheduled ones, which
+                              // stay the plain neutral card.
+                              m.status === "ONGOING"
+                                ? "border-emerald-500/40 bg-emerald-950/20"
+                                : isScheduled
+                                ? "border-gold/50 bg-gold/10 hover:border-gold/70"
+                                : "border-white/10 bg-obsidian-950 hover:border-gold/40"
                             )}
                           >
                             {/* CARD TOP INFO */}
@@ -507,6 +522,26 @@ export default function MatGroundAssignment() {
                                   Match #{m.id}
                                 </span>
                               </div>
+
+                              {/* SLOT-ASSIGNMENT INDICATOR — deliberately separate from
+                                  the status badge above, since m.status defaults to
+                                  "SCHEDULED" for any not-yet-started match regardless of
+                                  whether a mat/time slot has actually been assigned yet;
+                                  conflating the two is exactly what made cards look
+                                  indistinguishable before. */}
+                              {m.status !== "ONGOING" && (
+                                <div>
+                                  {isScheduled ? (
+                                    <span className="inline-flex items-center gap-1 rounded-full border border-gold/50 bg-gold/20 px-2 py-0.5 text-[10px] font-heading font-bold text-gold">
+                                      <CalendarCheck className="h-3 w-3" /> Slot Assigned
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-heading font-bold text-amber-400">
+                                      <CalendarOff className="h-3 w-3" /> Pending Slot
+                                    </span>
+                                  )}
+                                </div>
+                              )}
 
                               {/* TEAMS MATCHUP */}
                               <div className="rounded-lg border border-white/5 bg-white/[0.02] p-2.5 space-y-1.5">

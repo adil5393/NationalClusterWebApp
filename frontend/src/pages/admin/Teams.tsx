@@ -56,6 +56,8 @@ interface Team {
   accommodation_locations?: { room?: string | null; building?: string | null; whole_team: boolean; count: number }[];
   age_group_counts?: Record<string, number>;
   present_counts?: Record<string, number>;
+  participants_with_photo_count?: number;
+  all_photos_uploaded?: boolean;
   is_active?: boolean;
   inactive_age_groups?: string[];
   last_year_awards?: LastYearAward[];
@@ -949,9 +951,18 @@ export default function AdminTeams() {
                             </Button>
                             <a
                               href={`${BASE_URL}/api/export/idcards/team/${t.id}.pdf`}
-                              className="inline-flex items-center justify-center rounded text-slate-400 hover:bg-white/10 hover:text-white h-7 w-7 p-0 transition-colors shrink-0"
+                              className={cn(
+                                "inline-flex items-center justify-center rounded h-7 w-7 p-0 transition-colors shrink-0",
+                                t.all_photos_uploaded
+                                  ? "text-red-500 hover:bg-red-500/10 hover:text-red-400"
+                                  : "text-slate-400 hover:bg-white/10 hover:text-white",
+                              )}
                               data-testid={`download-team-idcards-${t.id}`}
-                              title="Download Team ID Cards (PDF)"
+                              title={
+                                t.all_photos_uploaded
+                                  ? `Download Team ID Cards (PDF) — all ${t.participant_count} participant photos uploaded`
+                                  : `Download Team ID Cards (PDF) — ${t.participants_with_photo_count ?? 0}/${t.participant_count ?? 0} participant photos uploaded`
+                              }
                             >
                               <IdCard className="h-3.5 w-3.5" />
                             </a>

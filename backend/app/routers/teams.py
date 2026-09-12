@@ -35,6 +35,20 @@ def _age_group_counts_map(db: Session, team_ids: list[int]) -> dict[int, dict[st
     return result
 
 
+def _photo_counts_map(db: Session, team_ids: list[int]) -> dict[int, int]:
+    """Per-team count of participants who have an uploaded ID-card photo —
+    used to flag a team's ID Card export button once every one of its
+    participants has a photo on file (see routers/teams.py list_teams)."""
+    if not team_ids:
+        return {}
+    return dict(
+        db.query(models.Participant.team_id, func.count(models.Participant.id))
+        .filter(models.Participant.team_id.in_(team_ids), models.Participant.photo_filename.isnot(None))
+        .group_by(models.Participant.team_id)
+        .all()
+    )
+
+
 def _present_counts_map(db: Session, team_ids: list[int]) -> dict[int, dict[str, int]]:
     """Same shape as _age_group_counts_map, but only checked-in
     (Participant.is_present) players — what the min_present_players
@@ -125,6 +139,7 @@ def list_teams(db: Session = Depends(get_db)):
     accommodation = _accommodation_map(db, team_ids, counts)
     age_group_counts = _age_group_counts_map(db, team_ids)
     present_counts = _present_counts_map(db, team_ids)
+    photo_counts = _photo_counts_map(db, team_ids)
     for t in teams:
         t.participant_count = counts.get(t.id, 0)
         info = accommodation.get(t.id, {"status": "none", "locations": []})
@@ -132,6 +147,8 @@ def list_teams(db: Session = Depends(get_db)):
         t.accommodation_locations = info["locations"]
         t.age_group_counts = age_group_counts.get(t.id, {})
         t.present_counts = present_counts.get(t.id, {})
+        t.participants_with_photo_count = photo_counts.get(t.id, 0)
+        t.all_photos_uploaded = t.participant_count > 0 and t.participants_with_photo_count == t.participant_count
         # inactive_age_groups isn't batched here (unlike the maps above) — it's
         # Team's own real relationship, so TeamRead's field_validator reads it
         # straight off each `t` via normal (per-team lazy-loaded) attribute access.

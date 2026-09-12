@@ -273,7 +273,7 @@ class Room(TimestampMixin, Base):
     id = Column(Integer, primary_key=True)
     floor_id = Column(Integer, ForeignKey("floors.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(80), nullable=False)
-    capacity = Column(Integer, default=0)
+    capacity = Column(Integer, default=18)  # organizer's standard bed count per room; editable per-room for exceptions
     room_type = Column(String(80))
     notes = Column(Text)
 

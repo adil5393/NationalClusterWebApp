@@ -98,6 +98,10 @@ class TeamRead(ORMModel, TeamBase):
     accommodation_locations: List[AccommodationLocation] = []
     age_group_counts: dict[str, int] = {}  # e.g. {"Under 14": 10, "Under 17": 8}
     present_counts: dict[str, int] = {}  # same keys, count of is_present participants
+    participants_with_photo_count: int = 0
+    # True only when the team has at least one participant AND every one of
+    # them has an uploaded ID-card photo — an empty team is never "complete".
+    all_photos_uploaded: bool = False
     is_active: bool = True
     has_arrived: bool = False
     # Age groups this team is specifically marked inactive for (see
@@ -142,13 +146,20 @@ class TeamPublic(ORMModel):
 # --- Buildings / Floors / Rooms ---
 class RoomBase(BaseModel):
     name: str
-    capacity: Optional[int] = 0
+    capacity: Optional[int] = 18  # organizer's standard bed count per room; edit per-room for exceptions
     room_type: Optional[str] = None
     notes: Optional[str] = None
 
 
 class RoomCreate(RoomBase):
     pass
+
+
+class RoomUpdate(BaseModel):
+    name: Optional[str] = None
+    capacity: Optional[int] = None
+    room_type: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class RoomRead(ORMModel, RoomBase):

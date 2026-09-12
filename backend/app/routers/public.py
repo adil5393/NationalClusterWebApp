@@ -185,8 +185,11 @@ def _public_match_dict(m: models.Match, db: Session) -> dict:
         "tournament_id": m.tournament_id,
         "tournament_name": m.tournament.name if m.tournament else None,
         "sport": m.tournament.sport if m.tournament else None,
+        "age_group": m.tournament.age_group if m.tournament else None,
         "round_id": m.round_id,
         "round_name": m.round.name if m.round else None,
+        "pool_id": m.pool_id,
+        "pool_name": m.pool.name if m.pool else None,
         "team_a_id": m.team_a_id,
         "team_a_name": _public_team_name(db, m.team_a_id),
         "team_b_id": m.team_b_id,
@@ -200,6 +203,7 @@ def _public_match_dict(m: models.Match, db: Session) -> dict:
         "venue_name": venue.name if venue else None,
         "mat_name": m.mat.name if m.mat else None,
         "scheduled_at": m.scheduled_at.isoformat() if m.scheduled_at else None,
+        "scheduled_end_at": m.scheduled_end_at.isoformat() if m.scheduled_end_at else None,
         "status": m.status,
         "team_a_score": m.team_a_score,
         "team_b_score": m.team_b_score,
@@ -286,6 +290,28 @@ def public_pool_standings(pool_id: int, db: Session = Depends(get_db)):
     if not p:
         raise HTTPException(404, "Pool not found")
     return compute_standings(p)
+
+
+@router.get("/matches/schedule")
+def public_match_schedule(db: Session = Depends(get_db)):
+    """Every match considered "Scheduled" for the public Schedule page's
+    Match Schedule tab: has both a mat AND a date/time assigned — the same
+    "mat + day + time" rule the organizer applies when working the Fixtures
+    page (see routers/matches.py, MatGroundAssignment.tsx). Includes every
+    status (not just upcoming) so a completed or live match still shows its
+    slot/result in the day's programme, not just what's still ahead. Draft
+    tournaments are excluded, same as every other public tournament-scoped
+    endpoint (see public_tournaments above)."""
+    rows = (
+        db.query(models.Match)
+        .join(models.Tournament, models.Match.tournament_id == models.Tournament.id)
+        .filter(models.Tournament.status != "draft")
+        .filter(models.Match.scheduled_at.isnot(None))
+        .filter(models.Match.mat_id.isnot(None))
+        .order_by(models.Match.scheduled_at.asc())
+        .all()
+    )
+    return [_public_match_dict(m, db) for m in rows]
 
 
 @router.get("/matches/live")

@@ -14,6 +14,7 @@ interface Room {
   name: string;
   capacity?: number;
   room_type?: string;
+  notes?: string;
 }
 interface Floor {
   id: number;
@@ -37,6 +38,7 @@ export default function BuildingsRooms() {
   const [dialog, setDialog] = useState<null | { kind: "building" | "floor" | "room"; parentId?: number }>(null);
   const [form, setForm] = useState<Record<string, string>>({});
   const [editBuildingId, setEditBuildingId] = useState<number | null>(null);
+  const [editRoomId, setEditRoomId] = useState<number | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -48,15 +50,31 @@ export default function BuildingsRooms() {
   useEffect(load, []);
 
   const openDialog = (kind: "building" | "floor" | "room", parentId?: number) => {
-    setForm({});
+    // New rooms default to the organizer's standard 18-bed capacity rather
+    // than blank/0 — editable here or later via openEditRoom.
+    setForm(kind === "room" ? { capacity: "18" } : {});
     setEditBuildingId(null);
+    setEditRoomId(null);
     setDialog({ kind, parentId });
   };
 
   const openEditBuilding = (b: Building) => {
     setForm({ name: b.name, code: b.code ?? "", description: b.description ?? "" });
     setEditBuildingId(b.id);
+    setEditRoomId(null);
     setDialog({ kind: "building" });
+  };
+
+  const openEditRoom = (r: Room, floorId: number) => {
+    setForm({
+      name: r.name,
+      capacity: String(r.capacity ?? 18),
+      room_type: r.room_type ?? "",
+      notes: r.notes ?? "",
+    });
+    setEditBuildingId(null);
+    setEditRoomId(r.id);
+    setDialog({ kind: "room", parentId: floorId });
   };
 
   const save = async () => {
@@ -75,6 +93,13 @@ export default function BuildingsRooms() {
         await api.post(`/buildings/${parentId}/floors`, {
           name: form.name,
           level: Number(form.level) || 0,
+        });
+      else if (kind === "room" && editRoomId)
+        await api.put(`/rooms/${editRoomId}`, {
+          name: form.name,
+          capacity: Number(form.capacity) || 0,
+          room_type: form.room_type,
+          notes: form.notes,
         });
       else
         await api.post(`/floors/${parentId}/rooms`, {
@@ -104,6 +129,8 @@ export default function BuildingsRooms() {
         : "Add Hostel Building"
       : dialog?.kind === "floor"
       ? "Add Building Floor"
+      : editRoomId
+      ? "Edit Room"
       : "Add Room";
 
   return (
@@ -260,13 +287,23 @@ export default function BuildingsRooms() {
                                     {r.capacity} Beds
                                   </Badge>
                                   {canEdit && (
-                                    <button
-                                      onClick={() => del("room", r.id)}
-                                      className="text-slate-500 hover:text-red-400 transition-colors ml-1"
-                                      title="Delete Room"
-                                    >
-                                      <Trash2 className="h-3 w-3" />
-                                    </button>
+                                    <>
+                                      <button
+                                        onClick={() => openEditRoom(r, f.id)}
+                                        className="text-slate-500 hover:text-gold transition-colors ml-1"
+                                        title="Edit Room"
+                                        data-testid={`edit-room-${r.id}`}
+                                      >
+                                        <Pencil className="h-3 w-3" />
+                                      </button>
+                                      <button
+                                        onClick={() => del("room", r.id)}
+                                        className="text-slate-500 hover:text-red-400 transition-colors"
+                                        title="Delete Room"
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </button>
+                                    </>
                                   )}
                                 </span>
                               ))}
@@ -340,25 +377,39 @@ export default function BuildingsRooms() {
             </div>
           )}
           {dialog?.kind === "room" && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Bed Capacity</Label>
-                <Input
-                  type="number"
-                  value={form.capacity ?? ""}
-                  onChange={(e) => setForm((f) => ({ ...f, capacity: e.target.value }))}
-                  placeholder="Number of beds"
-                />
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Bed Capacity</Label>
+                  <Input
+                    type="number"
+                    value={form.capacity ?? ""}
+                    onChange={(e) => setForm((f) => ({ ...f, capacity: e.target.value }))}
+                    placeholder="Number of beds"
+                    data-testid="room-capacity-input"
+                  />
+                </div>
+                <div>
+                  <Label>Room Type</Label>
+                  <Input
+                    value={form.room_type ?? ""}
+                    onChange={(e) => setForm((f) => ({ ...f, room_type: e.target.value }))}
+                    placeholder="Dormitory / Single / VIP"
+                  />
+                </div>
               </div>
-              <div>
-                <Label>Room Type</Label>
-                <Input
-                  value={form.room_type ?? ""}
-                  onChange={(e) => setForm((f) => ({ ...f, room_type: e.target.value }))}
-                  placeholder="Dormitory / Single / VIP"
-                />
-              </div>
-            </div>
+              {editRoomId && (
+                <div>
+                  <Label>Notes</Label>
+                  <Textarea
+                    value={form.notes ?? ""}
+                    onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+                    placeholder="Optional notes about this room"
+                    rows={2}
+                  />
+                </div>
+              )}
+            </>
           )}
           <div className="flex justify-end gap-2 pt-3 border-t border-white/10">
             <Button variant="outline" size="sm" onClick={() => setDialog(null)}>

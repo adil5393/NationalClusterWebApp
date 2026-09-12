@@ -77,6 +77,18 @@ def create_room(floor_id: int, payload: schemas.RoomCreate, db: Session = Depend
     return room
 
 
+@router.put("/rooms/{room_id}", response_model=schemas.RoomRead)
+def update_room(room_id: int, payload: schemas.RoomUpdate, db: Session = Depends(get_db)):
+    room = db.get(models.Room, room_id)
+    if not room:
+        raise HTTPException(404, "Room not found")
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(room, key, value)
+    db.commit()
+    db.refresh(room)
+    return room
+
+
 @router.delete("/rooms/{room_id}", status_code=204)
 def delete_room(room_id: int, db: Session = Depends(get_db)):
     obj = db.get(models.Room, room_id)
