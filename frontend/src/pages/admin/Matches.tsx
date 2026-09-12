@@ -25,6 +25,7 @@ import {
   X,
   UserX,
   RotateCcw,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -36,7 +37,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/meta";
-import { useModuleAccess } from "@/lib/permissions";
+import { useModuleAccess, useMe, type Me } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 interface Team {
@@ -87,6 +88,7 @@ interface MatchT {
   started_at?: string | null;
   ended_at?: string | null;
   notes?: string | null;
+  assigned_users?: { id: number; username: string; full_name?: string | null }[];
 }
 interface RoundT {
   id: number;
@@ -205,6 +207,16 @@ function PresentCount({
   );
 }
 
+/** Whether the current account can run the plain lifecycle actions
+ * (start/score/pause/resume/complete/cancel/forfeit/postpone) on this one
+ * match — full "matches" edit access always can; otherwise only if assigned
+ * to this specific match (see backend security.require_match_access, which
+ * enforces the same rule server-side). Never covers delete, reset, general
+ * edit, or mat (re)assignment — those stay canEdit-only regardless. */
+function canControlMatchFor(me: Me | null, canEdit: boolean, matchId: number): boolean {
+  return canEdit || (me?.assigned_match_ids?.includes(matchId) ?? false);
+}
+
 function matchLabel(m: MatchT) {
   if (m.notes === "Bye") return `${m.team_a_name ?? m.team_b_name} — Bye`;
   const a = m.team_a_name ?? (m.source_match_a_id ? `Winner of Match ${m.source_match_a_id}` : "TBD");
@@ -219,6 +231,7 @@ function RoundMatchesList({
   onStart,
   onOpenConsole,
   onRemove,
+  onAssignStaff,
 }: {
   matches: MatchT[];
   presentCounts: Record<number, { present: number; total: number }>;
@@ -226,7 +239,9 @@ function RoundMatchesList({
   onStart: (id: number) => void;
   onOpenConsole: (id: number) => void;
   onRemove: (id: number) => void;
+  onAssignStaff: (m: MatchT) => void;
 }) {
+  const me = useMe();
   return (
     <>
       {/* MOBILE: CARD LIST */}
@@ -234,7 +249,12 @@ function RoundMatchesList({
         {matches.map((m, i) => (
           <div
             key={m.id}
-            className="w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-obsidian-950 p-3.5 space-y-2 shadow-sm"
+            className={cn(
+              "w-full min-w-0 overflow-hidden rounded-xl border p-3.5 space-y-2 shadow-sm",
+              me?.assigned_match_ids?.includes(m.id)
+                ? "border-gold/50 bg-gold/5"
+                : "border-white/10 bg-obsidian-950",
+            )}
             data-testid={`match-card-${m.id}`}
           >
             <div className="flex items-start justify-between gap-2">
@@ -246,7 +266,7 @@ function RoundMatchesList({
                 <Badge tone={matchStatusTone(m)} size="sm">
                   {matchStatusLabel(m)}
                 </Badge>
-                {canEdit && m.status === "SCHEDULED" && m.team_a_id && m.team_b_id && (
+                {canControlMatchFor(me, canEdit, m.id) && m.status === "SCHEDULED" && m.team_a_id && m.team_b_id && (
                   <Button
                     variant="outline"
                     size="icon-sm"
@@ -260,7 +280,7 @@ function RoundMatchesList({
                 {(m.status === "ONGOING" ||
                   m.status === "PAUSED" ||
                   (m.status === "SCHEDULED" && m.team_a_id && m.team_b_id) ||
-                  (canEdit && (m.status === "COMPLETED" || m.status === "CANCELLED"))) && (
+                  (canControlMatchFor(me, canEdit, m.id) && (m.status === "COMPLETED" || m.status === "CANCELLED"))) && (
                   <Button
                     variant="outline"
                     size="icon-sm"
@@ -275,6 +295,17 @@ function RoundMatchesList({
                     }
                   >
                     <Radio className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+                {canEdit && (
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    onClick={() => onAssignStaff(m)}
+                    title="Assign staff to this match"
+                    data-testid={`assign-staff-btn-${m.id}`}
+                  >
+                    <Users className="h-3.5 w-3.5 text-gold" />
                   </Button>
                 )}
                 {canEdit && (m.status === "SCHEDULED" || m.status === "POSTPONED") && (
@@ -334,7 +365,11 @@ function RoundMatchesList({
           </THead>
           <TBody>
             {matches.map((m) => (
-              <TR key={m.id} data-testid={`match-row-${m.id}`}>
+              <TR
+                key={m.id}
+                data-testid={`match-row-${m.id}`}
+                className={me?.assigned_match_ids?.includes(m.id) ? "bg-gold/5 border-l-2 border-l-gold" : undefined}
+              >
                 <TD className="font-heading font-bold text-white text-sm">
                   {matchLabel(m)}
                   {m.winner_team_name && (
@@ -380,7 +415,7 @@ function RoundMatchesList({
                 </TD>
                 <TD className="text-right">
                   <div className="flex items-center justify-end gap-1">
-                    {canEdit && m.status === "SCHEDULED" && m.team_a_id && m.team_b_id && (
+                    {canControlMatchFor(me, canEdit, m.id) && m.status === "SCHEDULED" && m.team_a_id && m.team_b_id && (
                       <Button
                         variant="ghost"
                         size="icon-sm"
@@ -394,7 +429,7 @@ function RoundMatchesList({
                     {(m.status === "ONGOING" ||
                       m.status === "PAUSED" ||
                       (m.status === "SCHEDULED" && m.team_a_id && m.team_b_id) ||
-                      (canEdit && (m.status === "COMPLETED" || m.status === "CANCELLED"))) && (
+                      (canControlMatchFor(me, canEdit, m.id) && (m.status === "COMPLETED" || m.status === "CANCELLED"))) && (
                       <Button
                         variant="ghost"
                         size="icon-sm"
@@ -408,6 +443,17 @@ function RoundMatchesList({
                         }
                       >
                         <Radio className="h-4 w-4 text-emerald-400" />
+                      </Button>
+                    )}
+                    {canEdit && (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => onAssignStaff(m)}
+                        title="Assign staff to this match"
+                        data-testid={`assign-staff-btn-${m.id}`}
+                      >
+                        <Users className="h-4 w-4 text-gold" />
                       </Button>
                     )}
                     {canEdit && (m.status === "SCHEDULED" || m.status === "POSTPONED") && (
@@ -428,6 +474,108 @@ function RoundMatchesList({
         </Table>
       </div>
     </>
+  );
+}
+
+interface AssignableUser {
+  id: number;
+  username: string;
+  full_name?: string | null;
+}
+
+function AssignStaffDialog({
+  match,
+  onClose,
+  onSaved,
+}: {
+  match: MatchT;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [assignable, setAssignable] = useState<AssignableUser[]>([]);
+  const [selected, setSelected] = useState<Set<number>>(new Set(match.assigned_users?.map((u) => u.id) ?? []));
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api
+      .get<AssignableUser[]>("/matches/staff/assignable")
+      .then((r) => setAssignable(r.data))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const toggle = (id: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/matches/${match.id}/assignees`, { user_ids: [...selected] });
+      toast.success("Match assignments updated");
+      onSaved();
+      onClose();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not update assignments");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={`Assign Staff — ${matchLabel(match)}`}
+      className="max-w-sm"
+      testId="assign-staff-dialog"
+    >
+      {loading ? (
+        <Spinner label="Loading organizer accounts…" />
+      ) : (
+        <div className="space-y-3">
+          <p className="text-xs text-slate-400 font-body">
+            Assigned staff can fully control this match (start, score, pause, resume, complete, cancel, forfeit,
+            postpone) without needing broader Matches &amp; Fixtures access — but never delete or reset it.
+          </p>
+          <div className="max-h-64 overflow-y-auto space-y-1 rounded-lg border border-white/10 bg-obsidian-950 p-2">
+            {assignable.length === 0 ? (
+              <p className="text-xs text-slate-500 p-2">No organizer accounts found.</p>
+            ) : (
+              assignable.map((u) => (
+                <label
+                  key={u.id}
+                  className="flex items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-200 hover:bg-white/5 cursor-pointer"
+                  data-testid={`assign-staff-option-${u.id}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.has(u.id)}
+                    onChange={() => toggle(u.id)}
+                    className="h-4 w-4 accent-gold"
+                  />
+                  <span className="font-medium">{u.full_name || u.username}</span>
+                  {u.full_name && <span className="text-xs text-slate-500">@{u.username}</span>}
+                </label>
+              ))
+            )}
+          </div>
+          <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+            <Button variant="outline" size="sm" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button variant="gold" size="sm" onClick={save} disabled={saving} data-testid="save-assign-staff-btn">
+              {saving ? "Saving…" : "Save Assignments"}
+            </Button>
+          </div>
+        </div>
+      )}
+    </Dialog>
   );
 }
 
@@ -523,6 +671,7 @@ export default function Matches() {
   });
 
   const [consoleMatchId, setConsoleMatchId] = useState<number | null>(null);
+  const [assignStaffMatch, setAssignStaffMatch] = useState<MatchT | null>(null);
 
   const [bgOpen, setBgOpen] = useState(false);
   const [bgTeamIds, setBgTeamIds] = useState<number[]>([]);
@@ -1312,6 +1461,7 @@ export default function Matches() {
                                     onStart={startMatch}
                                     onOpenConsole={setConsoleMatchId}
                                     onRemove={removeMatch}
+                                    onAssignStaff={setAssignStaffMatch}
                                   />
                                 );
                               }
@@ -1347,6 +1497,7 @@ export default function Matches() {
                                             onStart={startMatch}
                                             onOpenConsole={setConsoleMatchId}
                                             onRemove={removeMatch}
+                                            onAssignStaff={setAssignStaffMatch}
                                           />
                                         )}
                                       </div>
@@ -1841,6 +1992,15 @@ export default function Matches() {
         />
       )}
 
+      {/* ASSIGN STAFF DIALOG */}
+      {assignStaffMatch && (
+        <AssignStaffDialog
+          match={assignStaffMatch}
+          onClose={() => setAssignStaffMatch(null)}
+          onSaved={refreshAll}
+        />
+      )}
+
       {/* BUCKET DIALOG */}
       {bucketRoundId !== null && selectedId && (
         <BucketDialog
@@ -1870,6 +2030,8 @@ function LiveConsole({
   onClose: () => void;
   onChanged: () => void;
 }) {
+  const me = useMe();
+  const canControl = canControlMatchFor(me, canEdit, matchId);
   const [m, setM] = useState<MatchT | null>(null);
   const [loading, setLoading] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
@@ -2065,7 +2227,7 @@ function LiveConsole({
             >
               {m.team_a_score}
             </div>
-            {canEdit && m.status === "ONGOING" && (
+            {canControl && m.status === "ONGOING" && (
               <div className="flex flex-col items-center gap-2 pt-2 sm:pt-4">
                 {pendingScore.a == null ? (
                   <div className="flex justify-center gap-2">
@@ -2133,7 +2295,7 @@ function LiveConsole({
             >
               {m.team_b_score}
             </div>
-            {canEdit && m.status === "ONGOING" && (
+            {canControl && m.status === "ONGOING" && (
               <div className="flex flex-col items-center gap-2 pt-4">
                 {pendingScore.b == null ? (
                   <div className="flex justify-center gap-2">
@@ -2184,7 +2346,7 @@ function LiveConsole({
           <span className="text-xs text-slate-400 font-mono">
             {m.notes ? `Notes: ${m.notes}` : "Official Electronic Scoreboard Feed"}
           </span>
-          {canEdit && (
+          {canControl && (
             <div className="flex gap-2">
               {m.status === "ONGOING" && (
                 <Button variant="outline" size="sm" onClick={() => act("pause", "Match paused")}>
@@ -2226,6 +2388,11 @@ function LiveConsole({
               <Badge tone={matchStatusTone(m)} size="sm">
                 {m.status === "ONGOING" ? "● LIVE IN PROGRESS" : matchStatusLabel(m)}
               </Badge>
+              {me?.assigned_match_ids?.includes(matchId) && (
+                <Badge tone="gold" size="sm" data-testid="assigned-to-me-badge">
+                  Assigned to You
+                </Badge>
+              )}
               <span className="text-xs text-slate-400 font-mono">{m.round_name}</span>
             </div>
             <Button
@@ -2276,7 +2443,7 @@ function LiveConsole({
                   >
                     {value}
                   </span>
-                  {canEdit && m.status === "ONGOING" && (
+                  {canControl && m.status === "ONGOING" && (
                     pendingScore[side] == null ? (
                       <div className="flex gap-1.5">
                         {[1, 2, 3].map((n) => (
@@ -2333,7 +2500,7 @@ function LiveConsole({
           })}
 
           {/* ACTION CONTROLS */}
-          {canEdit && (
+          {canControl && (
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-4">
               <div className="flex gap-2">
                 {m.status === "ONGOING" && (
@@ -2373,14 +2540,19 @@ function LiveConsole({
                     <UserX className="h-4 w-4" /> Forfeit
                   </Button>
                 )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={openReset}
-                  data-testid="open-reset-match-btn"
-                >
-                  <RotateCcw className="h-4 w-4" /> Reset
-                </Button>
+                {/* Reset always needs real "matches" edit access — never
+                    unlockable by match assignment alone, even inside this
+                    otherwise-assignment-controllable action row. */}
+                {canEdit && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={openReset}
+                    data-testid="open-reset-match-btn"
+                  >
+                    <RotateCcw className="h-4 w-4" /> Reset
+                  </Button>
+                )}
               </div>
               <Button
                 variant="gold"
@@ -2397,7 +2569,7 @@ function LiveConsole({
           {/* FORFEIT PANEL — one button opens this, then the organizer picks
               which team forfeits; forfeitMatch's own confirm() is the final
               step, so no separate "Confirm" button is needed here. */}
-          {canEdit && forfeitOpen && m && m.team_a_id && m.team_b_id && (
+          {canControl && forfeitOpen && m && m.team_a_id && m.team_b_id && (
             <div
               className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 space-y-2"
               data-testid="forfeit-match-panel"
@@ -3637,6 +3809,7 @@ function PoolDetailDialog({
   onOpenConsole: (id: number) => void;
   onChanged: () => void;
 }) {
+  const me = useMe();
   const [pool, setPool] = useState<PoolT | null>(null);
   const [matches, setMatches] = useState<MatchT[]>([]);
   const [standings, setStandings] = useState<StandingRow[]>([]);
@@ -3644,6 +3817,7 @@ function PoolDetailDialog({
   const [tiePicks, setTiePicks] = useState<number[]>([]);
   const [resolvingTie, setResolvingTie] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [assignStaffMatch, setAssignStaffMatch] = useState<MatchT | null>(null);
 
   const load = (silent = false) => {
     if (!silent) setLoading(true);
@@ -3886,7 +4060,10 @@ function PoolDetailDialog({
                   </THead>
                   <TBody>
                     {matches.map((m, i) => (
-                      <TR key={m.id}>
+                      <TR
+                        key={m.id}
+                        className={me?.assigned_match_ids?.includes(m.id) ? "bg-gold/5 border-l-2 border-l-gold" : undefined}
+                      >
                         <TD className="font-mono text-xs text-slate-500">{i + 1}</TD>
                         <TD className="font-heading font-bold text-white text-xs">
                           {m.team_a_name} vs {m.team_b_name}
@@ -3903,7 +4080,7 @@ function PoolDetailDialog({
                         </TD>
                         <TD className="text-right">
                           <div className="flex items-center justify-end gap-1">
-                            {canEdit && m.status === "SCHEDULED" && (
+                            {canControlMatchFor(me, canEdit, m.id) && m.status === "SCHEDULED" && (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -3916,7 +4093,7 @@ function PoolDetailDialog({
                             {(m.status === "ONGOING" ||
                               m.status === "PAUSED" ||
                               (m.status === "SCHEDULED" && m.team_a_id && m.team_b_id) ||
-                              (canEdit && (m.status === "COMPLETED" || m.status === "CANCELLED"))) && (
+                              (canControlMatchFor(me, canEdit, m.id) && (m.status === "COMPLETED" || m.status === "CANCELLED"))) && (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -3925,6 +4102,18 @@ function PoolDetailDialog({
                               >
                                 <Radio className="h-3 w-3" />
                                 {m.status === "ONGOING" || m.status === "PAUSED" ? "Live" : "Manage"}
+                              </Button>
+                            )}
+                            {canEdit && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setAssignStaffMatch(m)}
+                                className="text-xs"
+                                title="Assign staff to this match"
+                                data-testid={`assign-staff-btn-${m.id}`}
+                              >
+                                <Users className="h-3 w-3 text-gold" />
                               </Button>
                             )}
                           </div>
@@ -3937,6 +4126,13 @@ function PoolDetailDialog({
             )}
           </div>
         </div>
+      )}
+      {assignStaffMatch && (
+        <AssignStaffDialog
+          match={assignStaffMatch}
+          onClose={() => setAssignStaffMatch(null)}
+          onSaved={() => load(true)}
+        />
       )}
     </Dialog>
   );

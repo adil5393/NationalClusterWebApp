@@ -68,6 +68,7 @@ def _match_dict(m: models.Match, db: Session) -> dict:
         "started_at": m.started_at.isoformat() if m.started_at else None,
         "ended_at": m.ended_at.isoformat() if m.ended_at else None,
         "notes": m.notes,
+        "assigned_users": [{"id": u.id, "username": u.username, "full_name": u.full_name} for u in m.assigned_users],
     }
 
 
@@ -935,6 +936,38 @@ def update_match(match_id: int, payload: schemas.MatchUpdate, db: Session = Depe
         setattr(m, k, v)
     if m.status == "POSTPONED" and "scheduled_at" in data:
         m.status = "SCHEDULED"  # rescheduling a postponed match puts it back on the calendar
+    db.commit()
+    db.refresh(m)
+    return _match_dict(m, db)
+
+
+@router.get("/api/matches/staff/assignable")
+def list_assignable_staff(db: Session = Depends(get_db)):
+    """Active Organizer Portal accounts a match can be assigned to. A plain
+    two-segment path (not /api/matches/{match_id}) so it can never collide
+    with the match_id route regardless of registration order."""
+    users = db.query(models.OrganizerUser).filter(models.OrganizerUser.is_active.is_(True)).order_by(models.OrganizerUser.username).all()
+    return [{"id": u.id, "username": u.username, "full_name": u.full_name} for u in users]
+
+
+@router.put("/api/matches/{match_id}/assignees")
+def set_match_assignees(match_id: int, payload: schemas.MatchAssigneesUpdate, db: Session = Depends(get_db)):
+    """Replaces the full set of staff assigned to this match — an assigned
+    account gets independent access to it (view always; full control except
+    delete/reset) regardless of their own "matches" module permission, see
+    security.require_match_access. This endpoint itself always needs real
+    "matches" edit access or admin (its path doesn't match any of that
+    dependency's assignable-action whitelist, so it fails closed to that)."""
+    m = db.get(models.Match, match_id)
+    if not m:
+        raise HTTPException(404, "Match not found")
+    ids = list(dict.fromkeys(payload.user_ids))
+    users = db.query(models.OrganizerUser).filter(models.OrganizerUser.id.in_(ids)).all() if ids else []
+    found_ids = {u.id for u in users}
+    missing = [i for i in ids if i not in found_ids]
+    if missing:
+        raise HTTPException(404, f"Organizer account(s) not found: {missing}")
+    m.assigned_users = users
     db.commit()
     db.refresh(m)
     return _match_dict(m, db)

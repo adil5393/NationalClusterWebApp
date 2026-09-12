@@ -30,6 +30,11 @@ def _user_payload(user: "models.OrganizerUser | None"):
         "is_admin": user.is_admin,
         "permissions": user.permissions or {},
         "staff_member": {"id": staff.id, "full_name": staff.full_name, "category": staff.category} if staff else None,
+        # Matches this account can fully control (except delete/reset) independent
+        # of the "matches" module permission — see security.require_match_access.
+        # The frontend uses this to both grant Matches page visibility to an
+        # account with zero module access, and to color-code assigned matches.
+        "assigned_match_ids": [m.id for m in user.assigned_matches],
     }
 
 

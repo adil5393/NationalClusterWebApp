@@ -22,7 +22,7 @@ DUTY_TYPES = ["Fooding", "Lodging", "Cleaning", "Medical", "Security", "Transpor
 # A staff member's broad category (who they are) — separate from duty_type (what
 # they're doing on a given assignment, e.g. Fooding/Lodging), which is decided at
 # allotment time, not when the person is added.
-STAFF_CATEGORIES = ["Academic & Administrative", "Support & Housekeeping", "Transport"]
+STAFF_CATEGORIES = ["Academic & Administrative", "Support & Housekeeping", "Transport", "Observer", "Game Manager"]
 
 
 class ORMModel(BaseModel):
@@ -839,6 +839,10 @@ class MatchUpdate(BaseModel):
     venue_id: Optional[int] = None
     scheduled_at: Optional[datetime] = None
     notes: Optional[str] = None
+
+
+class MatchAssigneesUpdate(BaseModel):
+    user_ids: List[int]  # replaces the match's full assigned-staff set
 
 
 class MatchScoreUpdate(BaseModel):

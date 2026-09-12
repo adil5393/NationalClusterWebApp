@@ -164,11 +164,18 @@ export function AdminLayout() {
     );
   }
 
-  const isItemVisible = (moduleKey?: string) => {
+  const isItemVisible = (moduleKey?: string, to?: string) => {
     if (!moduleKey) return true;
     if (moduleKey === "accounts") return !!me?.is_admin;
     if (me?.is_admin) return true;
-    return !!me?.permissions?.[moduleKey];
+    if (!!me?.permissions?.[moduleKey]) return true;
+    // An account with zero "matches" module access can still be assigned to
+    // specific matches (see permissions.tsx useModuleAccess) — that only
+    // unlocks the Matches & Fixtures page itself, not Mat/Ground or Reports,
+    // which share the same moduleKey for permission-editing purposes but
+    // aren't part of the match-assignment access path.
+    if (to === "/admin/matches" && (me?.assigned_match_ids?.length ?? 0) > 0) return true;
+    return false;
   };
 
   return (
@@ -224,7 +231,7 @@ export function AdminLayout() {
         {/* NAVIGATION GROUPS */}
         <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-5" aria-label="Operations Navigation">
           {NAV_GROUPS.map((group) => {
-            const visibleItems = group.items.filter((item) => isItemVisible(item.moduleKey));
+            const visibleItems = group.items.filter((item) => isItemVisible(item.moduleKey, item.to));
             if (visibleItems.length === 0) return null;
 
             return (

@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import settings
-from .security import require_admin, require_auth, require_module
+from .security import require_admin, require_auth, require_match_access, require_module
 from .routers import (
     accommodation,
     announcements,
@@ -126,7 +126,6 @@ for router_module, module_key in (
     (faq, "faq"),
     (gallery, "gallery"),
     (staff, "staff"),
-    (matches, "matches"),
     (pools, "matches"),
     (buckets, "matches"),
     (reports, "matches"),
@@ -134,6 +133,13 @@ for router_module, module_key in (
     (attendance, "attendance"),
 ):
     app.include_router(router_module.router, dependencies=[Depends(require_module(module_key))])
+
+# matches.py gets its own gate instead of the plain module check above — an
+# account assigned to a specific match (models.Match.assigned_users) can view
+# every match and fully control (except delete/reset) its own assigned
+# match(es) independent of the "matches" module permission. See
+# security.require_match_access for the exact rules.
+app.include_router(matches.router, dependencies=[Depends(require_match_access)])
 
 # attendance.py's second router (coach check-in) — same "attendance" module,
 # registered separately since it isn't the module's `.router` attribute.

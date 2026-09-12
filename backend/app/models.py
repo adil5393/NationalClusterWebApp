@@ -611,6 +611,11 @@ class OrganizerUser(TimestampMixin, Base):
     # meant for actual event staff, and one account (e.g. a shared shift
     # tablet) can stand in for more than one person.
     staff_members = relationship("StaffMember", secondary=organizer_user_staff, backref="organizer_users")
+    # Matches this account is assigned to referee/manage — an independent access
+    # path from `permissions`: an assigned account can view every match and fully
+    # control (except delete/reset — see security.require_match_access) its own
+    # assigned matches, even with no "matches" entry in `permissions` at all.
+    assigned_matches = relationship("Match", secondary="match_staff_assignments", back_populates="assigned_users")
 
 
 class Tournament(TimestampMixin, Base):
@@ -779,6 +784,14 @@ class Pool(TimestampMixin, Base):
     matches = relationship("Match", back_populates="pool", foreign_keys="Match.pool_id")
 
 
+match_staff_assignments = Table(
+    "match_staff_assignments",
+    Base.metadata,
+    Column("match_id", Integer, ForeignKey("matches.id", ondelete="CASCADE"), primary_key=True),
+    Column("organizer_user_id", Integer, ForeignKey("organizer_users.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
 class Match(TimestampMixin, Base):
     """A single fixture between two Teams. Either team slot can start out empty
     (source_match_a/b_id set instead) when the bracket is drawn ahead of earlier
@@ -854,6 +867,7 @@ class Match(TimestampMixin, Base):
     events = relationship(
         "MatchEvent", back_populates="match", cascade="all, delete-orphan", order_by="MatchEvent.id"
     )
+    assigned_users = relationship("OrganizerUser", secondary=match_staff_assignments, back_populates="assigned_matches")
 
 
 class MatchEvent(TimestampMixin, Base):
