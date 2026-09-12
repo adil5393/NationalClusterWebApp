@@ -531,54 +531,74 @@ export default function TeamPortal() {
           {team.participants.length === 0 ? (
             <p className="text-xs text-slate-400">Athlete roster verification in progress.</p>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="space-y-6 sm:space-y-8">
               {groupByAge(team.participants).map(([group, members]) => (
-                <div key={group} className="rounded-xl border border-white/10 bg-obsidian-950 overflow-hidden">
-                  <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.03] px-4 py-3">
-                    <h3 className="font-heading text-xs font-bold text-gold uppercase tracking-wider">
-                      {group}
-                    </h3>
+                <div key={group} className="space-y-3.5">
+                  <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-gold shadow-[0_0_8px_rgba(234,179,8,0.5)]" />
+                      <h3 className="font-heading text-xs sm:text-sm font-bold text-gold uppercase tracking-wider">
+                        {group}
+                      </h3>
+                    </div>
                     <Badge tone="neutral" size="sm">
-                      {members.length}
+                      {members.length} {members.length === 1 ? "Athlete" : "Athletes"}
                     </Badge>
                   </div>
-                  <ol className="divide-y divide-white/5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-3.5">
                     {[...members]
                       .sort((a, b) => a.full_name.localeCompare(b.full_name))
                       .map((p, i) => (
-                        <li key={i} className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs">
-                          <span className="flex items-center gap-2.5 font-body text-slate-200 min-w-0">
-                            <button
-                              type="button"
-                              onClick={() => setPhotoTarget(p)}
-                              title={p.photo_url ? "Update photo" : "Add photo"}
-                              data-testid={`participant-photo-btn-${p.id}`}
-                              className="grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-full border border-white/10 bg-obsidian-900 hover:border-gold/50 transition-colors"
-                            >
-                              {p.photo_url ? (
+                        <div
+                          key={p.id}
+                          className="flex items-center gap-3 sm:gap-3.5 p-3 sm:p-3.5 rounded-xl border border-white/10 bg-obsidian-950/70 hover:border-gold/30 hover:bg-white/[0.04] transition-all min-h-[76px] sm:min-h-[84px]"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setPhotoTarget(p)}
+                            title={p.photo_url ? "Update photo" : "Add photo"}
+                            data-testid={`participant-photo-btn-${p.id}`}
+                            className="relative group shrink-0 h-12 w-12 sm:h-14 sm:w-14 rounded-xl overflow-hidden border border-white/10 bg-obsidian-900/90 hover:border-gold/60 focus:outline-none focus:ring-2 focus:ring-gold/40 transition-all flex items-center justify-center shadow-inner"
+                          >
+                            {p.photo_url ? (
+                              <>
                                 <img
                                   src={assetUrl(p.photo_url)}
-                                  alt=""
-                                  className="h-full w-full object-cover"
+                                  alt={p.full_name}
+                                  className="h-full w-full object-cover object-[center_top]"
                                   loading="lazy"
                                 />
-                              ) : (
-                                <Camera className="h-3 w-3 text-slate-500" />
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                  <Camera className="h-4 w-4 text-white" />
+                                </div>
+                              </>
+                            ) : (
+                              <div className="flex flex-col items-center justify-center text-slate-500 group-hover:text-gold transition-colors">
+                                <Camera className="h-5 w-5 sm:h-6 sm:w-6" />
+                              </div>
+                            )}
+                          </button>
+                          <div className="min-w-0 flex-1 flex flex-col justify-center">
+                            <h4
+                              className="font-heading font-bold text-white text-sm sm:text-[15px] leading-snug line-clamp-2"
+                              title={p.full_name}
+                            >
+                              {p.full_name}
+                            </h4>
+                            <div className="mt-1 flex items-center gap-2">
+                              <span className="font-mono text-[11px] font-medium text-slate-400 shrink-0">
+                                #{i + 1}
+                              </span>
+                              {p.role && (
+                                <span className="shrink-0 rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-mono font-medium uppercase tracking-wider text-slate-400 border border-white/5">
+                                  {p.role}
+                                </span>
                               )}
-                            </button>
-                            <span className="min-w-0 truncate">
-                              <span className="font-mono text-slate-500 mr-1.5">{i + 1}.</span>
-                              <span className="font-semibold text-white">{p.full_name}</span>
-                            </span>
-                          </span>
-                          {p.role && (
-                            <span className="shrink-0 rounded bg-white/5 px-2 py-0.5 text-[10px] font-mono font-medium text-slate-400">
-                              {p.role}
-                            </span>
-                          )}
-                        </li>
+                            </div>
+                          </div>
+                        </div>
                       ))}
-                  </ol>
+                  </div>
                 </div>
               ))}
             </div>
