@@ -249,17 +249,26 @@ export default function TeamPortal() {
     setLoadingExistingPhoto(true);
     try {
       // The participant thumbnail right above already loaded this exact URL
-      // as a plain <img> (a no-cors request) — reusing the same URL here for
-      // a credentialed XHR makes Chromium serve back that cached opaque
-      // response instead of issuing a fresh CORS-mode request, which surfaces
-      // as a false "No Access-Control-Allow-Origin" error (confirmed via a
-      // headless reproduction: the identical fetch succeeds on a page that
-      // never rendered the <img>, and fails right after one that did). A
+      // as a plain <img> (a no-cors request) — reusing the same URL here
+      // makes Chromium serve back that cached opaque response instead of
+      // issuing a fresh request, which surfaces as a false
+      // "No Access-Control-Allow-Origin" error (confirmed via a headless
+      // reproduction: the identical fetch succeeds on a page that never
+      // rendered the <img>, and fails right after one that did). A
       // cache-busting query param forces a real network request that was
       // never touched by the <img> load.
+      //
+      // Plain fetch() here, not the `api` axios instance: assetUrl() already
+      // returns a path starting with "/api/..." (baked into photo_url from
+      // the backend), and `api`'s own baseURL ALSO prepends "/api" to any
+      // relative URL — in dev that was masked because BASE_URL made the URL
+      // absolute (axios never applies baseURL to an absolute URL), but in
+      // production (same-origin, BASE_URL empty) it produced a real
+      // "/api/api/assets/..." 404. fetch() has no baseURL to double up.
       const bustUrl = `${assetUrl(photoTarget.photo_url)}?_=${Date.now()}`;
-      const resp = await api.get<Blob>(bustUrl, { responseType: "blob" });
-      const blob = resp.data;
+      const fetchResp = await fetch(bustUrl);
+      if (!fetchResp.ok) throw new Error(`fetch failed: ${fetchResp.status}`);
+      const blob = await fetchResp.blob();
       const ext = blob.type.includes("png") ? "png" : blob.type.includes("webp") ? "webp" : "jpg";
       await onPhotoFileSelected(new File([blob], `current-photo.${ext}`, { type: blob.type }));
     } catch (e) {
