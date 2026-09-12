@@ -37,6 +37,7 @@ const AdminAnnouncements = lazy(() => import("@/pages/admin/Announcements"));
 const AdminFaq = lazy(() => import("@/pages/admin/Faq"));
 const AdminGallery = lazy(() => import("@/pages/admin/Gallery"));
 const Staff = lazy(() => import("@/pages/admin/Staff"));
+const StaffLiveMap = lazy(() => import("@/pages/admin/StaffLiveMap"));
 const Matches = lazy(() => import("@/pages/admin/Matches"));
 const MatGroundAssignment = lazy(() => import("@/pages/admin/MatGroundAssignment"));
 const Reports = lazy(() => import("@/pages/admin/Reports"));
@@ -110,6 +111,7 @@ export default function App() {
           <Route path="/admin/teams" element={<AdminTeams />} />
           <Route path="/admin/buildings" element={<BuildingsRooms />} />
           <Route path="/admin/staff" element={<Staff />} />
+          <Route path="/admin/staff-map" element={<StaffLiveMap />} />
           <Route path="/admin/knowledge" element={<Knowledge />} />
           <Route path="/admin/procurement" element={<Procurement />} />
           <Route path="/admin/announcements" element={<AdminAnnouncements />} />

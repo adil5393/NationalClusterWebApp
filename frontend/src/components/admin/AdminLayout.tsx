@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { Capacitor } from "@capacitor/core";
+import { Geolocation } from "@capacitor/geolocation";
 import {
   LayoutDashboard,
   Users,
@@ -33,6 +34,7 @@ import {
   Trophy,
   Shield,
   Activity,
+  MapPinned,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -67,6 +69,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/admin/teams", label: "Teams", icon: Users, moduleKey: "teams" },
       { to: "/admin/participants", label: "Participants", icon: UserSquare2, moduleKey: "teams" },
       { to: "/admin/staff", label: "Staff & Duties", icon: HardHat, moduleKey: "staff" },
+      { to: "/admin/staff-map", label: "Staff Live Map", icon: MapPinned, moduleKey: "staff_map" },
     ],
   },
   {
@@ -142,6 +145,62 @@ export function AdminLayout() {
     navigate("/admin/login");
   };
 
+  // Staff Live Map: foreground-only location reporting for this account.
+  // Runs for the whole time an authenticated session stays in the admin
+  // area (this layout wraps every /admin/* route and is never remounted by
+  // internal navigation), not just while on the map page itself — pings
+  // once now, then every ~4 minutes, and again whenever the app/tab returns
+  // to the foreground. @capacitor/geolocation has a web fallback backed by
+  // navigator.geolocation, so this same code runs unchanged in the
+  // Capacitor Android app and in a plain browser/PWA. No watchPosition, no
+  // background tracking, and a confirmed permission denial stops further
+  // attempts for the rest of this session rather than re-prompting.
+  useEffect(() => {
+    if (!me?.authenticated) return;
+    let stopped = false;
+    let cancelled = false;
+
+    const reportLocation = async () => {
+      if (stopped || cancelled) return;
+      try {
+        const status = await Geolocation.checkPermissions();
+        if (status.location === "denied" && status.coarseLocation === "denied") {
+          stopped = true;
+          return;
+        }
+        const pos = await Geolocation.getCurrentPosition({
+          enableHighAccuracy: false,
+          timeout: 10000,
+          maximumAge: 60000,
+        });
+        if (cancelled) return;
+        await api.post("/staff-locations/me", {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy: pos.coords.accuracy ?? null,
+        });
+      } catch {
+        // GPS timeout, location services off, a network hiccup on the POST,
+        // or a web browser without geolocation support — never let any of
+        // this block or interrupt the app, just skip this round and retry
+        // on the next tick or the next foreground event.
+      }
+    };
+
+    reportLocation();
+    const intervalId = setInterval(reportLocation, 4 * 60 * 1000);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") reportLocation();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [me?.authenticated]);
+
   useEffect(() => {
     if (timer.current) clearTimeout(timer.current);
     if (!q.trim()) {
@@ -166,7 +225,10 @@ export function AdminLayout() {
 
   const isItemVisible = (moduleKey?: string, to?: string) => {
     if (!moduleKey) return true;
-    if (moduleKey === "accounts") return !!me?.is_admin;
+    // Both of these are deliberately not real gate-able modules (see
+    // schemas.ORGANIZER_MODULES) — admin-only, full stop, not something a
+    // "view"/"edit" permission grant can ever unlock for a staff login.
+    if (moduleKey === "accounts" || moduleKey === "staff_map") return !!me?.is_admin;
     if (me?.is_admin) return true;
     if (!!me?.permissions?.[moduleKey]) return true;
     // An account with zero "matches" module access can still be assigned to

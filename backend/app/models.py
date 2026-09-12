@@ -10,6 +10,7 @@ from sqlalchemy import (
     Column,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     JSON,
@@ -589,6 +590,31 @@ class DutyAssignment(TimestampMixin, Base):
     room = relationship("Room", back_populates="duty_assignments")
 
 
+class StaffLocation(TimestampMixin, Base):
+    """One row per OrganizerUser — their last reported approximate location
+    (organizer-only Staff Live Map), overwritten on every update. No history
+    is kept by design; `updated_at` (from TimestampMixin) IS the "last seen"
+    timestamp the map's freshness labels key off, so no separate
+    last-reported column is needed.
+
+    A one-to-one table here (user_id as the primary key, not a separate
+    autoincrement id) rather than columns on OrganizerUser: this is an
+    operational/ephemeral concern updated every few minutes by a background
+    ping, not an identity/auth attribute — keeping it off the core login
+    table means a location-reporting bug can never touch auth data, a user
+    with no location yet is simply absent (no row) rather than a set of
+    nullable columns on every login, and it leaves room to grow (e.g. a
+    future event-zone FK) without cluttering OrganizerUser.
+    """
+    __tablename__ = "staff_locations"
+    user_id = Column(Integer, ForeignKey("organizer_users.id", ondelete="CASCADE"), primary_key=True)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    accuracy = Column(Float)  # device-reported horizontal accuracy in meters, if known
+
+    user = relationship("OrganizerUser", back_populates="location")
+
+
 organizer_user_staff = Table(
     "organizer_user_staff",
     Base.metadata,
@@ -622,6 +648,10 @@ class OrganizerUser(TimestampMixin, Base):
     # control (except delete/reset — see security.require_match_access) its own
     # assigned matches, even with no "matches" entry in `permissions` at all.
     assigned_matches = relationship("Match", secondary="match_staff_assignments", back_populates="assigned_users")
+    # Last known approximate location (Staff Live Map) — one-to-one, no
+    # history. See StaffLocation below for why this is its own table rather
+    # than columns on this one.
+    location = relationship("StaffLocation", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
 
 class Tournament(TimestampMixin, Base):
