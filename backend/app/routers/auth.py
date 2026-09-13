@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from .. import models
 from ..auth_utils import verify_password
+from ..config import settings
 from ..database import get_db
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -20,7 +21,7 @@ class LoginRequest(BaseModel):
 
 def _user_payload(user: "models.OrganizerUser | None"):
     if not user:
-        return {"authenticated": False}
+        return {"authenticated": False, "admin_password_gate_disabled": settings.disable_admin_password_gate}
     staff = user.staff_members[0] if user.staff_members else None
     return {
         "authenticated": True,
@@ -35,6 +36,9 @@ def _user_payload(user: "models.OrganizerUser | None"):
         # The frontend uses this to both grant Matches page visibility to an
         # account with zero module access, and to color-code assigned matches.
         "assigned_match_ids": [m.id for m in user.assigned_matches],
+        # Dev/testing only — see config.py's DISABLE_ADMIN_PASSWORD_GATE. Lets
+        # Teams.tsx skip its "type an admin password" toggle-off dialog.
+        "admin_password_gate_disabled": settings.disable_admin_password_gate,
     }
 
 

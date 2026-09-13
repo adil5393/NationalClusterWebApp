@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..auth_utils import verify_password
+from ..config import settings
 from ..database import get_db
 from ..ws import broadcast_roster_change_sync
 
@@ -17,7 +18,13 @@ def _require_admin_password(db: Session, password: "str | None") -> None:
     attendance.py's un-mark-attendance. Flipping a toggle ON never needs
     this; only the negative direction is gated, since that's the one that
     can quietly drop a team out of fixture eligibility or off the arrival
-    checklist by a mis-click."""
+    checklist by a mis-click.
+
+    Dev/testing only: DISABLE_ADMIN_PASSWORD_GATE skips this entirely so
+    toggles can be flipped off without an admin password on hand — never set
+    in production (see config.py)."""
+    if settings.disable_admin_password_gate:
+        return
     if not password:
         raise HTTPException(401, "Admin password is required to turn this off")
     admins = (

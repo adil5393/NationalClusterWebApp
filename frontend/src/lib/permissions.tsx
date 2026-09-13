@@ -13,6 +13,10 @@ export interface Me {
   // Matches this account can fully control (except delete/reset) independent of
   // the "matches" module permission — see backend security.require_match_access.
   assigned_match_ids?: number[];
+  // Dev/testing only (DISABLE_ADMIN_PASSWORD_GATE, see backend config.py) —
+  // Teams.tsx skips its toggle-off admin-password dialog when this is true.
+  // Always false in production.
+  admin_password_gate_disabled?: boolean;
 }
 
 export const PermissionsContext = createContext<Me | null>(null);

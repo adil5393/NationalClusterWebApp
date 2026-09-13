@@ -79,7 +79,32 @@ def _billed_keys(team: models.Team) -> set:
 
 
 def _totals(team: models.Team) -> dict:
-    total_billed = sum(p.amount for p in team.payments if p.kind == "BILL")
+    # Every prior BILL's own row (amount/subtotal/discount/members) stays an
+    # untouched, append-only record of what was charged and when — but the
+    # LIVE total_billed/balance_due shown to the organizer must not just trust
+    # that frozen amount forever. If someone that bill charged for is no
+    # longer marked present (e.g. correcting an is_present mistake after the
+    # fact — there's deliberately no separate "un-bill this person" action),
+    # this recomputes that bill's live contribution as if it had only ever
+    # billed the still-present subset, at the same per-member rate and flat
+    # discount it was created with. Runs fresh on every call (billing_summary
+    # is refetched every time the billing modal opens), so a presence
+    # correction is reflected immediately with no manual reconciliation step.
+    present_keys = {(m["kind"], m["id"]) for m in _present_members(team)}
+    total_billed = 0
+    for p in team.payments:
+        if p.kind != "BILL":
+            continue
+        if not p.members:
+            total_billed += p.amount
+            continue
+        original_count = len(p.members)
+        still_present_count = sum(1 for m in p.members if (m["kind"], m["id"]) in present_keys)
+        if still_present_count == original_count:
+            total_billed += p.amount
+            continue
+        per_member = (p.subtotal or 0) // original_count if original_count else 0
+        total_billed += max(0, per_member * still_present_count - (p.discount or 0))
     total_paid = sum(p.amount for p in team.payments if p.kind == "PAYMENT")
     total_refunded = sum(p.amount for p in team.payments if p.kind == "REFUND")
     return {

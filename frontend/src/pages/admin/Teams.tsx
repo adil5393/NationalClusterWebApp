@@ -13,7 +13,7 @@ import { TeamDetailsImportDialog } from "@/components/admin/TeamDetailsImportDia
 import { ReceiptDialog } from "@/components/admin/ReceiptDialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
-import { useModuleAccess } from "@/lib/permissions";
+import { useModuleAccess, useMe } from "@/lib/permissions";
 import { driveThumbnail } from "@/lib/meta";
 import { cn } from "@/lib/utils";
 import { TeamAvatar } from "@/components/ui/team-badge";
@@ -470,6 +470,7 @@ const empty: Partial<Team> = { name: "", school: "", region: "", country: "India
 
 export default function AdminTeams() {
   const { canEdit } = useModuleAccess("teams");
+  const gateDisabled = !!useMe()?.admin_password_gate_disabled;
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -538,9 +539,10 @@ export default function AdminTeams() {
   };
 
   const toggleActive = (t: Team) => {
-    if (t.is_active === false) {
+    const turningOn = t.is_active === false;
+    if (turningOn || gateDisabled) {
       api
-        .put(`/teams/${t.id}`, { is_active: true })
+        .put(`/teams/${t.id}`, { is_active: turningOn })
         .then(() => load(true))
         .catch((e: any) => toast.error(e?.response?.data?.detail ?? "Could not update active status"));
     } else {
@@ -549,9 +551,10 @@ export default function AdminTeams() {
   };
 
   const toggleArrived = (t: Team) => {
-    if (t.has_arrived !== true) {
+    const turningOn = t.has_arrived !== true;
+    if (turningOn || gateDisabled) {
       api
-        .put(`/teams/${t.id}`, { has_arrived: true })
+        .put(`/teams/${t.id}`, { has_arrived: turningOn })
         .then(() => load(true))
         .catch((e: any) => toast.error(e?.response?.data?.detail ?? "Could not update arrival status"));
     } else {
@@ -560,9 +563,9 @@ export default function AdminTeams() {
   };
 
   const toggleAgeGroupActive = (t: Team, ageGroup: string, active: boolean) => {
-    if (active) {
+    if (active || gateDisabled) {
       api
-        .put(`/teams/${t.id}/age-groups/${encodeURIComponent(ageGroup)}/active`, { is_active: true })
+        .put(`/teams/${t.id}/age-groups/${encodeURIComponent(ageGroup)}/active`, { is_active: active })
         .then(() => load(true))
         .catch((e: any) => toast.error(e?.response?.data?.detail ?? `Could not update ${ageGroup} status`));
     } else {

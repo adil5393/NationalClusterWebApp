@@ -17,6 +17,12 @@ class Settings:
     admin_password: str = os.environ.get("ADMIN_PASSWORD", "")
     session_secret: str = os.environ.get("SESSION_SECRET", "dev-session-secret-cluster-nationals")
     session_https_only: bool = os.environ.get("SESSION_HTTPS_ONLY", "false").lower() == "true"
+    # Dev/testing convenience only — never set in production. Skips the
+    # "type an admin password to unlock" gate on Teams-tab toggles (see
+    # routers/teams.py's _require_admin_password). Defaults false so a
+    # deployment that never sets this env var enforces the gate as normal;
+    # docker-compose.yml (dev) defaults it to true.
+    disable_admin_password_gate: bool = os.environ.get("DISABLE_ADMIN_PASSWORD_GATE", "false").lower() == "true"
     # The school registration form's live Google Sheet — set once so the organizer
     # portal's "Resync" button doesn't need the link pasted in on every use. Still
     # overridable per-request (see routers/imports.py) for a one-off different sheet.

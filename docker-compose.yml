@@ -26,6 +26,12 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:-dev-insecure-secret-change-me}
       SESSION_HTTPS_ONLY: ${SESSION_HTTPS_ONLY:-false}
       TEAM_DETAILS_SHEET_URL: ${TEAM_DETAILS_SHEET_URL:-}
+      # Dev convenience only — skips Teams tab's "type an admin password to
+      # turn this off" gate. Defaults on here since this file is local dev
+      # only; docker-compose.prod.yml never sets this var, so production
+      # always enforces the gate regardless. Set to false locally if you
+      # specifically want to test the password prompt itself.
+      DISABLE_ADMIN_PASSWORD_GATE: ${DISABLE_ADMIN_PASSWORD_GATE:-true}
     volumes:
       - ./backend:/app
     depends_on:
