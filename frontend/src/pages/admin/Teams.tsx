@@ -59,6 +59,7 @@ interface Team {
   participants_with_photo_count?: number;
   all_photos_uploaded?: boolean;
   is_active?: boolean;
+  has_arrived?: boolean;
   inactive_age_groups?: string[];
   last_year_awards?: LastYearAward[];
   photos?: { id: number; url: string }[];
@@ -179,6 +180,42 @@ function ActiveCell({
       onClick={() => onToggle(team)}
       data-testid={`active-toggle-${team.id}`}
       title={active ? "Mark inactive" : "Mark active"}
+      className="hover:opacity-80 transition-opacity shrink-0"
+    >
+      {badge}
+    </button>
+  );
+}
+
+function ArrivedCell({
+  team,
+  canEdit,
+  onToggle,
+}: {
+  team: Team;
+  canEdit: boolean;
+  onToggle: (team: Team) => void;
+}) {
+  const arrived = team.has_arrived === true;
+  const badge = (
+    <span
+      className={cn(
+        "inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-heading font-bold tracking-wide transition-colors whitespace-nowrap",
+        arrived
+          ? "border border-emerald-500/40 bg-emerald-500/15 text-emerald-400"
+          : "border border-slate-600/40 bg-slate-800/80 text-slate-400",
+      )}
+    >
+      {arrived ? "Arrived" : "Not Arrived"}
+    </span>
+  );
+  if (!canEdit) return badge;
+  return (
+    <button
+      type="button"
+      onClick={() => onToggle(team)}
+      data-testid={`arrived-toggle-${team.id}`}
+      title={arrived ? "Mark not arrived" : "Mark arrived"}
       className="hover:opacity-80 transition-opacity shrink-0"
     >
       {badge}
@@ -482,22 +519,84 @@ export default function AdminTeams() {
 
   const [awardsTeam, setAwardsTeam] = useState<Team | null>(null);
   const [photosTeam, setPhotosTeam] = useState<Team | null>(null);
+  const [idCardTeam, setIdCardTeam] = useState<Team | null>(null);
 
-  const toggleActive = async (t: Team) => {
-    try {
-      await api.put(`/teams/${t.id}`, { is_active: t.is_active === false });
-      load(true);
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail ?? "Could not update active status");
+  // Turning any of these three toggles OFF (Active -> Inactive, Arrived ->
+  // Not Arrived, an age group -> Inactive) requires an admin password —
+  // same "type it again to unlock" shape as un-marking attendance (see
+  // backend routers/teams.py _require_admin_password). Turning one ON never
+  // needs this, so those calls go straight through.
+  const [pendingToggle, setPendingToggle] = useState<
+    { kind: "active"; team: Team } | { kind: "arrived"; team: Team } | { kind: "ageGroup"; team: Team; ageGroup: string } | null
+  >(null);
+  const [togglePassword, setTogglePassword] = useState("");
+  const [toggleBusy, setToggleBusy] = useState(false);
+
+  const closeToggleDialog = () => {
+    setPendingToggle(null);
+    setTogglePassword("");
+  };
+
+  const toggleActive = (t: Team) => {
+    if (t.is_active === false) {
+      api
+        .put(`/teams/${t.id}`, { is_active: true })
+        .then(() => load(true))
+        .catch((e: any) => toast.error(e?.response?.data?.detail ?? "Could not update active status"));
+    } else {
+      setPendingToggle({ kind: "active", team: t });
     }
   };
 
-  const toggleAgeGroupActive = async (t: Team, ageGroup: string, active: boolean) => {
+  const toggleArrived = (t: Team) => {
+    if (t.has_arrived !== true) {
+      api
+        .put(`/teams/${t.id}`, { has_arrived: true })
+        .then(() => load(true))
+        .catch((e: any) => toast.error(e?.response?.data?.detail ?? "Could not update arrival status"));
+    } else {
+      setPendingToggle({ kind: "arrived", team: t });
+    }
+  };
+
+  const toggleAgeGroupActive = (t: Team, ageGroup: string, active: boolean) => {
+    if (active) {
+      api
+        .put(`/teams/${t.id}/age-groups/${encodeURIComponent(ageGroup)}/active`, { is_active: true })
+        .then(() => load(true))
+        .catch((e: any) => toast.error(e?.response?.data?.detail ?? `Could not update ${ageGroup} status`));
+    } else {
+      setPendingToggle({ kind: "ageGroup", team: t, ageGroup });
+    }
+  };
+
+  const confirmToggle = async () => {
+    if (!pendingToggle) return;
+    if (!togglePassword.trim()) return toast.error("Enter the admin password");
+    setToggleBusy(true);
     try {
-      await api.put(`/teams/${t.id}/age-groups/${encodeURIComponent(ageGroup)}/active`, { is_active: active });
+      if (pendingToggle.kind === "active") {
+        await api.put(`/teams/${pendingToggle.team.id}`, {
+          is_active: false,
+          admin_password: togglePassword.trim(),
+        });
+      } else if (pendingToggle.kind === "arrived") {
+        await api.put(`/teams/${pendingToggle.team.id}`, {
+          has_arrived: false,
+          admin_password: togglePassword.trim(),
+        });
+      } else {
+        await api.put(`/teams/${pendingToggle.team.id}/age-groups/${encodeURIComponent(pendingToggle.ageGroup)}/active`, {
+          is_active: false,
+          admin_password: togglePassword.trim(),
+        });
+      }
       load(true);
+      closeToggleDialog();
     } catch (e: any) {
-      toast.error(e?.response?.data?.detail ?? `Could not update ${ageGroup} status`);
+      toast.error(e?.response?.status === 401 ? "Incorrect admin password" : "Could not update status");
+    } finally {
+      setToggleBusy(false);
     }
   };
 
@@ -677,6 +776,7 @@ export default function AdminTeams() {
                       {/* Primary status badges */}
                       <div className="shrink-0 flex flex-col items-end gap-1">
                         <ActiveCell team={t} canEdit={canEdit} onToggle={toggleActive} />
+                        <ArrivedCell team={t} canEdit={canEdit} onToggle={toggleArrived} />
                       </div>
                     </div>
 
@@ -855,6 +955,7 @@ export default function AdminTeams() {
                     <TH className="px-2 py-2 text-xs min-w-0">Team & School</TH>
                     <TH className="px-1.5 py-2 text-xs w-20">Cluster</TH>
                     <TH className="px-1.5 py-2 text-xs text-center w-16">Active</TH>
+                    <TH className="px-1.5 py-2 text-xs text-center w-20">Arrival</TH>
                     <TH className="px-1.5 py-2 text-xs">Squad by Age</TH>
                     <TH className="px-1.5 py-2 text-xs">Age Active</TH>
                     <TH className="px-1.5 py-2 text-xs">Awards</TH>
@@ -897,6 +998,9 @@ export default function AdminTeams() {
                         </TD>
                         <TD className="px-1.5 py-2 text-center w-16">
                           <ActiveCell team={t} canEdit={canEdit} onToggle={toggleActive} />
+                        </TD>
+                        <TD className="px-1.5 py-2 text-center w-20">
+                          <ArrivedCell team={t} canEdit={canEdit} onToggle={toggleArrived} />
                         </TD>
                         <TD className="px-1.5 py-2 min-w-0">
                           <div className="flex items-center gap-1.5">
@@ -949,8 +1053,9 @@ export default function AdminTeams() {
                                 </span>
                               )}
                             </Button>
-                            <a
-                              href={`${BASE_URL}/api/export/idcards/team/${t.id}.pdf`}
+                            <button
+                              type="button"
+                              onClick={() => setIdCardTeam(t)}
                               className={cn(
                                 "inline-flex items-center justify-center rounded h-7 w-7 p-0 transition-colors shrink-0",
                                 t.all_photos_uploaded
@@ -965,15 +1070,7 @@ export default function AdminTeams() {
                               }
                             >
                               <IdCard className="h-3.5 w-3.5" />
-                            </a>
-                            <a
-                              href={`${BASE_URL}/api/export/idcards/team/${t.id}/sheet-12x18.pdf`}
-                              className="inline-flex items-center justify-center rounded h-7 w-7 p-0 transition-colors shrink-0 text-slate-400 hover:bg-white/10 hover:text-white"
-                              data-testid={`download-team-idcards-12x18-${t.id}`}
-                              title="Download Team ID Cards — 12x18in Sheet (PDF)"
-                            >
-                              <Printer className="h-3.5 w-3.5" />
-                            </a>
+                            </button>
                             <Button
                               variant="ghost"
                               className="h-7 w-7 p-0 shrink-0"
@@ -1150,6 +1247,91 @@ export default function AdminTeams() {
           onChanged={load}
         />
       )}
+      <Dialog
+        open={idCardTeam !== null}
+        onClose={() => setIdCardTeam(null)}
+        title={idCardTeam ? `Download ID Cards — ${idCardTeam.name}` : "Download ID Cards"}
+        testId="idcard-download-dialog"
+      >
+        <div className="space-y-3">
+          <p className="text-xs text-slate-400 font-body">
+            Choose which sheet size to print on. Both include every participant's card, sorted by age group.
+          </p>
+          <a
+            href={idCardTeam ? `${BASE_URL}/api/export/idcards/team/${idCardTeam.id}.pdf` : "#"}
+            onClick={() => setIdCardTeam(null)}
+            className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-3.5 hover:border-gold/40 hover:bg-white/[0.06] transition-colors"
+            data-testid="idcard-download-a4"
+          >
+            <IdCard className="h-5 w-5 text-gold shrink-0" />
+            <div className="min-w-0">
+              <p className="text-sm font-heading font-bold text-white">A4 Sheet</p>
+              <p className="text-xs text-slate-400">9 cards per page — standard printer paper</p>
+            </div>
+          </a>
+          <a
+            href={idCardTeam ? `${BASE_URL}/api/export/idcards/team/${idCardTeam.id}/sheet-12x18.pdf` : "#"}
+            onClick={() => setIdCardTeam(null)}
+            className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-3.5 hover:border-gold/40 hover:bg-white/[0.06] transition-colors"
+            data-testid="idcard-download-12x18"
+          >
+            <Printer className="h-5 w-5 text-gold shrink-0" />
+            <div className="min-w-0">
+              <p className="text-sm font-heading font-bold text-white">12x18in Sheet</p>
+              <p className="text-xs text-slate-400">16 cards per page — for print-shop stock</p>
+            </div>
+          </a>
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={pendingToggle !== null}
+        onClose={closeToggleDialog}
+        title="Confirm Admin Password"
+        testId="toggle-admin-password-dialog"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-slate-400 font-body">
+            {pendingToggle?.kind === "active" && (
+              <>Marking <span className="text-white font-bold">{pendingToggle.team.name}</span> Inactive removes it from fixture eligibility. Requires an admin account's password.</>
+            )}
+            {pendingToggle?.kind === "arrived" && (
+              <>Marking <span className="text-white font-bold">{pendingToggle.team.name}</span> Not Arrived requires an admin account's password.</>
+            )}
+            {pendingToggle?.kind === "ageGroup" && (
+              <>
+                Marking <span className="text-white font-bold">{pendingToggle.ageGroup}</span> inactive for{" "}
+                <span className="text-white font-bold">{pendingToggle.team.name}</span> requires an admin account's password.
+              </>
+            )}
+          </p>
+          <div>
+            <Label>Admin Password</Label>
+            <Input
+              type="password"
+              value={togglePassword}
+              onChange={(e) => setTogglePassword(e.target.value)}
+              data-testid="toggle-admin-password-input"
+              autoFocus
+              onKeyDown={(e) => e.key === "Enter" && confirmToggle()}
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+            <Button variant="outline" size="sm" onClick={closeToggleDialog}>
+              Cancel
+            </Button>
+            <Button
+              variant="gold"
+              size="sm"
+              onClick={confirmToggle}
+              disabled={toggleBusy}
+              data-testid="confirm-toggle-btn"
+            >
+              {toggleBusy ? "Verifying…" : "Confirm"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }

@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Download, FileSpreadsheet, Trash2, Layers, RefreshCw, CheckSquare, Bus, ShieldCheck, UserCog, IdCard, Wallet } from "lucide-react";
+import { AlertTriangle, Download, FileSpreadsheet, Trash2, Layers, RefreshCw, CheckSquare, Bus, ShieldCheck, UserCog, Wallet, BedDouble } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input, Label } from "@/components/ui/input";
+import { Dialog } from "@/components/ui/dialog";
 import { Table, THead, TH, TR, TD, TBody } from "@/components/ui/table";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { useModuleAccess, useMe } from "@/lib/permissions";
+import { LiveReportsPanel } from "@/components/admin/LiveReportsPanel";
 import { formatDate } from "@/lib/meta";
 import { cn } from "@/lib/utils";
 
@@ -83,12 +86,16 @@ export default function Reports() {
   const attendanceAccess = useModuleAccess("attendance");
   const teamsAccess = useModuleAccess("teams");
   const staffAccess = useModuleAccess("staff");
+  const accommodationAccess = useModuleAccess("accommodation");
   const [tournaments, setTournaments] = useState<TournamentT[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<TournamentT | null>(null);
   const [reports, setReports] = useState<ReportT[]>([]);
   const [loading, setLoading] = useState(true);
   const [generatingRoundId, setGeneratingRoundId] = useState<number | null>(null);
+  const [clearPaymentsOpen, setClearPaymentsOpen] = useState(false);
+  const [clearPaymentsPassword, setClearPaymentsPassword] = useState("");
+  const [clearPaymentsBusy, setClearPaymentsBusy] = useState(false);
 
   const loadBase = () => {
     setLoading(true);
@@ -139,6 +146,27 @@ export default function Reports() {
     if (selectedId) loadReports(selectedId);
   };
 
+  const closeClearPaymentsDialog = () => {
+    setClearPaymentsOpen(false);
+    setClearPaymentsPassword("");
+  };
+
+  const clearAllPayments = async () => {
+    if (!clearPaymentsPassword.trim()) return toast.error("Enter the admin password");
+    setClearPaymentsBusy(true);
+    try {
+      const r = await api.delete<{ deleted: number }>("/teams/payments/clear-all", {
+        data: { admin_password: clearPaymentsPassword.trim() },
+      });
+      toast.success(`Cleared ${r.data.deleted} billing record${r.data.deleted === 1 ? "" : "s"}`);
+      closeClearPaymentsDialog();
+    } catch (e: any) {
+      toast.error(e?.response?.status === 401 ? "Incorrect admin password" : "Could not clear billing data");
+    } finally {
+      setClearPaymentsBusy(false);
+    }
+  };
+
   const rounds = [...(detail?.rounds ?? [])].sort((a, b) => a.sequence - b.sequence);
 
   return (
@@ -156,8 +184,10 @@ export default function Reports() {
         </p>
       </div>
 
+      <LiveReportsPanel />
+
       {/* OPERATIONAL REPORTS — event-wide, not scoped to one tournament */}
-      {(attendanceAccess.canView || teamsAccess.canView || staffAccess.canView || me?.is_admin) && (
+      {(attendanceAccess.canView || teamsAccess.canView || staffAccess.canView || accommodationAccess.canView || me?.is_admin) && (
         <div className="space-y-3">
           <h2 className="font-heading text-xs font-bold uppercase tracking-wider text-slate-400">
             Operational Reports
@@ -190,16 +220,6 @@ export default function Reports() {
                 testId="download-payments-report-btn"
               />
             )}
-            {teamsAccess.canView && (
-              <ReportDownloadCard
-                icon={IdCard}
-                title="All ID Cards"
-                description="Every participant's printable ID card, tournament-wide, one PDF (large file, may take a couple minutes)."
-                href={`${BACKEND}/api/export/idcards/all.pdf`}
-                testId="download-all-idcards-btn"
-                fileLabel=".pdf"
-              />
-            )}
             {staffAccess.canView && (
               <ReportDownloadCard
                 icon={ShieldCheck}
@@ -207,6 +227,15 @@ export default function Reports() {
                 description="Staff duty assignments across every building & room."
                 href={`${BACKEND}/api/export/duties.xlsx`}
                 testId="download-duty-report-btn"
+              />
+            )}
+            {accommodationAccess.canView && (
+              <ReportDownloadCard
+                icon={BedDouble}
+                title="Room Map / Accommodation"
+                description="Building, floor, room & bed allocation for every occupant."
+                href={`${BACKEND}/api/export/rooms.xlsx`}
+                testId="download-accommodation-report-btn"
               />
             )}
             {me?.is_admin && (
@@ -219,6 +248,38 @@ export default function Reports() {
               />
             )}
           </div>
+        </div>
+      )}
+
+      {/* DANGER ZONE — admin-only, wipes the entire registration-fee ledger
+          (all BILL/PAYMENT/REFUND rows, every team). See backend
+          routers/payments.py clear_all_payments: models.Payment is otherwise
+          an append-only ledger by design, so this is a deliberate, doubly-
+          confirmed exception, not a routine action. */}
+      {me?.is_admin && (
+        <div className="rounded-xl border border-red-500/25 bg-red-500/[0.04] p-4 sm:p-5 space-y-3">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-red-400 mt-0.5" />
+            <div>
+              <h2 className="font-heading text-xs font-bold uppercase tracking-wider text-red-400">
+                Danger Zone
+              </h2>
+              <p className="mt-1 text-xs text-slate-400 font-body max-w-2xl">
+                Permanently deletes every bill, payment, and refund record for every team — the entire
+                registration-fee ledger, tournament-wide. There is no undo. Use this to reset test/sample
+                billing data before real registrations begin, not as a routine action.
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setClearPaymentsOpen(true)}
+            data-testid="clear-all-payments-btn"
+            className="border-red-500/40 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Clear All Bills, Invoices & Refunds
+          </Button>
         </div>
       )}
 
@@ -427,6 +488,45 @@ export default function Reports() {
           )}
         </div>
       )}
+
+      <Dialog
+        open={clearPaymentsOpen}
+        onClose={closeClearPaymentsDialog}
+        title="Confirm: Clear All Billing Data"
+        testId="clear-all-payments-dialog"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-slate-400 font-body">
+            This permanently deletes every bill, payment, and refund record for every team, tournament-wide.
+            This cannot be undone. Enter an admin account's password to confirm.
+          </p>
+          <div>
+            <Label>Admin Password</Label>
+            <Input
+              type="password"
+              value={clearPaymentsPassword}
+              onChange={(e) => setClearPaymentsPassword(e.target.value)}
+              data-testid="clear-all-payments-password-input"
+              autoFocus
+              onKeyDown={(e) => e.key === "Enter" && clearAllPayments()}
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+            <Button variant="outline" size="sm" onClick={closeClearPaymentsDialog}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={clearAllPayments}
+              disabled={clearPaymentsBusy}
+              data-testid="confirm-clear-all-payments-btn"
+            >
+              {clearPaymentsBusy ? "Clearing…" : "Permanently Clear Everything"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }

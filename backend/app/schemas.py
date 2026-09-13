@@ -74,6 +74,10 @@ class TeamUpdate(BaseModel):
     # entry per age group it holds an award in). Exclusivity/pool-conflict
     # rules enforced in the router.
     last_year_awards: Optional[List[LastYearAwardEntry]] = None
+    # Required only when this update turns is_active or has_arrived OFF (see
+    # routers/teams.py update_team) — same "type an admin password to
+    # unlock" shape as un-marking attendance; never persisted anywhere.
+    admin_password: Optional[str] = None
 
 
 class AccommodationLocation(BaseModel):
@@ -124,6 +128,9 @@ class TeamRead(ORMModel, TeamBase):
 
 class TeamAgeGroupActiveUpdate(BaseModel):
     is_active: bool
+    # Required only when is_active is False (see routers/teams.py
+    # set_team_age_group_active) — same shape as TeamUpdate.admin_password.
+    admin_password: Optional[str] = None
 
 
 class TeamPhotoPublic(BaseModel):

@@ -26,18 +26,27 @@ export const api = axios.create({
   withCredentials: true,
 });
 
-// A 401 from the organizer portal means the session cookie is missing/expired
-// — bounce back to the login screen rather than letting every admin page fail
-// silently or show stale data. Scoped to /admin routes only: public pages
-// (team portal reveal-contacts, participant photo upload) also get 401s for
-// their own reasons — a wrong password/registration number, not an expired
-// admin session — and must handle those locally instead of being yanked to
-// the organizer login screen.
+// A 401 from the organizer portal USUALLY means the session cookie is
+// missing/expired — bounce back to the login screen rather than letting
+// every admin page fail silently or show stale data. But not every 401 on
+// an /admin route means that: several endpoints reuse 401 for "wrong
+// confirmation password" on an otherwise-still-logged-in session (e.g.
+// attendance.py's un-mark-attendance, payments.py's clear-all-billing-data)
+// — those must show their own "incorrect password" message locally instead
+// of yanking the admin away mid-dialog. security.py's require_auth/
+// require_admin/require_module always use the exact string "Not
+// authenticated" for a real expired/missing session, which is what every
+// one of those "wrong password" 401s deliberately does NOT say — so that
+// message, not the bare status code, is what actually means "you got
+// logged out." Scoped to /admin routes only: public pages (team portal
+// reveal-contacts, participant photo upload) also get 401s for their own
+// reasons and already handle those locally regardless.
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     const path = window.location.pathname;
-    if (error?.response?.status === 401 && path.startsWith("/admin") && !path.startsWith("/admin/login")) {
+    const isSessionExpired = error?.response?.data?.detail === "Not authenticated";
+    if (isSessionExpired && path.startsWith("/admin") && !path.startsWith("/admin/login")) {
       window.location.href = "/admin/login";
     }
     return Promise.reject(error);

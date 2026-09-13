@@ -21,10 +21,13 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from .. import models, receipt, schemas
+from ..auth_utils import verify_password
 from ..database import get_db
+from ..security import require_admin
 
 router = APIRouter(prefix="/api/teams", tags=["payments"])
 
@@ -273,3 +276,41 @@ def reprint_refund(team_id: int, payment_id: int, db: Session = Depends(get_db))
         net_collected=totals["net_collected"],
     )
     return _pdf_response(pdf, f"refund-{team.school_code or team.id}-{payment.id}.pdf")
+
+
+class ClearAllPaymentsRequest(BaseModel):
+    admin_password: str
+
+
+def _require_admin_password(db: Session, password: str) -> None:
+    """Same 'type an admin password to unlock' shape as attendance.py's
+    un-mark-attendance and public.py's reveal-contacts — wiping the entire
+    tournament's billing ledger needs more than just already being logged in
+    as an admin; it needs a second, deliberate confirmation."""
+    admins = (
+        db.query(models.OrganizerUser)
+        .filter(models.OrganizerUser.is_active.is_(True), models.OrganizerUser.is_admin.is_(True))
+        .all()
+    )
+    if not any(verify_password(password, u.password_hash) for u in admins):
+        raise HTTPException(401, "Incorrect admin password")
+
+
+@router.delete("/payments/clear-all", dependencies=[Depends(require_admin)])
+def clear_all_payments(payload: ClearAllPaymentsRequest, db: Session = Depends(get_db)):
+    """Wipes every BILL/PAYMENT/REFUND row for every team — a full reset of
+    the registration-fee ledger (e.g. to clear out test/sample data before
+    real registrations begin). There is no undo: models.Payment is otherwise
+    an append-only ledger by design, specifically so a team's financial
+    history stays trustworthy — this admin-only, password-confirmed action
+    is the one deliberate exception to that.
+
+    Path is "/payments/clear-all", not just "/payments": this router shares
+    the "/api/teams" prefix with teams.py, whose DELETE "/{team_id}" is
+    registered first in main.py — a literal single-segment "/payments" path
+    would be swallowed by that pattern (team_id="payments") before ever
+    reaching this route. The extra segment sidesteps the collision."""
+    _require_admin_password(db, payload.admin_password)
+    deleted = db.query(models.Payment).delete()
+    db.commit()
+    return {"deleted": deleted}

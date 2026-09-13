@@ -3,10 +3,30 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
+from ..auth_utils import verify_password
 from ..database import get_db
 from ..ws import broadcast_roster_change_sync
 
 router = APIRouter(prefix="/api/teams", tags=["teams"])
+
+
+def _require_admin_password(db: Session, password: "str | None") -> None:
+    """Turning a Teams-tab toggle OFF (Active -> Inactive, Arrived -> Not
+    Arrived, an age group's squad -> Inactive) needs an admin account's
+    password — same "type an admin password to unlock" shape as
+    attendance.py's un-mark-attendance. Flipping a toggle ON never needs
+    this; only the negative direction is gated, since that's the one that
+    can quietly drop a team out of fixture eligibility or off the arrival
+    checklist by a mis-click."""
+    if not password:
+        raise HTTPException(401, "Admin password is required to turn this off")
+    admins = (
+        db.query(models.OrganizerUser)
+        .filter(models.OrganizerUser.is_active.is_(True), models.OrganizerUser.is_admin.is_(True))
+        .all()
+    )
+    if not any(verify_password(password, u.password_hash) for u in admins):
+        raise HTTPException(401, "Incorrect admin password")
 
 
 def _participant_counts(db: Session) -> dict[int, int]:
@@ -263,6 +283,10 @@ def update_team(team_id: int, payload: schemas.TeamUpdate, db: Session = Depends
         raise HTTPException(404, "Team not found")
     data = payload.model_dump(exclude_unset=True)
     data.pop("last_year_awards", None)
+    admin_password = data.pop("admin_password", None)
+
+    if data.get("is_active") is False or data.get("has_arrived") is False:
+        _require_admin_password(db, admin_password)
 
     if payload.last_year_awards is not None:
         _replace_last_year_awards(db, team, payload.last_year_awards)
@@ -289,6 +313,9 @@ def set_team_age_group_active(team_id: int, age_group: str, payload: schemas.Tea
     team = db.get(models.Team, team_id)
     if not team:
         raise HTTPException(404, "Team not found")
+
+    if not payload.is_active:
+        _require_admin_password(db, payload.admin_password)
 
     existing = (
         db.query(models.TeamInactiveAgeGroup)

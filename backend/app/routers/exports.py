@@ -18,6 +18,7 @@ from ..excel_styler import (
     ALIGN_LEFT,
     BORDER_CELL,
     BORDER_HEADER,
+    CLR_AMBER_BG,
     FILL_TH_PRIMARY,
     FILL_ZEBRA_EVEN,
     FILL_ZEBRA_ODD,
@@ -31,7 +32,9 @@ from ..excel_styler import (
     style_kpi_cards,
     style_section_bar,
 )
-from ..security import require_admin, require_module
+from openpyxl.styles import PatternFill
+from ..security import require_admin, require_auth, require_module
+from .payments import _billed_keys, _present_members
 from .public import ASSETS_PARTICIPANTS_DIR
 
 router = APIRouter(prefix="/api/export", tags=["export"])
@@ -158,6 +161,17 @@ def export_participants_xlsx(db: Session = Depends(get_db)):
 
 @router.get("/rooms.csv", dependencies=[Depends(require_module("accommodation"))])
 def export_room_allocation(db: Session = Depends(get_db)):
+    participant_counts = dict(
+        db.query(models.Participant.team_id, func.count(models.Participant.id))
+        .group_by(models.Participant.team_id)
+        .all()
+    )
+    participant_present_counts = dict(
+        db.query(models.Participant.team_id, func.count(models.Participant.id))
+        .filter(models.Participant.is_present.is_(True))
+        .group_by(models.Participant.team_id)
+        .all()
+    )
     rows = []
     for a in db.query(models.AccommodationAssignment).all():
         room = a.room
@@ -171,18 +185,37 @@ def export_room_allocation(db: Session = Depends(get_db)):
             a.bed.label if a.bed else "",
             participant.full_name if participant else "(whole team)",
             a.team.name if a.team else "",
+            participant_counts.get(a.team_id, 0) if a.team_id else "",
+            participant_present_counts.get(a.team_id, 0) if a.team_id else "",
         ])
-    return _csv_response(["Building", "Floor", "Room", "Bed", "Occupant", "Team"], rows, "room-allocation.csv")
+    return _csv_response(
+        ["Building", "Floor", "Room", "Bed", "Occupant", "Team", "Allotted", "Filled"], rows, "room-allocation.csv"
+    )
 
 
 @router.get("/rooms.xlsx", dependencies=[Depends(require_module("accommodation"))])
 def export_room_allocation_xlsx(db: Session = Depends(get_db)):
     assignments = db.query(models.AccommodationAssignment).all()
+    # Allotted = that assignment's team's total registered participants;
+    # Filled = how many of those are actually checked in (Participant.
+    # is_present) — lets an organizer see at a glance whether a room's team
+    # has actually arrived versus just being on paper allotted to it.
+    participant_counts = dict(
+        db.query(models.Participant.team_id, func.count(models.Participant.id))
+        .group_by(models.Participant.team_id)
+        .all()
+    )
+    participant_present_counts = dict(
+        db.query(models.Participant.team_id, func.count(models.Participant.id))
+        .filter(models.Participant.is_present.is_(True))
+        .group_by(models.Participant.team_id)
+        .all()
+    )
 
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Room Allocations"
-    max_cols = 6
+    max_cols = 8
 
     next_row = style_header_banner(
         ws,
@@ -215,6 +248,8 @@ def export_room_allocation_xlsx(db: Session = Depends(get_db)):
         ("BED LABEL", 14, ALIGN_HEADER_CENTER),
         ("OCCUPANT NAME", 24, ALIGN_HEADER_LEFT),
         ("TEAM AFFILIATION", 24, ALIGN_HEADER_LEFT),
+        ("ALLOTTED", 12, ALIGN_HEADER_CENTER),
+        ("FILLED", 12, ALIGN_HEADER_CENTER),
     ]
 
     ws.row_dimensions[next_row].height = 22
@@ -234,6 +269,8 @@ def export_room_allocation_xlsx(db: Session = Depends(get_db)):
         participant = db.get(models.Participant, a.participant_id) if a.participant_id else None
 
         fill = FILL_ZEBRA_EVEN if idx % 2 == 0 else FILL_ZEBRA_ODD
+        allotted = participant_counts.get(a.team_id, 0) if a.team_id else 0
+        filled = participant_present_counts.get(a.team_id, 0) if a.team_id else 0
 
         row_data = [
             (building.name if building else "—", ALIGN_LEFT, FONT_TD_BOLD),
@@ -242,6 +279,8 @@ def export_room_allocation_xlsx(db: Session = Depends(get_db)):
             (a.bed.label if a.bed else "(Any Bed)", ALIGN_CENTER, FONT_TD),
             (participant.full_name if participant else "(Whole Team)", ALIGN_LEFT, FONT_TD_BOLD),
             (a.team.name if a.team else "—", ALIGN_LEFT, FONT_TD),
+            (allotted if a.team_id else "—", ALIGN_CENTER, FONT_TD),
+            (filled if a.team_id else "—", ALIGN_CENTER, FONT_TD_BOLD),
         ]
 
         for col_idx, (val, align, font) in enumerate(row_data, start=1):
@@ -363,12 +402,71 @@ def export_attendance_xlsx(db: Session = Depends(get_db)):
     )
 
 
+def _billed_member_counts(team: models.Team) -> tuple[int, int, int]:
+    """(registered, total-present, billed) for the arrival report's R/T/B
+    column: Registered = every participant+coach on the roster regardless of
+    check-in; Total = how many of those are actually present (the billable
+    pool — payments.py's _present_members); Billed = how many of THAT pool
+    a BILL has already charged for (payments.py's _billed_keys) — the exact
+    definition the Bill dialog's own "present but not yet billed" diff
+    already uses, not a second notion of "billed" invented here."""
+    registered = len(team.participants) + len(team.coaches)
+    present = _present_members(team)
+    billed_keys = _billed_keys(team)
+    billed = sum(1 for m in present if (m["kind"], m["id"]) in billed_keys)
+    return registered, len(present), billed
+
+
+def _pending_processes(team: models.Team, participant_total: int, participant_present: int, coach_total: int, coach_present: int) -> list[str]:
+    """What's still incomplete for a team that has already arrived (see
+    export_arrival_xlsx) — the checklist an on-site organizer actually cares
+    about once a delegation is on campus: has it been billed and settled,
+    and is everyone (athletes + coaches/managers) checked in. Same
+    BILL/PAYMENT/REFUND math as payments.py's _totals, computed here off
+    the already-loaded team.payments relationship rather than importing that
+    router's private helper for one sum."""
+    total_billed = sum(p.amount for p in team.payments if p.kind == "BILL")
+    total_paid = sum(p.amount for p in team.payments if p.kind == "PAYMENT")
+    billing_pending = total_billed == 0 or (total_billed - total_paid) > 0
+
+    pending = []
+    if billing_pending:
+        pending.append("Billing & Payment")
+    if participant_total > 0 and participant_present < participant_total:
+        pending.append("Participant Attendance")
+    if coach_total > 0 and coach_present < coach_total:
+        pending.append("Coach Attendance")
+    return pending
+
+
+# Flags an arrival-report row whose registered count exceeds its billed
+# count — someone on the roster hasn't been charged for yet.
+FILL_ROW_UNBILLED = PatternFill("solid", fgColor=CLR_AMBER_BG)
+
+
 @router.get("/arrival.xlsx", dependencies=[Depends(require_module("teams"))])
 def export_arrival_xlsx(db: Session = Depends(get_db)):
     teams = db.query(models.Team).order_by(models.Team.name).all()
     participant_counts = dict(
         db.query(models.Participant.team_id, func.count(models.Participant.id))
         .group_by(models.Participant.team_id)
+        .all()
+    )
+    participant_present_counts = dict(
+        db.query(models.Participant.team_id, func.count(models.Participant.id))
+        .filter(models.Participant.is_present.is_(True))
+        .group_by(models.Participant.team_id)
+        .all()
+    )
+    coach_counts = dict(
+        db.query(models.Coach.team_id, func.count(models.Coach.id))
+        .group_by(models.Coach.team_id)
+        .all()
+    )
+    coach_present_counts = dict(
+        db.query(models.Coach.team_id, func.count(models.Coach.id))
+        .filter(models.Coach.is_present.is_(True))
+        .group_by(models.Coach.team_id)
         .all()
     )
 
@@ -380,7 +478,7 @@ def export_arrival_xlsx(db: Session = Depends(get_db)):
     next_row = style_header_banner(
         ws,
         tournament_name="TEAM ARRIVAL REPORT",
-        subtitle="Delegation Arrival Status for Every Registered School",
+        subtitle="Delegation Arrival Status & Post-Arrival Checklist for Every Registered School",
         badge_text="OFFICIAL ARRIVAL EXPORT",
         max_col=max_cols,
         start_row=1,
@@ -390,23 +488,36 @@ def export_arrival_xlsx(db: Session = Depends(get_db)):
     arrived_t = sum(1 for t in teams if t.has_arrived)
     not_arrived_t = total_t - arrived_t
     rate = f"{round(100 * arrived_t / total_t)}%" if total_t else "—"
+    pending_t = sum(
+        1
+        for t in teams
+        if t.has_arrived
+        and _pending_processes(
+            t,
+            participant_counts.get(t.id, 0),
+            participant_present_counts.get(t.id, 0),
+            coach_counts.get(t.id, 0),
+            coach_present_counts.get(t.id, 0),
+        )
+    )
 
     cards = [
         ("Total Teams", total_t, "Registered Schools"),
         ("Arrived", arrived_t, "Checked In"),
         ("Not Arrived", not_arrived_t, "Pending"),
         ("Arrival Rate", rate, "Arrived / Total"),
+        ("Arrived, Pending", pending_t, "Billing / Attendance Not Done"),
     ]
     next_row = style_kpi_cards(ws, cards, start_row=next_row, card_width_cols=1)
 
     next_row = style_section_bar(ws, "Delegation Arrival Status", next_row, max_col=max_cols, icon="🚌")
 
     headers = [
+        ("SCHOOL CODE", 14, ALIGN_HEADER_CENTER),
         ("SCHOOL / TEAM", 30, ALIGN_HEADER_LEFT),
-        ("REGION", 18, ALIGN_HEADER_LEFT),
-        ("COUNTRY", 14, ALIGN_HEADER_CENTER),
-        ("ATHLETES", 12, ALIGN_HEADER_CENTER),
         ("ARRIVED", 12, ALIGN_HEADER_CENTER),
+        ("PENDING PROCESSES", 34, ALIGN_HEADER_LEFT),
+        ("R/T/B (REG./TOTAL/BILLED)", 20, ALIGN_HEADER_CENTER),
     ]
 
     ws.row_dimensions[next_row].height = 22
@@ -420,14 +531,31 @@ def export_arrival_xlsx(db: Session = Depends(get_db)):
 
     for idx, t in enumerate(teams, start=1):
         ws.row_dimensions[next_row].height = 20
-        fill = FILL_ZEBRA_EVEN if idx % 2 == 0 else FILL_ZEBRA_ODD
+
+        if t.has_arrived:
+            pending = _pending_processes(
+                t,
+                participant_counts.get(t.id, 0),
+                participant_present_counts.get(t.id, 0),
+                coach_counts.get(t.id, 0),
+                coach_present_counts.get(t.id, 0),
+            )
+            pending_label = ", ".join(pending) if pending else "All Clear"
+        else:
+            pending_label = "—"  # hasn't arrived yet — nothing to check off
+
+        registered, total_members, billed = _billed_member_counts(t)
+        # Flags the row whenever someone registered hasn't been billed yet —
+        # overrides the plain zebra stripe since this is the one condition
+        # on this sheet an organizer actually needs to spot at a glance.
+        fill = FILL_ROW_UNBILLED if registered > billed else (FILL_ZEBRA_EVEN if idx % 2 == 0 else FILL_ZEBRA_ODD)
 
         row_data = [
+            (t.school_code or "—", ALIGN_CENTER, FONT_TD),
             (t.name, ALIGN_LEFT, FONT_TD_BOLD),
-            (t.region or "—", ALIGN_LEFT, FONT_TD),
-            (t.country or "—", ALIGN_CENTER, FONT_TD),
-            (participant_counts.get(t.id, 0), ALIGN_CENTER, FONT_TD),
             ("ARRIVED" if t.has_arrived else "NOT ARRIVED", ALIGN_CENTER, FONT_TD_BOLD),
+            (pending_label, ALIGN_LEFT, FONT_TD_BOLD if pending_label not in ("All Clear", "—") else FONT_TD),
+            (f"{registered}/{total_members}/{billed}", ALIGN_CENTER, FONT_TD),
         ]
 
         for col_idx, (val, align, font) in enumerate(row_data, start=1):
@@ -453,6 +581,385 @@ def export_arrival_xlsx(db: Session = Depends(get_db)):
         media_type=XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": 'attachment; filename="arrival_report.xlsx"'},
     )
+
+
+def _has_view(current: models.OrganizerUser, module_key: str) -> bool:
+    if current.is_admin:
+        return True
+    return (current.permissions or {}).get(module_key) in ("view", "edit")
+
+
+@router.get("/live-summary")
+def live_reports_summary(current: models.OrganizerUser = Depends(require_auth), db: Session = Depends(get_db)):
+    """Backs the Live Reports page (frontend Reports.tsx) — the on-screen,
+    auto-refreshing counterpart to the Excel/PDF downloads above. One
+    endpoint rather than one per section purely to keep the page's polling
+    to a single request; each section is still gated by the exact same
+    module permission its download card already uses (schemas.ORGANIZER_
+    MODULES), server-side, so a section this account can't download also
+    never appears here — the frontend isn't trusted to hide what it
+    shouldn't fetch in the first place."""
+    summary: dict = {}
+
+    if _has_view(current, "attendance") or _has_view(current, "teams"):
+        participants_total = db.query(func.count(models.Participant.id)).scalar() or 0
+        participants_present = (
+            db.query(func.count(models.Participant.id)).filter(models.Participant.is_present.is_(True)).scalar() or 0
+        )
+        coaches_total = db.query(func.count(models.Coach.id)).scalar() or 0
+        coaches_present = (
+            db.query(func.count(models.Coach.id)).filter(models.Coach.is_present.is_(True)).scalar() or 0
+        )
+        summary["attendance"] = {
+            "participants_total": participants_total,
+            "participants_present": participants_present,
+            "coaches_total": coaches_total,
+            "coaches_present": coaches_present,
+        }
+
+    if _has_view(current, "teams"):
+        teams = db.query(models.Team).all()
+        participant_counts = dict(
+            db.query(models.Participant.team_id, func.count(models.Participant.id))
+            .group_by(models.Participant.team_id)
+            .all()
+        )
+        participant_present_counts = dict(
+            db.query(models.Participant.team_id, func.count(models.Participant.id))
+            .filter(models.Participant.is_present.is_(True))
+            .group_by(models.Participant.team_id)
+            .all()
+        )
+        coach_counts = dict(
+            db.query(models.Coach.team_id, func.count(models.Coach.id)).group_by(models.Coach.team_id).all()
+        )
+        coach_present_counts = dict(
+            db.query(models.Coach.team_id, func.count(models.Coach.id))
+            .filter(models.Coach.is_present.is_(True))
+            .group_by(models.Coach.team_id)
+            .all()
+        )
+        arrived = [t for t in teams if t.has_arrived]
+        pending_teams = []
+        for t in arrived:
+            pending = _pending_processes(
+                t,
+                participant_counts.get(t.id, 0),
+                participant_present_counts.get(t.id, 0),
+                coach_counts.get(t.id, 0),
+                coach_present_counts.get(t.id, 0),
+            )
+            if pending:
+                pending_teams.append({"team_id": t.id, "name": t.name, "pending": pending})
+        summary["arrival"] = {
+            "teams_total": len(teams),
+            "arrived": len(arrived),
+            "not_arrived": len(teams) - len(arrived),
+            "pending_teams": pending_teams,
+        }
+
+        total_billed = sum(p.amount for t in teams for p in t.payments if p.kind == "BILL")
+        total_paid = sum(p.amount for t in teams for p in t.payments if p.kind == "PAYMENT")
+        total_refunded = sum(p.amount for t in teams for p in t.payments if p.kind == "REFUND")
+        summary["billing"] = {
+            "total_billed": total_billed,
+            "total_paid": total_paid,
+            "total_refunded": total_refunded,
+            "balance_due": total_billed - total_paid,
+            "net_collected": total_paid - total_refunded,
+        }
+
+    if _has_view(current, "staff"):
+        staff = db.query(models.StaffMember).all()
+        with_duty = sum(1 for s in staff if s.duties)
+        summary["duty"] = {
+            "staff_total": len(staff),
+            "staff_with_duty": with_duty,
+            "staff_without_duty": len(staff) - with_duty,
+            "duty_assignments_total": db.query(func.count(models.DutyAssignment.id)).scalar() or 0,
+        }
+
+    if _has_view(current, "accommodation"):
+        rooms = db.query(models.Room).all()
+        total_capacity = sum(r.capacity or 0 for r in rooms)
+        assignments = db.query(models.AccommodationAssignment).all()
+        beds_occupied = sum(1 for a in assignments if a.bed_id is not None)
+        summary["accommodation"] = {
+            "rooms_total": len(rooms),
+            "total_capacity": total_capacity,
+            "beds_occupied": beds_occupied,
+            "assignments_total": len(assignments),
+        }
+
+    if _has_view(current, "matches"):
+        rows = (
+            db.query(models.Match.tournament_id, models.Match.status, func.count(models.Match.id))
+            .group_by(models.Match.tournament_id, models.Match.status)
+            .all()
+        )
+        by_tournament: dict[int, dict[str, int]] = {}
+        for tid, status, count in rows:
+            by_tournament.setdefault(tid, {})[status] = count
+        tournaments = db.query(models.Tournament).order_by(models.Tournament.name).all()
+        summary["tournaments"] = [
+            {
+                "id": t.id,
+                "name": t.name,
+                "age_group": t.age_group,
+                "matches_total": sum(by_tournament.get(t.id, {}).values()),
+                "matches_completed": by_tournament.get(t.id, {}).get("COMPLETED", 0),
+                "matches_live": by_tournament.get(t.id, {}).get("ONGOING", 0) + by_tournament.get(t.id, {}).get("PAUSED", 0),
+                "matches_scheduled": by_tournament.get(t.id, {}).get("SCHEDULED", 0),
+            }
+            for t in tournaments
+        ]
+
+    if current.is_admin:
+        accounts = db.query(models.OrganizerUser).all()
+        summary["accounts"] = {
+            "total": len(accounts),
+            "active": sum(1 for a in accounts if a.is_active),
+            "admins": sum(1 for a in accounts if a.is_admin),
+        }
+
+    return summary
+
+
+_LIVE_DETAIL_MODULES = {
+    "attendance": "attendance",
+    "arrival": "teams",
+    "billing": "teams",
+    "duty": "staff",
+    "matches": "matches",
+    "accommodation": "accommodation",
+    "accounts": None,  # admin-only, checked separately below
+}
+
+
+@router.get("/live-detail/{section}")
+def live_report_detail(
+    section: str, current: models.OrganizerUser = Depends(require_auth), db: Session = Depends(get_db)
+):
+    """The full row-by-row data behind one Live Reports card (see
+    live_reports_summary above) — same numbers, just the underlying sheet
+    instead of the rolled-up stat, for the "click a card to see everything"
+    view in Reports.tsx. Deliberately its own on-demand endpoint rather than
+    folded into live-summary: that one gets polled every 20s and returning
+    every participant/match/account row on every poll would be wasteful —
+    this only runs when someone actually opens a card's detail dialog.
+    Returns {"columns": [...], "rows": [[...], ...]} — a generic shape the
+    frontend renders with one plain <table>, no per-section UI needed."""
+    if section not in _LIVE_DETAIL_MODULES:
+        raise HTTPException(404, "Unknown report section")
+    module_key = _LIVE_DETAIL_MODULES[section]
+    if module_key is None:
+        if not current.is_admin:
+            raise HTTPException(403, "Admin access required")
+    elif not _has_view(current, module_key) and not (section == "attendance" and _has_view(current, "teams")):
+        raise HTTPException(403, "You don't have view access to this section")
+
+    if section == "attendance":
+        teams = {t.id: t.name for t in db.query(models.Team).all()}
+        participants = (
+            db.query(models.Participant)
+            .order_by(models.Participant.age_group, models.Participant.team_id, models.Participant.full_name)
+            .all()
+        )
+        return {
+            "columns": ["Team", "Age Group", "Participant Name", "Reg. No.", "Role", "Present"],
+            "rows": [
+                [
+                    teams.get(p.team_id, "—"),
+                    p.age_group or "—",
+                    p.full_name,
+                    p.registration_no or "—",
+                    p.role or "Player",
+                    "Present" if p.is_present else "Absent",
+                ]
+                for p in participants
+            ],
+        }
+
+    if section == "arrival":
+        teams = db.query(models.Team).order_by(models.Team.name).all()
+        participant_counts = dict(
+            db.query(models.Participant.team_id, func.count(models.Participant.id))
+            .group_by(models.Participant.team_id)
+            .all()
+        )
+        participant_present_counts = dict(
+            db.query(models.Participant.team_id, func.count(models.Participant.id))
+            .filter(models.Participant.is_present.is_(True))
+            .group_by(models.Participant.team_id)
+            .all()
+        )
+        coach_counts = dict(
+            db.query(models.Coach.team_id, func.count(models.Coach.id)).group_by(models.Coach.team_id).all()
+        )
+        coach_present_counts = dict(
+            db.query(models.Coach.team_id, func.count(models.Coach.id))
+            .filter(models.Coach.is_present.is_(True))
+            .group_by(models.Coach.team_id)
+            .all()
+        )
+        rows = []
+        row_flags = []
+        for t in teams:
+            if t.has_arrived:
+                pending = _pending_processes(
+                    t,
+                    participant_counts.get(t.id, 0),
+                    participant_present_counts.get(t.id, 0),
+                    coach_counts.get(t.id, 0),
+                    coach_present_counts.get(t.id, 0),
+                )
+                pending_label = ", ".join(pending) if pending else "All Clear"
+            else:
+                pending_label = "—"
+            registered, total_members, billed = _billed_member_counts(t)
+            rows.append([
+                t.school_code or "—",
+                t.name,
+                "Arrived" if t.has_arrived else "Not Arrived",
+                pending_label,
+                f"{registered}/{total_members}/{billed}",
+            ])
+            row_flags.append(registered > billed)
+        return {
+            "columns": ["School Code", "School / Team", "Arrived", "Pending Processes", "R/T/B (Reg./Total/Billed)"],
+            "rows": rows,
+            "row_flags": row_flags,
+        }
+
+    if section == "billing":
+        teams = db.query(models.Team).order_by(models.Team.name).all()
+        rows = []
+        for t in teams:
+            bills = [p for p in t.payments if p.kind == "BILL"]
+            pays = [p for p in t.payments if p.kind == "PAYMENT"]
+            refunds = [p for p in t.payments if p.kind == "REFUND"]
+            if not bills and not pays and not refunds:
+                continue
+            billed = sum(p.amount for p in bills)
+            paid = sum(p.amount for p in pays)
+            refunded = sum(p.amount for p in refunds)
+            rows.append([
+                t.name,
+                t.school_code or "—",
+                billed,
+                paid,
+                billed - paid,
+                refunded,
+                paid - refunded,
+            ])
+        return {
+            "columns": [
+                "School / Team", "School Code", "Total Billed (Rs.)", "Total Paid (Rs.)",
+                "Balance Due (Rs.)", "Total Refunded (Rs.)", "Net Collected (Rs.)",
+            ],
+            "rows": rows,
+        }
+
+    if section == "duty":
+        duties = db.query(models.DutyAssignment).order_by(models.DutyAssignment.start_time.asc().nullslast()).all()
+        rows = []
+        for a in duties:
+            room = a.room
+            floor = room.floor if room else None
+            building = floor.building if floor else None
+            rows.append([
+                a.staff.full_name if a.staff else "—",
+                a.staff.category if a.staff else "—",
+                a.duty_type,
+                building.name if building else "—",
+                room.name if room else "—",
+                a.start_time.strftime("%d-%b %H:%M") if a.start_time else "—",
+                a.end_time.strftime("%d-%b %H:%M") if a.end_time else "—",
+            ])
+        return {
+            "columns": ["Staff Name", "Category", "Duty Type", "Building", "Room", "Start", "End"],
+            "rows": rows,
+        }
+
+    if section == "matches":
+        matches = (
+            db.query(models.Match)
+            .order_by(models.Match.tournament_id, models.Match.round_id, models.Match.id)
+            .all()
+        )
+        return {
+            "columns": ["Tournament", "Round", "Team A", "Team B", "Status", "Score", "Mat", "Scheduled"],
+            "rows": [
+                [
+                    m.tournament.name if m.tournament else "—",
+                    m.round.name if m.round else "—",
+                    m.team_a.name if m.team_a else "TBD",
+                    m.team_b.name if m.team_b else "TBD",
+                    m.status,
+                    f"{m.team_a_score} - {m.team_b_score}",
+                    m.mat.name if m.mat else "—",
+                    m.scheduled_at.strftime("%d-%b %H:%M") if m.scheduled_at else "—",
+                ]
+                for m in matches
+            ],
+        }
+
+    if section == "accommodation":
+        assignments = db.query(models.AccommodationAssignment).all()
+        participant_counts = dict(
+            db.query(models.Participant.team_id, func.count(models.Participant.id))
+            .group_by(models.Participant.team_id)
+            .all()
+        )
+        participant_present_counts = dict(
+            db.query(models.Participant.team_id, func.count(models.Participant.id))
+            .filter(models.Participant.is_present.is_(True))
+            .group_by(models.Participant.team_id)
+            .all()
+        )
+        rows = []
+        for a in assignments:
+            room = a.room
+            floor = room.floor if room else None
+            building = floor.building if floor else None
+            participant = db.get(models.Participant, a.participant_id) if a.participant_id else None
+            rows.append([
+                building.name if building else "—",
+                floor.name if floor else "—",
+                room.name if room else "—",
+                a.bed.label if a.bed else "(Any Bed)",
+                participant.full_name if participant else "(Whole Team)",
+                a.team.name if a.team else "—",
+                participant_counts.get(a.team_id, 0) if a.team_id else "—",
+                participant_present_counts.get(a.team_id, 0) if a.team_id else "—",
+            ])
+        return {
+            "columns": ["Building", "Floor", "Room", "Bed Label", "Occupant Name", "Team Affiliation", "Allotted", "Filled"],
+            "rows": rows,
+        }
+
+    # section == "accounts" (admin-only, checked above)
+    users = db.query(models.OrganizerUser).order_by(models.OrganizerUser.username).all()
+    rows = []
+    for u in users:
+        perms_display = (
+            "All Modules (Admin)"
+            if u.is_admin
+            else (", ".join(f"{k}: {v}" for k, v in (u.permissions or {}).items()) or "—")
+        )
+        staff_display = ", ".join(s.full_name for s in u.staff_members) or "—"
+        rows.append([
+            u.username,
+            u.full_name or "—",
+            "Admin" if u.is_admin else "Staff",
+            "Active" if u.is_active else "Inactive",
+            perms_display,
+            staff_display,
+        ])
+    return {
+        "columns": ["Username", "Full Name", "Role", "Status", "Module Permissions", "Linked Staff"],
+        "rows": rows,
+    }
 
 
 @router.get("/duties.xlsx", dependencies=[Depends(require_module("staff"))])
