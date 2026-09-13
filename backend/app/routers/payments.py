@@ -78,33 +78,46 @@ def _billed_keys(team: models.Team) -> set:
     return keys
 
 
-def _totals(team: models.Team) -> dict:
-    # Every prior BILL's own row (amount/subtotal/discount/members) stays an
-    # untouched, append-only record of what was charged and when — but the
-    # LIVE total_billed/balance_due shown to the organizer must not just trust
-    # that frozen amount forever. If someone that bill charged for is no
-    # longer marked present (e.g. correcting an is_present mistake after the
-    # fact — there's deliberately no separate "un-bill this person" action),
-    # this recomputes that bill's live contribution as if it had only ever
-    # billed the still-present subset, at the same per-member rate and flat
-    # discount it was created with. Runs fresh on every call (billing_summary
-    # is refetched every time the billing modal opens), so a presence
-    # correction is reflected immediately with no manual reconciliation step.
+def _live_bill_breakdown(team: models.Team) -> tuple[list[dict], int, int, int]:
+    """Every prior BILL's own row (amount/subtotal/discount/members) stays an
+    untouched, append-only record of what was charged and when — but nothing
+    downstream (the on-screen billing summary, the downloadable Invoice PDF)
+    should just trust that frozen amount forever. If someone a bill charged
+    for is no longer marked present (e.g. correcting an is_present mistake
+    after the fact — there's deliberately no separate "un-bill this person"
+    action), this recomputes that bill's live contribution as if it had only
+    ever billed the still-present subset, at the same per-member rate it was
+    created with — the flat discount is kept as-is unless it would now
+    exceed the shrunk subtotal, in which case it's capped there (never a
+    negative bill). Returns (still-present members with their per-member
+    amount — for the Invoice's line items, live subtotal, live discount,
+    live total_billed) so every caller derives the same numbers from the
+    same correction; shared by _totals (billing_summary, refetched every
+    time the billing modal opens) and get_invoice below so they can never
+    show different figures for the same team."""
     present_keys = {(m["kind"], m["id"]) for m in _present_members(team)}
+    members: list[dict] = []
+    subtotal = 0
+    discount = 0
     total_billed = 0
     for p in team.payments:
-        if p.kind != "BILL":
-            continue
-        if not p.members:
-            total_billed += p.amount
+        if p.kind != "BILL" or not p.members:
             continue
         original_count = len(p.members)
-        still_present_count = sum(1 for m in p.members if (m["kind"], m["id"]) in present_keys)
-        if still_present_count == original_count:
-            total_billed += p.amount
-            continue
         per_member = (p.subtotal or 0) // original_count if original_count else 0
-        total_billed += max(0, per_member * still_present_count - (p.discount or 0))
+        still_present = [m for m in p.members if (m["kind"], m["id"]) in present_keys]
+        bill_subtotal = per_member * len(still_present)
+        bill_discount = min(p.discount or 0, bill_subtotal)
+        subtotal += bill_subtotal
+        discount += bill_discount
+        total_billed += bill_subtotal - bill_discount
+        for m in still_present:
+            members.append({"name": m["name"], "role": m["role"], "amount": per_member})
+    return members, subtotal, discount, total_billed
+
+
+def _totals(team: models.Team) -> dict:
+    total_billed = _live_bill_breakdown(team)[3]
     total_paid = sum(p.amount for p in team.payments if p.kind == "PAYMENT")
     total_refunded = sum(p.amount for p in team.payments if p.kind == "REFUND")
     return {
@@ -194,28 +207,21 @@ def create_bill(team_id: int, payload: schemas.BillCreate, db: Session = Depends
 
 @router.get("/{team_id}/invoice.pdf")
 def get_invoice(team_id: int, db: Session = Depends(get_db)):
-    """The team's full current billing state as a PDF — every member across
-    every BILL this team has ever had (each at that bill's own per-member
-    rate), the aggregate subtotal/discount/total billed, and live Total
-    Paid/Balance Due. Always reflects "now", not a frozen snapshot from
+    """The team's full current billing state as a PDF — every still-present
+    member across every BILL this team has ever had (each at that bill's own
+    per-member rate), the aggregate subtotal/discount/total billed, and live
+    Total Paid/Balance Due. Always reflects "now", not a frozen snapshot from
     whenever a bill or payment happened — that's the whole point of
-    splitting billing from downloading (see module docstring)."""
+    splitting billing from downloading (see module docstring). In
+    particular, anyone a bill charged for who's since been corrected to
+    not-present (see _live_bill_breakdown) is left off this invoice
+    entirely and excluded from every total, exactly like the on-screen
+    billing summary — the two can never show different numbers."""
     team = _get_team(db, team_id)
-    bills = [p for p in team.payments if p.kind == "BILL"]
-    if not bills:
+    if not any(p.kind == "BILL" for p in team.payments):
         raise HTTPException(404, "This team has no bills yet")
 
-    members: list[dict] = []
-    subtotal = 0
-    discount = 0
-    for bill in bills:
-        subtotal += bill.subtotal or 0
-        discount += bill.discount or 0
-        if bill.members:
-            per_member = (bill.subtotal // len(bill.members)) if bill.members else 0
-            for m in bill.members:
-                members.append({"name": m["name"], "role": m["role"], "amount": per_member})
-
+    members, subtotal, discount, _ = _live_bill_breakdown(team)
     totals = _totals(team)
     pdf = receipt.render_invoice(team, members, subtotal, discount, totals["total_paid"], date.today())
     return _pdf_response(pdf, f"invoice-{team.school_code or team.id}.pdf")
