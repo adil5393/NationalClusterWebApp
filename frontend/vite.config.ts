@@ -14,7 +14,17 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes("node_modules/react") || id.includes("node_modules/react-dom") || id.includes("node_modules/react-router-dom")) {
+          // Trailing slash matters here: a bare "node_modules/react" substring
+          // check also matches unrelated packages whose name merely starts
+          // with "react" (react-leaflet, react-leaflet-cluster, react-easy-crop,
+          // ...), sweeping them into this always-loaded vendor chunk instead of
+          // their own page's lazy chunk — happened for real once react-leaflet
+          // was added for the Staff Live Map page.
+          if (
+            id.includes("node_modules/react/") ||
+            id.includes("node_modules/react-dom/") ||
+            id.includes("node_modules/react-router-dom/")
+          ) {
             return "vendor-react";
           }
           if (id.includes("node_modules/lucide-react")) {

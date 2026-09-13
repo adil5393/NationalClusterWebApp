@@ -35,6 +35,7 @@ from .routers import (
     schedule,
     search,
     staff,
+    staff_locations,
     structure,
     tasks,
     teams,
@@ -117,6 +118,11 @@ for module in (dashboard, search, tasks):
 # a parameter, and the WebSocket route authenticates itself directly off
 # `websocket.session` (see routers/walkie.py).
 app.include_router(walkie.router)
+
+# staff_locations.py mixes access levels in one router (see its own docstring):
+# POST /me only needs plain auth (any logged-in account reports its own
+# location), while GET "" stacks its own stricter admin-only gate.
+app.include_router(staff_locations.router, dependencies=[Depends(require_auth)])
 
 for router_module, module_key in (
     (teams, "teams"),
