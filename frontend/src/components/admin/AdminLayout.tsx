@@ -33,6 +33,7 @@ import {
   Trophy,
   Shield,
   Activity,
+  Mic,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -88,6 +89,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/admin/gallery", label: "Photo Gallery", icon: Images, moduleKey: "gallery" },
       { to: "/admin/procurement", label: "Procurement", icon: ShoppingCart, moduleKey: "procurement" },
       { to: "/admin/tasks", label: "Tasks", icon: CheckSquare },
+      { to: "/admin/walkie", label: "Walkie Talkie", icon: Mic },
       { to: "/admin/knowledge", label: "Knowledge Base", icon: BookOpen, moduleKey: "knowledge" },
       { to: "/admin/documents", label: "Documents", icon: FileText },
       { to: "/admin/contacts", label: "Contacts", icon: ContactIcon },

@@ -23,11 +23,10 @@ yarn-debug.log*
 yarn-error.log*
 
 # Android / Gradle
-android/app/src/
-android/app/build.gradle
-android/settings.gradle
-android/gradle/
-gradlew
-gradlew.bat
-capacitor.settings.gradle
+# NOTE: android/app/src/ (Manifest, Java sources, resources) and the project
+# Gradle config below are real, hand-maintained project source — they must
+# stay tracked so a fresh checkout can build the app. Only genuinely local/
+# generated/cache paths are ignored here; android/.gitignore and
+# android/app/.gitignore already cover build output, the copied web bundle,
+# and auto-regenerated capacitor.config.json/capacitor.plugins.json/config.xml.
 android/.gradle-user-home/

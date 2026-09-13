@@ -41,6 +41,7 @@ const Matches = lazy(() => import("@/pages/admin/Matches"));
 const MatGroundAssignment = lazy(() => import("@/pages/admin/MatGroundAssignment"));
 const Reports = lazy(() => import("@/pages/admin/Reports"));
 const Tasks = lazy(() => import("@/pages/admin/Tasks"));
+const WalkieTalkie = lazy(() => import("@/pages/admin/WalkieTalkie"));
 const Accounts = lazy(() => import("@/pages/admin/Accounts"));
 const Login = lazy(() => import("@/pages/admin/Login"));
 
@@ -126,6 +127,7 @@ export default function App() {
           <Route path="/admin/mat-ground" element={<MatGroundAssignment />} />
           <Route path="/admin/reports" element={<Reports />} />
           <Route path="/admin/tasks" element={<Tasks />} />
+          <Route path="/admin/walkie" element={<WalkieTalkie />} />
           <Route path="/admin/documents" element={<ComingSoon title="Documents" />} />
           <Route path="/admin/contacts" element={<ComingSoon title="Contacts" />} />
           <Route path="/admin/settings" element={<ComingSoon title="Settings" />} />

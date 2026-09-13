@@ -40,6 +40,7 @@ from .routers import (
     teams,
     transport,
     venues,
+    walkie,
 )
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -107,6 +108,15 @@ for module in (health, public, auth, live_ws):
 # needs "edit"; admins bypass this entirely.
 for module in (dashboard, search, tasks):
     app.include_router(module.router, dependencies=[Depends(require_auth)])
+
+# walkie.py mixes a plain REST endpoint with a WebSocket route in one router
+# — a router-level Depends(require_auth) (an HTTP-Request-typed dependency)
+# breaks FastAPI's dependency resolution for the WebSocket route, so unlike
+# the loop above, each endpoint here declares its own auth instead: the REST
+# endpoint already takes `current: OrganizerUser = Depends(require_auth)` as
+# a parameter, and the WebSocket route authenticates itself directly off
+# `websocket.session` (see routers/walkie.py).
+app.include_router(walkie.router)
 
 for router_module, module_key in (
     (teams, "teams"),
