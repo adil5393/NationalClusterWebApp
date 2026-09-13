@@ -1,31 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Capacitor } from "@capacitor/core";
 import { Mic, Radio, Wifi, WifiOff, Loader2 } from "lucide-react";
-import { toast } from "sonner";
-import { api } from "@/lib/api";
 import { Select } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/feedback";
 import { cn } from "@/lib/utils";
-import { WalkieCall } from "@/lib/walkie/call";
-import type { ConnectionStatus } from "@/lib/walkie/signaling";
-import { playFloorGranted, playFloorReleased, playChannelBusy } from "@/lib/walkie/sounds";
-import { ensureAndroidMicPermission } from "@/lib/walkie/androidMic";
-import { syncWalkieForegroundService, stopWalkieForegroundService } from "@/lib/walkie/foregroundService";
+import { useWalkie } from "@/lib/walkie/WalkieProvider";
 
-interface Channel {
-  key: string;
-  name: string;
-  icon: string | null;
-  transmit_restricted: boolean;
-  can_transmit: boolean;
-}
-
-// Mirrors backend/app/walkie_state.py's MAX_FLOOR_SECONDS/FLOOR_WARNING_SECONDS
-// — kept as a matching frontend constant rather than fetched, since it only
-// drives the local countdown UI; the server enforces the real cutoff
-// regardless of what this client displays.
-const FLOOR_WARNING_SECONDS = 25;
-
+// The actual WebSocket/WebRTC connection lives in WalkieProvider (mounted
+// once at AdminLayout level, see AdminLayout.tsx) so it survives navigating
+// to any other /admin/* page — this component is purely a view over that
+// shared connection plus the PTT button, which is the one thing that still
+// only exists here.
 function formatElapsed(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
@@ -33,175 +16,22 @@ function formatElapsed(seconds: number): string {
 }
 
 export default function WalkieTalkie() {
-  const [channels, setChannels] = useState<Channel[]>([]);
-  const [loadingChannels, setLoadingChannels] = useState(true);
-  const [selectedKey, setSelectedKey] = useState<string>("");
-  const [status, setStatus] = useState<ConnectionStatus>("connecting");
-  const [listenerCount, setListenerCount] = useState(0);
-  const [speakingName, setSpeakingName] = useState<string | null>(null);
-  const [isTransmitting, setIsTransmitting] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
-  const [busyFlash, setBusyFlash] = useState<string | null>(null);
+  const {
+    channels,
+    loadingChannels,
+    selectedKey,
+    setSelectedKey,
+    status,
+    listenerCount,
+    speakingName,
+    isTransmitting,
+    elapsed,
+    busyFlash,
+    canTransmit,
+    beginTransmit,
+    endTransmit,
+  } = useWalkie();
 
-  const callRef = useRef<WalkieCall | null>(null);
-  const pressedRef = useRef(false);
-  const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const warningShownRef = useRef(false);
-
-  useEffect(() => {
-    api
-      .get<Channel[]>("/walkie/channels")
-      .then((r) => {
-        setChannels(r.data);
-        if (r.data.length > 0) setSelectedKey(r.data[0].key);
-      })
-      .catch(() => toast.error("Could not load walkie channels"))
-      .finally(() => setLoadingChannels(false));
-  }, []);
-
-  // Android only: asked once up front, on opening this page — not lazily at
-  // first PTT press like the browser's own getUserMedia prompt — because
-  // Android requires RECORD_AUDIO already granted before the Microphone-type
-  // foreground service (see foregroundService.ts) can start. That service is
-  // what lets LISTENING keep working while the app is backgrounded/locked;
-  // transmitting is unaffected and still always stops on blur/visibility
-  // change regardless of this permission's state.
-  useEffect(() => {
-    if (Capacitor.isNativePlatform()) ensureAndroidMicPermission();
-  }, []);
-
-  const selectedChannel = useMemo(() => channels.find((c) => c.key === selectedKey) ?? null, [channels, selectedKey]);
-
-  const stopElapsedTimer = () => {
-    if (elapsedTimerRef.current) {
-      clearInterval(elapsedTimerRef.current);
-      elapsedTimerRef.current = null;
-    }
-    setElapsed(0);
-    warningShownRef.current = false;
-  };
-
-  // One WalkieCall per selected channel — switching channels tears the old
-  // one down (which itself releases any held floor and stops the mic/peers
-  // before closing its socket) and opens a fresh one.
-  useEffect(() => {
-    if (!selectedKey) return;
-    setSpeakingName(null);
-    setIsTransmitting(false);
-    stopElapsedTimer();
-
-    const call = new WalkieCall(selectedKey, setStatus);
-    callRef.current = call;
-    const off = call.on((e) => {
-      if (e.type === "presence") {
-        setListenerCount(e.count);
-      } else if (e.type === "speaker_started") {
-        setSpeakingName(e.name);
-      } else if (e.type === "speaker_stopped") {
-        setSpeakingName(null);
-        setIsTransmitting(call.isTransmitting());
-        stopElapsedTimer();
-      } else if (e.type === "floor_denied") {
-        playChannelBusy();
-        setBusyFlash(e.reason === "busy" ? `Channel busy — ${e.speakerName ?? "someone"} is speaking` : "You don't have permission to transmit on this channel");
-        setTimeout(() => setBusyFlash(null), 2500);
-      }
-    });
-    call.connect();
-
-    return () => {
-      off();
-      call.destroy();
-      callRef.current = null;
-      stopElapsedTimer();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedKey]);
-
-  // Starts (or updates) the Android foreground service once actually
-  // connected, so its notification always names the channel currently being
-  // listened to. No-op on web/iOS — see foregroundService.ts.
-  useEffect(() => {
-    if (status === "connected" && selectedChannel) {
-      syncWalkieForegroundService(selectedChannel.name);
-    }
-  }, [status, selectedChannel]);
-
-  const beginTransmit = async () => {
-    const call = callRef.current;
-    if (!call || isTransmitting) return;
-    pressedRef.current = true;
-    const result = await call.startTransmitting();
-    if (!pressedRef.current) {
-      // User already released while we were awaiting floor grant/mic setup
-      // — never leave the UI (or the mic) stuck in "transmitting".
-      call.stopTransmitting();
-      return;
-    }
-    if (result.ok) {
-      playFloorGranted();
-      setIsTransmitting(true);
-      warningShownRef.current = false;
-      elapsedTimerRef.current = setInterval(() => {
-        setElapsed((prev) => {
-          const next = prev + 1;
-          if (next === FLOOR_WARNING_SECONDS && !warningShownRef.current) {
-            warningShownRef.current = true;
-            toast.warning("Transmission will end soon");
-          }
-          return next;
-        });
-      }, 1000);
-    } else if (result.reason === "busy") {
-      playChannelBusy();
-      setBusyFlash(`Channel busy — ${result.speakerName ?? "someone"} is speaking`);
-      setTimeout(() => setBusyFlash(null), 2500);
-    } else if (result.reason === "mic_denied") {
-      toast.error("Microphone permission is required to transmit");
-    } else if (result.reason === "forbidden") {
-      toast.error("You don't have permission to transmit on this channel");
-    } else {
-      toast.error("Could not start transmitting");
-    }
-  };
-
-  const endTransmit = () => {
-    pressedRef.current = false;
-    if (!callRef.current?.isTransmitting()) return;
-    callRef.current?.stopTransmitting();
-    setIsTransmitting(false);
-    stopElapsedTimer();
-    playFloorReleased();
-  };
-
-  // Every one of these must safely end an in-progress transmission — never
-  // leave the UI (or a live mic) stuck showing TRANSMITTING.
-  useEffect(() => {
-    const onBlur = () => endTransmit();
-    const onVisibility = () => {
-      if (document.visibilityState === "hidden") endTransmit();
-    };
-    window.addEventListener("blur", onBlur);
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      window.removeEventListener("blur", onBlur);
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      // Component unmount (navigating away entirely) — belt-and-suspenders
-      // on top of the per-channel cleanup effect above. The foreground
-      // service is stopped ONLY here, never on blur/visibility-change —
-      // staying alive through those is the entire point of it.
-      callRef.current?.destroy();
-      stopWalkieForegroundService();
-    };
-  }, []);
-
-  const canTransmit = selectedChannel?.can_transmit ?? false;
   const channelBusy = !!speakingName && !isTransmitting;
 
   const statusPill = {
