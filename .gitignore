@@ -111,3 +111,6 @@ frontend/public/images/
 # The resized WebP output it produces (images-optimized/) is what the app
 # actually uses and stays tracked.
 frontend/src/assets/images/
+
+scoresheet.pdf
+3rd Raid.pdf

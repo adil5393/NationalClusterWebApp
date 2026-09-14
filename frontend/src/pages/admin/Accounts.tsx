@@ -1,6 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, Pencil, Trash2, ShieldCheck, ShieldOff, Crown, User, KeyRound } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  Crown,
+  KeyRound,
+  Shield,
+  ShieldCheck,
+  ShieldAlert,
+  Search,
+  User,
+  CheckCircle2,
+  XCircle,
+} from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -10,7 +23,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { groupStaffByCategory } from "@/lib/meta";
+import { MultiStaffSelector, StaffOption } from "@/components/admin/StaffSelector";
 
 type PermissionLevel = "" | "view" | "edit";
 
@@ -18,7 +31,9 @@ interface StaffBrief {
   id: number;
   full_name: string;
   category?: string | null;
+  phone?: string | null;
 }
+
 interface OrganizerUser {
   id: number;
   username: string;
@@ -29,6 +44,7 @@ interface OrganizerUser {
   staff_members: StaffBrief[];
   created_at: string;
 }
+
 interface FormState {
   id?: number;
   username: string;
@@ -38,6 +54,7 @@ interface FormState {
   permissions: Record<string, PermissionLevel>;
   staff_member_ids: number[];
 }
+
 const emptyForm: FormState = {
   username: "",
   full_name: "",
@@ -50,18 +67,24 @@ const emptyForm: FormState = {
 export default function Accounts() {
   const [users, setUsers] = useState<OrganizerUser[]>([]);
   const [modules, setModules] = useState<Record<string, string>>({});
-  const [staff, setStaff] = useState<StaffBrief[]>([]);
+  const [staff, setStaff] = useState<StaffOption[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Search & Filter
+  const [search, setSearch] = useState("");
+  const [filterRole, setFilterRole] = useState<"ALL" | "ADMIN" | "OFFICER">("ALL");
+  const [filterStatus, setFilterStatus] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
+
+  // Modal
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm);
-  const staffByCategory = useMemo(() => groupStaffByCategory(staff), [staff]);
 
   const load = () => {
     setLoading(true);
     Promise.all([
       api.get<OrganizerUser[]>("/organizer-users"),
       api.get<{ modules: Record<string, string> }>("/organizer-users/modules"),
-      api.get<StaffBrief[]>("/staff"),
+      api.get<StaffOption[]>("/staff"),
     ])
       .then(([u, m, s]) => {
         setUsers(u.data);
@@ -70,12 +93,37 @@ export default function Accounts() {
       })
       .finally(() => setLoading(false));
   };
+
   useEffect(load, []);
+
+  const filteredUsers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return users.filter((u) => {
+      const matchesSearch =
+        !q ||
+        u.username.toLowerCase().includes(q) ||
+        (u.full_name && u.full_name.toLowerCase().includes(q)) ||
+        u.staff_members.some((s) => s.full_name.toLowerCase().includes(q));
+
+      const matchesRole =
+        filterRole === "ALL" ||
+        (filterRole === "ADMIN" && u.is_admin) ||
+        (filterRole === "OFFICER" && !u.is_admin);
+
+      const matchesStatus =
+        filterStatus === "ALL" ||
+        (filterStatus === "ACTIVE" && u.is_active) ||
+        (filterStatus === "INACTIVE" && !u.is_active);
+
+      return matchesSearch && matchesRole && matchesStatus;
+    });
+  }, [users, search, filterRole, filterStatus]);
 
   const openCreate = () => {
     setForm(emptyForm);
     setOpen(true);
   };
+
   const openEdit = (u: OrganizerUser) => {
     setForm({
       id: u.id,
@@ -88,14 +136,6 @@ export default function Accounts() {
     });
     setOpen(true);
   };
-  const toggleFormStaff = (id: number) => {
-    setForm((f) => ({
-      ...f,
-      staff_member_ids: f.staff_member_ids.includes(id)
-        ? f.staff_member_ids.filter((x) => x !== id)
-        : [...f.staff_member_ids, id],
-    }));
-  };
 
   const save = async () => {
     if (!form.username.trim()) return toast.error("Username is required");
@@ -103,12 +143,14 @@ export default function Accounts() {
       return toast.error("Password must be at least 8 characters");
     if (form.password && form.password.length > 0 && form.password.length < 8)
       return toast.error("Password must be at least 8 characters");
+
     const permissions = Object.fromEntries(Object.entries(form.permissions).filter(([, v]) => v));
+
     try {
       if (form.id) {
         const payload: any = {
-          username: form.username,
-          full_name: form.full_name || null,
+          username: form.username.trim(),
+          full_name: form.full_name.trim() || null,
           is_admin: form.is_admin,
           permissions,
           staff_member_ids: form.staff_member_ids,
@@ -117,8 +159,8 @@ export default function Accounts() {
         await api.put(`/organizer-users/${form.id}`, payload);
       } else {
         await api.post("/organizer-users", {
-          username: form.username,
-          full_name: form.full_name || null,
+          username: form.username.trim(),
+          full_name: form.full_name.trim() || null,
           password: form.password,
           is_admin: form.is_admin,
           permissions,
@@ -144,22 +186,33 @@ export default function Accounts() {
   };
 
   const remove = async (u: OrganizerUser) => {
-    if (!confirm(`Delete the account "${u.username}"? This can't be undone.`)) return;
+    if (!confirm(`Delete the account "${u.username}"? This action cannot be undone.`)) return;
     try {
       await api.delete(`/organizer-users/${u.id}`);
-      toast.success("Deleted");
+      toast.success("Account deleted");
       load();
     } catch (e: any) {
       toast.error(e?.response?.data?.detail ?? "Could not delete account");
     }
   };
 
-  const summarize = (u: OrganizerUser) => {
-    if (u.is_admin) return "Full access";
+  const summarizePermissions = (u: OrganizerUser) => {
+    if (u.is_admin) return "Full Administrator Access";
     const entries = Object.entries(u.permissions || {});
-    if (entries.length === 0) return "No access yet";
+    if (entries.length === 0) return "No module permissions";
     return entries.map(([k, v]) => `${modules[k] ?? k} (${v})`).join(", ");
   };
+
+  if (loading) {
+    return (
+      <div className="py-20">
+        <Spinner label="Loading organizer accounts & access control…" />
+      </div>
+    );
+  }
+
+  const adminCount = users.filter((u) => u.is_admin).length;
+  const activeCount = users.filter((u) => u.is_active).length;
 
   return (
     <div data-testid="admin-accounts" className="space-y-6">
@@ -167,13 +220,14 @@ export default function Accounts() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between border-b border-white/10 pb-5">
         <div>
           <span className="text-xs font-heading font-extrabold uppercase tracking-widest text-gold">
-            ORGANIZER RBAC & ACCESS CONTROL
+            ACCESS & IDENTITY MANAGEMENT
           </span>
           <h1 className="mt-1 font-heading text-2xl sm:text-3xl font-black tracking-tight text-white">
-            User Accounts & Security
+            Accounts & Access Control
           </h1>
           <p className="mt-1 text-xs sm:text-sm text-slate-400 font-body">
-            {users.length} organizer account{users.length === 1 ? "" : "s"} · role-based permissions and staff device linking.
+            Manage who can sign into the Organizer Portal, assign administrative privileges, and configure module-level
+            view/edit permissions.
           </p>
         </div>
         <Button
@@ -181,261 +235,337 @@ export default function Accounts() {
           size="sm"
           onClick={openCreate}
           data-testid="add-account-btn"
-          className="text-xs font-extrabold"
+          className="text-xs font-extrabold shrink-0"
         >
-          <Plus className="h-4 w-4" /> Add Organizer Account
+          <Plus className="h-4 w-4" /> Create Account
         </Button>
       </div>
 
-      {/* ACCOUNTS CONTENT */}
-      <div>
-        {loading ? (
-          <div className="rounded-xl border border-white/10 bg-obsidian-900 py-16">
-            <Spinner label="Loading organizer accounts…" />
-          </div>
-        ) : users.length === 0 ? (
-          <div className="rounded-xl border border-white/10 bg-obsidian-900 p-6">
-            <EmptyState title="No accounts found" hint="Add your first organizer account." />
-          </div>
-        ) : (
-          <>
-            {/* MOBILE: CARD LIST */}
-            <div className="grid gap-2.5 lg:hidden">
-              {users.map((u) => (
-                <div
-                  key={u.id}
-                  data-testid={`account-card-${u.id}`}
-                  className="rounded-xl border border-white/10 bg-obsidian-900 p-4 space-y-2.5 shadow-sm"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <User className="h-4 w-4 text-gold" />
-                        <h3 className="font-heading font-bold text-white text-base">{u.username}</h3>
-                        {u.is_admin && <Crown className="h-3.5 w-3.5 text-gold" />}
-                      </div>
-                      <p className="text-xs text-slate-400 font-body mt-0.5">
-                        {u.full_name || "No full name specified"}
-                      </p>
-                    </div>
-                    <Badge tone={u.is_active ? "green" : "neutral"} size="sm">
-                      {u.is_active ? "Active" : "Deactivated"}
-                    </Badge>
-                  </div>
-
-                  <p className="text-xs text-slate-300 font-body border-t border-white/5 pt-2">
-                    {summarize(u)}
-                  </p>
-
-                  <div className="grid grid-cols-3 gap-2 border-t border-white/10 pt-2.5">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 text-xs"
-                      onClick={() => toggleActive(u)}
-                    >
-                      {u.is_active ? "Disable" : "Enable"}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 text-xs"
-                      onClick={() => openEdit(u)}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      className="h-8 text-xs"
-                      onClick={() => remove(u)}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* DESKTOP: TABLE */}
-            <div className="hidden lg:block">
-              <Table>
-                <THead>
-                  <TR>
-                    <TH className="w-12">#</TH>
-                    <TH>Username</TH>
-                    <TH>Full Name</TH>
-                    <TH>Linked Staff Member</TH>
-                    <TH>Module Access Rights</TH>
-                    <TH>Status</TH>
-                    <TH className="text-right">Actions</TH>
-                  </TR>
-                </THead>
-                <TBody>
-                  {users.map((u, i) => (
-                    <TR key={u.id} data-testid={`account-row-${u.id}`}>
-                      <TD className="text-slate-500 font-mono text-xs">{i + 1}</TD>
-                      <TD>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-heading font-bold text-white text-sm">{u.username}</span>
-                          {u.is_admin && <Crown className="h-3.5 w-3.5 text-gold shrink-0" />}
-                        </div>
-                      </TD>
-                      <TD className="text-slate-300 font-body text-xs">{u.full_name || "—"}</TD>
-                      <TD className="text-xs text-slate-300 font-body max-w-xs truncate">
-                        {u.staff_members.length > 0
-                          ? u.staff_members.map((s) => s.full_name).join(", ")
-                          : "Not linked"}
-                      </TD>
-                      <TD className="text-xs text-slate-400 font-body max-w-sm">
-                        {u.is_admin ? (
-                          <span className="inline-flex items-center gap-1 rounded bg-gold/15 border border-gold/30 px-2 py-0.5 font-heading font-bold text-gold">
-                            <Crown className="h-3 w-3" /> Full Administrator Access
-                          </span>
-                        ) : (
-                          <span className="truncate">{summarize(u)}</span>
-                        )}
-                      </TD>
-                      <TD>
-                        <Badge tone={u.is_active ? "green" : "neutral"} size="sm">
-                          {u.is_active ? "Active" : "Deactivated"}
-                        </Badge>
-                      </TD>
-                      <TD className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => toggleActive(u)}
-                            data-testid={`toggle-account-${u.id}`}
-                            className="text-xs"
-                          >
-                            {u.is_active ? "Deactivate" : "Reactivate"}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => openEdit(u)}
-                            data-testid={`edit-account-${u.id}`}
-                            title="Edit Account"
-                          >
-                            <Pencil className="h-3.5 w-3.5 text-slate-300" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => remove(u)}
-                            data-testid={`delete-account-${u.id}`}
-                            title="Delete Account"
-                          >
-                            <Trash2 className="h-3.5 w-3.5 text-red-400" />
-                          </Button>
-                        </div>
-                      </TD>
-                    </TR>
-                  ))}
-                </TBody>
-              </Table>
-            </div>
-          </>
-        )}
+      {/* METRIC PILLS */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-1">
+          <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400">
+            Total Accounts
+          </p>
+          <p className="font-heading text-xl sm:text-2xl font-black text-white">{users.length}</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-1">
+          <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400">
+            Active Accounts
+          </p>
+          <p className="font-heading text-xl sm:text-2xl font-black text-emerald-400">{activeCount}</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-1">
+          <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400">
+            Administrators
+          </p>
+          <p className="font-heading text-xl sm:text-2xl font-black text-gold">{adminCount}</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-1">
+          <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400">
+            Officers / Staff
+          </p>
+          <p className="font-heading text-xl sm:text-2xl font-black text-slate-300">{users.length - adminCount}</p>
+        </div>
       </div>
+
+      {/* SEARCH AND FILTER */}
+      <div className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-3">
+        <div className="flex flex-col sm:flex-row gap-2.5">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+            <Input
+              placeholder="Search by username, full name, or linked staff…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 h-9 text-xs"
+              data-testid="account-search-input"
+            />
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setFilterRole(filterRole === "ALL" ? "ADMIN" : filterRole === "ADMIN" ? "OFFICER" : "ALL")}
+              className={cn(
+                "h-9 rounded-lg border px-3 text-xs font-heading font-bold transition-colors",
+                filterRole !== "ALL"
+                  ? "bg-gold/15 text-gold border-gold/30"
+                  : "border-white/10 bg-obsidian-950 text-slate-400 hover:text-white",
+              )}
+            >
+              Role: {filterRole}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setFilterStatus(filterStatus === "ALL" ? "ACTIVE" : filterStatus === "ACTIVE" ? "INACTIVE" : "ALL")}
+              className={cn(
+                "h-9 rounded-lg border px-3 text-xs font-heading font-bold transition-colors",
+                filterStatus !== "ALL"
+                  ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                  : "border-white/10 bg-obsidian-950 text-slate-400 hover:text-white",
+              )}
+            >
+              Status: {filterStatus}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ACCOUNTS DISPLAY */}
+      {users.length === 0 ? (
+        <div className="rounded-xl border border-white/10 bg-obsidian-900 p-8">
+          <EmptyState
+            title="No organizer accounts"
+            hint="Create accounts for tournament staff and administrators."
+          />
+        </div>
+      ) : filteredUsers.length === 0 ? (
+        <div className="rounded-xl border border-white/10 bg-obsidian-900 p-8">
+          <EmptyState
+            title="No matching accounts found"
+            hint="Try changing your search terms or filter selections."
+          />
+        </div>
+      ) : (
+        <>
+          {/* MOBILE: STACKED ACCESS CARDS */}
+          <div className="grid gap-2.5 sm:hidden">
+            {filteredUsers.map((u) => (
+              <div
+                key={u.id}
+                data-testid={`account-card-${u.id}`}
+                className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-2.5 shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-heading font-black text-white text-base">@{u.username}</span>
+                      {u.is_admin ? (
+                        <span className="inline-flex items-center gap-1 rounded bg-gold/20 border border-gold/40 px-1.5 py-0.2 text-[9px] font-heading font-black text-gold">
+                          <Crown className="h-2.5 w-2.5" /> ADMIN
+                        </span>
+                      ) : (
+                        <span className="rounded bg-white/10 px-1.5 py-0.2 text-[9px] font-medium text-slate-400">
+                          OFFICER
+                        </span>
+                      )}
+                    </div>
+                    {u.full_name && <p className="text-xs text-slate-300 font-body mt-0.5">{u.full_name}</p>}
+                  </div>
+
+                  <Badge tone={u.is_active ? "green" : "neutral"} size="sm">
+                    {u.is_active ? "Active" : "Deactivated"}
+                  </Badge>
+                </div>
+
+                {/* LINKED STAFF (SECONDARY) */}
+                {u.staff_members.length > 0 ? (
+                  <div className="border-t border-white/5 pt-2 text-[11px] text-slate-400 font-body flex items-center gap-1.5">
+                    <User className="h-3 w-3 text-gold/70" />
+                    <span>Linked to: <strong className="text-slate-200">{u.staff_members.map((s) => s.full_name).join(", ")}</strong></span>
+                  </div>
+                ) : (
+                  <p className="border-t border-white/5 pt-2 text-[11px] text-slate-500 font-body italic">
+                    Standalone login (unlinked to staff member)
+                  </p>
+                )}
+
+                {/* PERMISSION SUMMARY */}
+                <p className="text-[11px] text-slate-400 font-body border-t border-white/5 pt-1.5">
+                  {u.is_admin ? (
+                    <span className="text-gold font-bold">Unrestricted Full System Control</span>
+                  ) : (
+                    summarizePermissions(u)
+                  )}
+                </p>
+
+                {/* ACTIONS */}
+                <div className="grid grid-cols-3 gap-2 border-t border-white/10 pt-2.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => toggleActive(u)}
+                  >
+                    {u.is_active ? "Disable" : "Enable"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs font-bold text-gold"
+                    onClick={() => openEdit(u)}
+                  >
+                    Manage
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => remove(u)}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* DESKTOP & TABLET: STRUCTURED ACCESS TABLE */}
+          <div className="hidden sm:block rounded-xl border border-white/10 bg-obsidian-900 overflow-hidden shadow-sm">
+            <Table>
+              <THead>
+                <TR>
+                  <TH className="w-10">#</TH>
+                  <TH>Account (Username)</TH>
+                  <TH>Role / Privilege</TH>
+                  <TH>Linked Staff Member</TH>
+                  <TH>Module Access Rights</TH>
+                  <TH className="text-center">Status</TH>
+                  <TH className="text-right">Actions</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {filteredUsers.map((u, i) => (
+                  <TR key={u.id} data-testid={`account-row-${u.id}`}>
+                    <TD className="text-slate-500 font-mono text-xs">{i + 1}</TD>
+                    <TD>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-heading font-black text-white text-xs">@{u.username}</span>
+                        </div>
+                        {u.full_name && (
+                          <p className="text-[11px] text-slate-400 font-body">{u.full_name}</p>
+                        )}
+                      </div>
+                    </TD>
+                    <TD>
+                      {u.is_admin ? (
+                        <span className="inline-flex items-center gap-1 rounded bg-gold/15 border border-gold/30 px-2 py-0.5 font-heading font-black text-[11px] text-gold">
+                          <Crown className="h-3 w-3" /> ADMINISTRATOR
+                        </span>
+                      ) : (
+                        <span className="rounded bg-white/10 px-2 py-0.5 text-[11px] font-medium text-slate-300">
+                          OFFICER
+                        </span>
+                      )}
+                    </TD>
+                    <TD className="text-xs text-slate-300 font-body max-w-xs">
+                      {u.staff_members.length > 0 ? (
+                        <div className="flex items-center gap-1">
+                          <User className="h-3 w-3 text-gold/70 shrink-0" />
+                          <span className="truncate">{u.staff_members.map((s) => s.full_name).join(", ")}</span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-500 italic text-[11px]">Unlinked</span>
+                      )}
+                    </TD>
+                    <TD className="text-xs text-slate-400 font-body max-w-sm">
+                      {u.is_admin ? (
+                        <span className="text-gold font-semibold text-xs">Full system control</span>
+                      ) : (
+                        <span className="line-clamp-1">{summarizePermissions(u)}</span>
+                      )}
+                    </TD>
+                    <TD className="text-center">
+                      <Badge tone={u.is_active ? "green" : "neutral"} size="sm">
+                        {u.is_active ? "Active" : "Deactivated"}
+                      </Badge>
+                    </TD>
+                    <TD className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openEdit(u)}
+                          data-testid={`edit-account-${u.id}`}
+                          className="h-7 text-xs px-2.5 font-bold"
+                          title="Manage Access & Permissions"
+                        >
+                          <Pencil className="h-3 w-3" /> Manage Access
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => toggleActive(u)}
+                          data-testid={`toggle-account-${u.id}`}
+                          className="h-7 text-xs text-slate-400"
+                        >
+                          {u.is_active ? "Disable" : "Enable"}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => remove(u)}
+                          data-testid={`delete-account-${u.id}`}
+                          title="Delete Account"
+                        >
+                          <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                        </Button>
+                      </div>
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          </div>
+        </>
+      )}
 
       {/* ADD / EDIT ACCOUNT DIALOG */}
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
-        title={form.id ? "Edit Account Details" : "Create New Organizer Account"}
+        title={form.id ? "Manage Account Access" : "Create New Organizer Account"}
         testId="account-dialog"
       >
         <div className="space-y-4">
-          {!form.id && (
-            <p className="text-[11px] text-slate-400 font-body leading-relaxed">
-              This creates a standalone login — not tied to any staff member unless you link one below. Most staff
-              logins are created automatically when you add them from{" "}
-              <Link to="/admin/staff" className="text-gold hover:underline">
-                Staff & Duty Allotments
-              </Link>{" "}
-              instead. Use this form for admin accounts, or to give one person a second login.
-            </p>
-          )}
-          <div>
-            <Label>Username *</Label>
-            <Input
-              value={form.username}
-              onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
-              placeholder="e.g. referee_desk1"
-              data-testid="account-username-input"
-            />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label>Username *</Label>
+              <Input
+                value={form.username}
+                onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
+                placeholder="e.g. ground_supervisor"
+                data-testid="account-username-input"
+              />
+            </div>
+            <div>
+              <Label>Full Name</Label>
+              <Input
+                value={form.full_name}
+                onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
+                placeholder="e.g. Ramesh Kumar"
+              />
+            </div>
           </div>
+
           <div>
-            <Label>Full Name</Label>
-            <Input
-              value={form.full_name}
-              onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
-              placeholder="e.g. Ramesh Kumar"
-            />
-          </div>
-          <div>
-            <Label>{form.id ? "New Password (Leave blank to preserve)" : "Password *"}</Label>
+            <Label>{form.id ? "New Password (Leave blank to keep unchanged)" : "Password *"}</Label>
             <Input
               type="password"
               value={form.password}
               onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-              placeholder={form.id ? "••••••••" : "At least 8 characters"}
+              placeholder={form.id ? "••••••••" : "Minimum 8 characters"}
               data-testid="account-password-input"
             />
           </div>
 
+          {/* LINKED STAFF PERSONNEL (SEARCHABLE MULTI-SELECTOR) */}
           <div>
-            <div className="flex items-center justify-between">
-              <Label>Link to Staff Personnel ({form.staff_member_ids.length} linked)</Label>
-              {form.staff_member_ids.length > 0 && (
-                <button
-                  type="button"
-                  className="text-xs font-semibold text-gold hover:underline"
-                  onClick={() => setForm((f) => ({ ...f, staff_member_ids: [] }))}
-                >
-                  Clear Selection
-                </button>
-              )}
-            </div>
-            <p className="mt-0.5 text-[11px] text-slate-500 font-body">
-              Purely a record of who this login belongs to — shows up in the "Linked Staff Member" column so it's
-              easy to tell which account is whose. Doesn't affect what this login can access; that's set by the
-              permissions below.
+            <Label>Linked Staff Member(s)</Label>
+            <p className="text-[11px] text-slate-500 font-body mb-1.5">
+              Optionally link this login to physical staff directory records.
             </p>
-            <div
-              className="mt-1.5 max-h-36 overflow-y-auto rounded-lg border border-white/10 bg-obsidian-950 p-2 space-y-1"
-              data-testid="account-staff-list"
-            >
-              {staffByCategory.map(([category, members]) => (
-                <div key={category}>
-                  <p className="px-2 pt-1.5 text-[10px] font-heading font-bold uppercase tracking-wider text-slate-500">
-                    {category}
-                  </p>
-                  {members.map((s) => (
-                    <label
-                      key={s.id}
-                      className="flex items-center gap-2 rounded px-2 py-1 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={form.staff_member_ids.includes(s.id)}
-                        onChange={() => toggleFormStaff(s.id)}
-                        className="rounded border-white/20 text-gold focus:ring-gold"
-                      />
-                      <span>{s.full_name}</span>
-                    </label>
-                  ))}
-                </div>
-              ))}
-              {staff.length === 0 && (
-                <p className="p-2 text-xs text-slate-400">No staff members enrolled yet.</p>
-              )}
-            </div>
+            <MultiStaffSelector
+              staff={staff}
+              selectedIds={form.staff_member_ids}
+              onChange={(ids) => setForm((f) => ({ ...f, staff_member_ids: ids }))}
+            />
           </div>
 
+          {/* ADMIN PRIVILEGE TOGGLE */}
           <label className="flex items-center gap-2.5 rounded-lg border border-white/10 bg-obsidian-950 px-3.5 py-2.5 text-xs cursor-pointer">
             <input
               type="checkbox"
@@ -445,16 +575,19 @@ export default function Accounts() {
               className="rounded border-white/20 text-gold focus:ring-gold"
             />
             <div>
-              <span className="font-heading font-bold text-white">Full System Administrator</span>
-              <p className="text-slate-400 font-body text-[11px]">
-                Grants unrestricted access across all modules, rosters, and user management.
+              <span className="font-heading font-bold text-white flex items-center gap-1.5">
+                <Crown className="h-3.5 w-3.5 text-gold" /> Full System Administrator
+              </span>
+              <p className="text-slate-400 font-body text-[11px] mt-0.5">
+                Grants unrestricted access across all competition matches, accommodation, and system settings.
               </p>
             </div>
           </label>
 
+          {/* MODULE PERMISSIONS MATRIX */}
           {!form.is_admin && (
             <div className="space-y-2">
-              <Label>Module Access Rights</Label>
+              <Label>Granular Module Permissions</Label>
               <div className="divide-y divide-white/10 rounded-lg border border-white/10 bg-obsidian-950 max-h-48 overflow-y-auto">
                 {Object.entries(modules).map(([key, label]) => (
                   <div
@@ -496,7 +629,7 @@ export default function Accounts() {
               Cancel
             </Button>
             <Button variant="gold" size="sm" onClick={save} data-testid="save-account-btn">
-              {form.id ? "Update Account" : "Save Account"}
+              {form.id ? "Update Account" : "Create Account"}
             </Button>
           </div>
         </div>

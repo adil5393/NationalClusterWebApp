@@ -37,6 +37,7 @@ const AdminAnnouncements = lazy(() => import("@/pages/admin/Announcements"));
 const AdminFaq = lazy(() => import("@/pages/admin/Faq"));
 const AdminGallery = lazy(() => import("@/pages/admin/Gallery"));
 const Staff = lazy(() => import("@/pages/admin/Staff"));
+const Duties = lazy(() => import("@/pages/admin/Duties"));
 const StaffLiveMap = lazy(() => import("@/pages/admin/StaffLiveMap"));
 const Matches = lazy(() => import("@/pages/admin/Matches"));
 const MatGroundAssignment = lazy(() => import("@/pages/admin/MatGroundAssignment"));
@@ -44,6 +45,7 @@ const Reports = lazy(() => import("@/pages/admin/Reports"));
 const Tasks = lazy(() => import("@/pages/admin/Tasks"));
 const WalkieTalkie = lazy(() => import("@/pages/admin/WalkieTalkie"));
 const Accounts = lazy(() => import("@/pages/admin/Accounts"));
+const AdminContacts = lazy(() => import("@/pages/admin/Contacts"));
 const Login = lazy(() => import("@/pages/admin/Login"));
 
 // The Android app (Capacitor) is a dedicated Organizer Portal build — reusing
@@ -112,6 +114,7 @@ export default function App() {
           <Route path="/admin/teams" element={<AdminTeams />} />
           <Route path="/admin/buildings" element={<BuildingsRooms />} />
           <Route path="/admin/staff" element={<Staff />} />
+          <Route path="/admin/duties" element={<Duties />} />
           <Route path="/admin/staff-map" element={<StaffLiveMap />} />
           <Route path="/admin/knowledge" element={<Knowledge />} />
           <Route path="/admin/procurement" element={<Procurement />} />
@@ -131,7 +134,7 @@ export default function App() {
           <Route path="/admin/tasks" element={<Tasks />} />
           <Route path="/admin/walkie" element={<WalkieTalkie />} />
           <Route path="/admin/documents" element={<ComingSoon title="Documents" />} />
-          <Route path="/admin/contacts" element={<ComingSoon title="Contacts" />} />
+          <Route path="/admin/contacts" element={<AdminContacts />} />
           <Route path="/admin/settings" element={<ComingSoon title="Settings" />} />
           <Route path="/admin/accounts" element={<Accounts />} />
         </Route>

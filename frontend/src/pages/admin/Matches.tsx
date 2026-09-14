@@ -26,6 +26,7 @@ import {
   UserX,
   RotateCcw,
   Users,
+  ShieldOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -2040,6 +2041,10 @@ function LiveConsole({
   // during fast live-raid scoring instead of committing on the very first tap.
   const [pendingScore, setPendingScore] = useState<{ a: number | null; b: number | null }>({ a: null, b: null });
   const [forfeitOpen, setForfeitOpen] = useState(false);
+  const [disqualifyPickerOpen, setDisqualifyPickerOpen] = useState(false);
+  const [disqualifyOpen, setDisqualifyOpen] = useState<{ teamId: number; teamName: string } | null>(null);
+  const [disqualifyReason, setDisqualifyReason] = useState("");
+  const [disqualifying, setDisqualifying] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetTeamA, setResetTeamA] = useState<string>("");
   const [resetTeamB, setResetTeamB] = useState<string>("");
@@ -2055,6 +2060,9 @@ function LiveConsole({
     setPendingScore({ a: null, b: null });
     setResetOpen(false);
     setForfeitOpen(false);
+    setDisqualifyPickerOpen(false);
+    setDisqualifyOpen(null);
+    setDisqualifyReason("");
   }, [matchId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -2121,6 +2129,35 @@ function LiveConsole({
       onChanged();
     } catch (e: any) {
       toast.error(e?.response?.data?.detail ?? "Could not record forfeit");
+    }
+  };
+
+  const disqualifyTeam = async () => {
+    if (!disqualifyOpen) return;
+    if (!disqualifyReason.trim()) return toast.error("A reason is required to disqualify a team");
+    if (
+      !confirm(
+        `Disqualify ${disqualifyOpen.teamName} from this entire tournament? Every one of their remaining matches will be forfeited or cancelled, and they can't be scheduled again. This can't be undone.`,
+      )
+    )
+      return;
+    setDisqualifying(true);
+    try {
+      const r = await api.post(`/matches/${matchId}/disqualify-team`, {
+        team_id: disqualifyOpen.teamId,
+        reason: disqualifyReason.trim(),
+      });
+      toast.success(
+        `${disqualifyOpen.teamName} disqualified — ${r.data.matches_forfeited} match(es) forfeited, ${r.data.matches_cancelled} cancelled`,
+      );
+      setDisqualifyOpen(null);
+      setDisqualifyReason("");
+      load();
+      onChanged();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not disqualify team");
+    } finally {
+      setDisqualifying(false);
     }
   };
 
@@ -2540,6 +2577,18 @@ function LiveConsole({
                     <UserX className="h-4 w-4" /> Forfeit
                   </Button>
                 )}
+                {m.status !== "COMPLETED" && m.status !== "CANCELLED" && (m.team_a_id || m.team_b_id) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-red-400 hover:bg-red-500/10"
+                    onClick={() => setDisqualifyPickerOpen((o) => !o)}
+                    title="Disqualify a team from the whole tournament"
+                    data-testid="open-disqualify-btn"
+                  >
+                    <ShieldOff className="h-4 w-4" /> Disqualify
+                  </Button>
+                )}
                 {/* Reset always needs real "matches" edit access — never
                     unlockable by match assignment alone, even inside this
                     otherwise-assignment-controllable action row. */}
@@ -2595,6 +2644,99 @@ function LiveConsole({
                   {m.team_b_name ?? "Team B"}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setForfeitOpen(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* DISQUALIFY PANEL, step 1 — pick the team. This ends their WHOLE
+              tournament, not just this match: every other still-open fixture
+              of theirs gets forfeited/cancelled too (see disqualify-team on
+              the backend), so it's deliberately a two-step flow (pick team,
+              then a separate required reason) rather than forfeit's
+              single-click-to-confirm. */}
+          {canControl && disqualifyPickerOpen && m && (m.team_a_id || m.team_b_id) && (
+            <div
+              className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 space-y-2"
+              data-testid="disqualify-picker-panel"
+            >
+              <p className="text-xs font-semibold text-red-400">
+                Which team is disqualified? This ends their whole tournament, not just this match.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {m.team_a_id && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-red-400 hover:bg-red-500/10"
+                    onClick={() => {
+                      setDisqualifyOpen({ teamId: m.team_a_id!, teamName: m.team_a_name ?? "Team A" });
+                      setDisqualifyPickerOpen(false);
+                    }}
+                    data-testid="disqualify-team-a-btn"
+                  >
+                    {m.team_a_name ?? "Team A"}
+                  </Button>
+                )}
+                {m.team_b_id && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-red-400 hover:bg-red-500/10"
+                    onClick={() => {
+                      setDisqualifyOpen({ teamId: m.team_b_id!, teamName: m.team_b_name ?? "Team B" });
+                      setDisqualifyPickerOpen(false);
+                    }}
+                    data-testid="disqualify-team-b-btn"
+                  >
+                    {m.team_b_name ?? "Team B"}
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" onClick={() => setDisqualifyPickerOpen(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* DISQUALIFY PANEL, step 2 — a reason is required (this is a
+              punitive, tournament-wide, unrecoverable action, unlike a plain
+              forfeit) before disqualifyTeam's own confirm() fires. */}
+          {canControl && disqualifyOpen && (
+            <div
+              className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 space-y-2"
+              data-testid="disqualify-reason-panel"
+            >
+              <p className="text-xs font-semibold text-red-400">
+                Disqualifying {disqualifyOpen.teamName} — reason required
+              </p>
+              <Textarea
+                value={disqualifyReason}
+                onChange={(e) => setDisqualifyReason(e.target.value)}
+                placeholder="e.g. Struck an opponent during play"
+                rows={2}
+                data-testid="disqualify-reason-input"
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-red-400 hover:bg-red-500/10"
+                  onClick={disqualifyTeam}
+                  disabled={disqualifying || !disqualifyReason.trim()}
+                  data-testid="confirm-disqualify-btn"
+                >
+                  {disqualifying ? "Disqualifying…" : "Confirm Disqualification"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setDisqualifyOpen(null);
+                    setDisqualifyReason("");
+                  }}
+                >
                   Cancel
                 </Button>
               </div>
@@ -3618,7 +3760,11 @@ function LeagueSetup({
         <CreatePoolDialog
           tournamentId={tournamentId}
           roundId={roundId}
-          teams={summary?.eligible_teams ?? teams}
+          // Only teams not already in a pool this round — same exclusion
+          // the "Assign to pool…" dropdown and auto-create already apply;
+          // eligible_teams alone let you pick an already-pooled team here,
+          // only to have the create call 409 after the fact.
+          teams={summary?.unassigned_teams ?? teams}
           fullTeams={teams}
           tournament={tournament}
           onClose={() => setCreateOpen(false)}

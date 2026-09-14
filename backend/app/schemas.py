@@ -902,6 +902,11 @@ class MatchForfeitRequest(BaseModel):
     forfeiting_team_id: int
 
 
+class MatchDisqualifyRequest(BaseModel):
+    team_id: int
+    reason: str
+
+
 class MatchResetRequest(BaseModel):
     # Always sent explicitly (even when unchanged) — the frontend's reset
     # panel pre-fills both with the match's current teams, so "leave as-is"

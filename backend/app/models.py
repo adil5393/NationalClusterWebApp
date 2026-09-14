@@ -192,6 +192,35 @@ class TeamInactiveAgeGroup(Base):
     team = relationship("Team", back_populates="inactive_age_groups")
 
 
+class TeamDisqualification(TimestampMixin, Base):
+    """A team disqualified from one specific Tournament — never event-wide,
+    since a school can be legitimately still playing a different age group's
+    tournament. Row existence = disqualified from that tournament; checked
+    in routers/matches.py's _team_unplayable_reason (alongside Team.is_active
+    and TeamInactiveAgeGroup) so a disqualified team can never be newly
+    scheduled into anything else in this tournament.
+
+    The cascade this actually implies — forfeiting every already-scheduled
+    match where the disqualified team has a seated opponent, cancelling the
+    rest — happens once, at disqualification time (see
+    routers/matches.py's disqualify_team); this row only keeps the team out
+    of anything scheduled AFTER that moment. `match_id` is which match the
+    disqualification happened during, if any (nullable: a future UI path
+    might disqualify from a team/tournament page with no specific match in
+    play)."""
+    __tablename__ = "team_disqualifications"
+    __table_args__ = (UniqueConstraint("team_id", "tournament_id", name="uq_team_disqualification"),)
+    id = Column(Integer, primary_key=True)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    tournament_id = Column(Integer, ForeignKey("tournaments.id", ondelete="CASCADE"), nullable=False)
+    match_id = Column(Integer, ForeignKey("matches.id", ondelete="SET NULL"))
+    reason = Column(Text, nullable=False)
+    disqualified_by_id = Column(Integer, ForeignKey("organizer_users.id", ondelete="SET NULL"))
+
+    team = relationship("Team")
+    tournament = relationship("Tournament")
+
+
 class Participant(TimestampMixin, Base):
     __tablename__ = "participants"
     id = Column(Integer, primary_key=True)

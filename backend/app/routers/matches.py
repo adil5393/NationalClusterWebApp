@@ -136,13 +136,24 @@ def _check_team_age_group(db: Session, team_id: int, age_group: str | None) -> N
 
 def _team_unplayable_reason(db: Session, team: models.Team, tournament: models.Tournament) -> str | None:
     """None if the team can be placed into a match/pool in this tournament,
-    otherwise the reason it can't — benched manually, either wholesale
+    otherwise the reason it can't — disqualified from this tournament
+    specifically (TeamDisqualification), benched manually, either wholesale
     (Team.is_active) or for just this tournament's age group
     (TeamInactiveAgeGroup — an organizer withdrawing e.g. a school's Under 14
     squad without touching its Under 17 eligibility), or automatically,
     because too few of its players in this tournament's age group have
     checked in (Tournament.min_present_players; 0 disables this half of the
     check)."""
+    dq = (
+        db.query(models.TeamDisqualification)
+        .filter(
+            models.TeamDisqualification.team_id == team.id,
+            models.TeamDisqualification.tournament_id == tournament.id,
+        )
+        .first()
+    )
+    if dq:
+        return f"{team.name} was disqualified from this tournament"
     if not team.is_active:
         return f"{team.name} is marked inactive"
     if tournament.age_group:
@@ -1175,13 +1186,10 @@ def complete_match(match_id: int, payload: schemas.MatchCompleteRequest, db: Ses
     return _match_dict(m, db)
 
 
-@router.post("/api/matches/{match_id}/cancel")
-def cancel_match(match_id: int, db: Session = Depends(get_db), current: models.OrganizerUser = Depends(require_auth)):
-    m = db.get(models.Match, match_id)
-    if not m:
-        raise HTTPException(404, "Match not found")
-    if m.status == "COMPLETED":
-        raise HTTPException(409, "A completed match can't be cancelled")
+def _cancel_match_core(db: Session, m: models.Match, current: models.OrganizerUser) -> None:
+    """Shared mutation+propagation for voiding a match with no winner. Caller
+    owns preconditions (status not already COMPLETED) — used by both the
+    single-match /cancel endpoint and the bulk disqualification cascade."""
     m.status = "CANCELLED"
     _log_event(db, m, "CANCEL", current)
     _free_pushed_bucket_entries(db, m.round_id, [m.team_a_id, m.team_b_id])
@@ -1189,10 +1197,38 @@ def cancel_match(match_id: int, db: Session = Depends(get_db), current: models.O
         _propagate_pool_qualifiers(db, m.pool)
     else:
         _propagate_cancellation(db, m)
+
+
+@router.post("/api/matches/{match_id}/cancel")
+def cancel_match(match_id: int, db: Session = Depends(get_db), current: models.OrganizerUser = Depends(require_auth)):
+    m = db.get(models.Match, match_id)
+    if not m:
+        raise HTTPException(404, "Match not found")
+    if m.status == "COMPLETED":
+        raise HTTPException(409, "A completed match can't be cancelled")
+    _cancel_match_core(db, m, current)
     db.commit()
     db.refresh(m)
     broadcast_match_event_sync(m, "match_cancelled")
     return _match_dict(m, db)
+
+
+def _forfeit_match_core(db: Session, m: models.Match, forfeiting_team_id: int, current: models.OrganizerUser) -> None:
+    """Shared mutation+propagation for turning a match into a forfeit result
+    — the *other* team wins, so it completes exactly like a normally decided
+    match (same downstream propagation), just tagged with who forfeited.
+    Caller owns preconditions (status forfeit-able, forfeiting_team_id is one
+    of the two teams, opponent slot non-empty) — used by both the
+    single-match /forfeit endpoint and the bulk disqualification cascade."""
+    winner_id = m.team_b_id if forfeiting_team_id == m.team_a_id else m.team_a_id
+    m.status = "COMPLETED"
+    m.winner_team_id = winner_id
+    m.forfeited_team_id = forfeiting_team_id
+    m.ended_at = datetime.now(timezone.utc)
+    _log_event(db, m, "FORFEIT", current, team_id=forfeiting_team_id)
+    _propagate_winner(db, m)
+    if m.pool_id:
+        _propagate_pool_qualifiers(db, m.pool)
 
 
 @router.post("/api/matches/{match_id}/forfeit")
@@ -1212,18 +1248,101 @@ def forfeit_match(match_id: int, payload: schemas.MatchForfeitRequest, db: Sessi
     if winner_id is None:
         raise HTTPException(400, "The opposing team slot is still empty")
 
-    m.status = "COMPLETED"
-    m.winner_team_id = winner_id
-    m.forfeited_team_id = payload.forfeiting_team_id
-    m.ended_at = datetime.now(timezone.utc)
-    _log_event(db, m, "FORFEIT", current, team_id=payload.forfeiting_team_id)
-    _propagate_winner(db, m)
-    if m.pool_id:
-        _propagate_pool_qualifiers(db, m.pool)
+    _forfeit_match_core(db, m, payload.forfeiting_team_id, current)
     db.commit()
     db.refresh(m)
     broadcast_match_event_sync(m, "match_forfeited")
     return _match_dict(m, db)
+
+
+@router.post("/api/matches/{match_id}/disqualify-team")
+def disqualify_team(match_id: int, payload: schemas.MatchDisqualifyRequest, db: Session = Depends(get_db), current: models.OrganizerUser = Depends(require_auth)):
+    """Disqualifies a team from the ENTIRE tournament this match belongs to,
+    not just this one match — a real-world disqualification (misconduct,
+    etc.) ends a team's whole run, not one fixture.
+
+    Every one of the team's still-open matches in this tournament (this one
+    included, plus any other already-scheduled/ongoing/paused fixture) is
+    resolved immediately: forfeited — opponent credited with the win,
+    exactly like a normal forfeit, so pool standings and bracket advancement
+    both reflect it correctly — wherever an opponent is already seated, or
+    cancelled (letting the existing walkover machinery credit whoever
+    eventually lands in that bracket slot) where one isn't yet. Plain
+    cancellation alone was deliberately not used for the opponent's side:
+    compute_standings ignores CANCELLED matches entirely, so it would give
+    the opponent no credit at all — forfeiting is what actually produces the
+    "bye" a disqualification implies.
+
+    Recording a TeamDisqualification row also blocks the team from being
+    newly scheduled into anything else in this tournament going forward
+    (see _team_unplayable_reason) — this only resolves what's already
+    scheduled at the moment of disqualification; it doesn't reach into an
+    unfinalized pool/bracket slot the team might otherwise have qualified
+    into later (see the function body for why that's out of scope here)."""
+    m = db.get(models.Match, match_id)
+    if not m:
+        raise HTTPException(404, "Match not found")
+    if payload.team_id not in (m.team_a_id, m.team_b_id):
+        raise HTTPException(400, "team_id must be one of the two teams in this match")
+    if not payload.reason.strip():
+        raise HTTPException(400, "A reason is required to disqualify a team")
+
+    team = db.get(models.Team, payload.team_id)
+    if not team:
+        raise HTTPException(404, "Team not found")
+
+    existing = (
+        db.query(models.TeamDisqualification)
+        .filter(
+            models.TeamDisqualification.team_id == team.id,
+            models.TeamDisqualification.tournament_id == m.tournament_id,
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(409, f"{team.name} has already been disqualified from this tournament")
+
+    db.add(models.TeamDisqualification(
+        team_id=team.id, tournament_id=m.tournament_id, match_id=m.id,
+        reason=payload.reason.strip(), disqualified_by_id=current.id,
+    ))
+
+    # Snapshot every currently-open match this team is seated in, across the
+    # whole tournament, BEFORE resolving any of them — _forfeit_match_core
+    # only ever propagates the WINNER (the opponent) forward, never the
+    # disqualified team, so this list can't grow mid-loop from the team's
+    # own resolutions.
+    affected = (
+        db.query(models.Match)
+        .filter(
+            models.Match.tournament_id == m.tournament_id,
+            models.Match.status.in_(("SCHEDULED", "ONGOING", "PAUSED")),
+            (models.Match.team_a_id == team.id) | (models.Match.team_b_id == team.id),
+        )
+        .all()
+    )
+    forfeited = 0
+    cancelled = 0
+    for match in affected:
+        opponent_id = match.team_b_id if match.team_a_id == team.id else match.team_a_id
+        if opponent_id is not None:
+            _forfeit_match_core(db, match, team.id, current)
+            forfeited += 1
+        else:
+            _cancel_match_core(db, match, current)
+            cancelled += 1
+
+    db.commit()
+    for match in affected:
+        db.refresh(match)
+        broadcast_match_event_sync(match, "match_forfeited" if match.status == "COMPLETED" else "match_cancelled")
+
+    return {
+        "team_id": team.id,
+        "tournament_id": m.tournament_id,
+        "matches_forfeited": forfeited,
+        "matches_cancelled": cancelled,
+    }
 
 
 def _downstream_blocking_reason(db: Session, m: models.Match) -> str | None:

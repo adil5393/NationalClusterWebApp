@@ -434,7 +434,15 @@ def compute_standings(pool: models.Pool) -> list[dict]:
     never a negative number). Used first, ahead of plain points differential,
     to automatically resolve a points-tie for a qualifying spot — see
     routers/matches.py _standings_key. E.g. a team that wins all 4 of its
-    matches by 1/2/3/4 scores 10 here; a team that wins by 1/2/1/3 scores 7."""
+    matches by 1/2/3/4 scores 10 here; a team that wins by 1/2/1/3 scores 7.
+
+    Win/loss itself is decided by `winner_team_id` when it's set — never
+    re-derived from the score margin alone — specifically so a forfeited
+    match (e.g. from disqualify_team in routers/matches.py) counts as a real
+    win for the other team even when it never started and both scores are
+    still 0-0 (score margin of 0 would otherwise read as a draw). Score
+    margin is still what sizes tiebreak_score/points_for/points_against, and
+    is the fallback for the two paths that don't set a winner explicitly."""
     rows = {
         t.id: {
             "team_id": t.id, "team_name": t.name, "played": 0, "won": 0, "lost": 0, "drawn": 0,
@@ -454,7 +462,13 @@ def compute_standings(pool: models.Pool) -> list[dict]:
         b["points_for"] += m.team_b_score
         b["points_against"] += m.team_a_score
         margin = m.team_a_score - m.team_b_score
-        if margin > 0:
+        if m.winner_team_id == m.team_a_id:
+            a["won"] += 1; a["points"] += 2; a["tiebreak_score"] += max(margin, 0)
+            b["lost"] += 1
+        elif m.winner_team_id == m.team_b_id:
+            b["won"] += 1; b["points"] += 2; b["tiebreak_score"] += max(-margin, 0)
+            a["lost"] += 1
+        elif margin > 0:
             a["won"] += 1; a["points"] += 2; a["tiebreak_score"] += margin
             b["lost"] += 1
         elif margin < 0:

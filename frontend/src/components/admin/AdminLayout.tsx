@@ -36,6 +36,7 @@ import {
   Activity,
   Mic,
   MapPinned,
+  ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -56,6 +57,24 @@ interface NavGroup {
 
 const NAV_GROUPS: NavGroup[] = [
   {
+    title: "People",
+    items: [
+      { to: "/admin/staff", label: "Staff Directory", icon: HardHat, moduleKey: "staff" },
+      { to: "/admin/duties", label: "Staff Duties", icon: ClipboardList, moduleKey: "staff" },
+      { to: "/admin/accounts", label: "Accounts & Access", icon: UserCog, moduleKey: "accounts" },
+      { to: "/admin/staff-map", label: "Staff Live Map", icon: MapPinned, moduleKey: "staff_map" },
+    ],
+  },
+  {
+    title: "Operations",
+    items: [
+      { to: "/admin/tasks", label: "Tasks", icon: CheckSquare },
+      { to: "/admin/transport", label: "Transport", icon: Bus, moduleKey: "transport" },
+      { to: "/admin/procurement", label: "Procurement", icon: ShoppingCart, moduleKey: "procurement" },
+      { to: "/admin/walkie", label: "Walkie Talkie", icon: Mic },
+    ],
+  },
+  {
     title: "Competition & Fixtures",
     items: [
       { to: "/admin", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -66,39 +85,27 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    title: "Teams & People",
+    title: "Logistics & Venue",
     items: [
       { to: "/admin/teams", label: "Teams", icon: Users, moduleKey: "teams" },
       { to: "/admin/participants", label: "Participants", icon: UserSquare2, moduleKey: "teams" },
-      { to: "/admin/staff", label: "Staff & Duties", icon: HardHat, moduleKey: "staff" },
-      { to: "/admin/staff-map", label: "Staff Live Map", icon: MapPinned, moduleKey: "staff_map" },
-    ],
-  },
-  {
-    title: "Logistics & Venue",
-    items: [
       { to: "/admin/venues", label: "Venues", icon: MapPin, moduleKey: "venues" },
       { to: "/admin/accommodation", label: "Accommodation", icon: BedDouble, moduleKey: "accommodation" },
       { to: "/admin/room-map", label: "Room Map", icon: LayoutGrid, moduleKey: "accommodation" },
       { to: "/admin/buildings", label: "Buildings & Rooms", icon: Building2, moduleKey: "buildings" },
-      { to: "/admin/transport", label: "Transport", icon: Bus, moduleKey: "transport" },
       { to: "/admin/food", label: "Food Planning", icon: UtensilsCrossed },
     ],
   },
   {
-    title: "Operations & Governance",
+    title: "Event Info & Knowledge",
     items: [
       { to: "/admin/announcements", label: "Announcements", icon: Megaphone, moduleKey: "announcements" },
       { to: "/admin/faq", label: "FAQ", icon: HelpCircle, moduleKey: "faq" },
       { to: "/admin/gallery", label: "Photo Gallery", icon: Images, moduleKey: "gallery" },
-      { to: "/admin/procurement", label: "Procurement", icon: ShoppingCart, moduleKey: "procurement" },
-      { to: "/admin/tasks", label: "Tasks", icon: CheckSquare },
-      { to: "/admin/walkie", label: "Walkie Talkie", icon: Mic },
       { to: "/admin/knowledge", label: "Knowledge Base", icon: BookOpen, moduleKey: "knowledge" },
       { to: "/admin/documents", label: "Documents", icon: FileText },
       { to: "/admin/contacts", label: "Contacts", icon: ContactIcon },
       { to: "/admin/settings", label: "Settings", icon: Settings },
-      { to: "/admin/accounts", label: "Accounts", icon: UserCog, moduleKey: "accounts" },
     ],
   },
 ];
