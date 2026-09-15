@@ -7,11 +7,13 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Column,
     Date,
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     JSON,
     LargeBinary,
@@ -21,6 +23,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import relationship
 
@@ -688,9 +691,39 @@ class EventLocation(TimestampMixin, Base):
     """A named operational venue/place at the tournament (e.g., 'Ground 1',
     'Main Gate', 'Dining Hall', 'Reception', 'Boys Hostel'). Used to assign
     operational duties and track workforce deployment across tournament sites.
-    Independent from the accommodation bed hierarchy and match mat tables."""
+
+    Two kinds of row:
+    - STANDALONE: a genuine ad-hoc operational station with no equivalent
+      elsewhere (Main Gate, Medical Desk, Match Control Desk) — mat_id/
+      building_id/room_id all NULL, name/location_type are this row's own.
+    - LINKED: a thin wrapper around an existing authoritative physical
+      record (Mat, Building, or Room) so Staff Duties can reference it
+      without duplicating it — see routers/event_locations.py
+      resolve_location_display()/resolve_event_location_for_source(), which
+      is how these get created (never by an organizer manually) and how
+      their live display name/type are derived from the linked source
+      rather than trusted from this row's own (possibly stale) columns.
+      Exactly one of mat_id/building_id/room_id may be set, never more than
+      one (ck_event_location_single_source below), and each can back at
+      most one EventLocation row (the three partial unique indexes) so a
+      given Mat/Building/Room is never wrapped twice.
+    """
     __tablename__ = "event_locations"
-    __table_args__ = (UniqueConstraint("name", name="uq_event_locations_name"),)
+    __table_args__ = (
+        UniqueConstraint("name", name="uq_event_locations_name"),
+        CheckConstraint(
+            "(CASE WHEN mat_id IS NOT NULL THEN 1 ELSE 0 END) "
+            "+ (CASE WHEN building_id IS NOT NULL THEN 1 ELSE 0 END) "
+            "+ (CASE WHEN room_id IS NOT NULL THEN 1 ELSE 0 END) <= 1",
+            name="ck_event_location_single_source",
+        ),
+        Index("uq_event_locations_mat_id", "mat_id", unique=True, postgresql_where=text("mat_id IS NOT NULL")),
+        Index(
+            "uq_event_locations_building_id", "building_id", unique=True,
+            postgresql_where=text("building_id IS NOT NULL"),
+        ),
+        Index("uq_event_locations_room_id", "room_id", unique=True, postgresql_where=text("room_id IS NOT NULL")),
+    )
 
     id = Column(Integer, primary_key=True)
     name = Column(String(120), nullable=False)
@@ -698,8 +731,18 @@ class EventLocation(TimestampMixin, Base):
     description = Column(Text)
     is_active = Column(Boolean, nullable=False, default=True)
     sort_order = Column(Integer, nullable=False, default=0)
+    # Physical-source link (LINKED rows only) — RESTRICT, not SET NULL/CASCADE:
+    # the source's own delete endpoint (mats.py/structure.py) already checks
+    # for and blocks deletion while a link exists, so this is a defense-in-depth
+    # backstop, not the primary guard. See class docstring above.
+    mat_id = Column(Integer, ForeignKey("mats.id", ondelete="RESTRICT"), nullable=True, index=True)
+    building_id = Column(Integer, ForeignKey("buildings.id", ondelete="RESTRICT"), nullable=True, index=True)
+    room_id = Column(Integer, ForeignKey("rooms.id", ondelete="RESTRICT"), nullable=True, index=True)
 
     duties = relationship("DutyAssignment", back_populates="location")
+    mat = relationship("Mat")
+    building = relationship("Building")
+    room = relationship("Room")
 
 
 class OperationalArea(TimestampMixin, Base):

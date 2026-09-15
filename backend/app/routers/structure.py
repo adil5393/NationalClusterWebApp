@@ -8,6 +8,22 @@ from ..database import get_db
 router = APIRouter(prefix="/api", tags=["structure"])
 
 
+def _room_delete_blocker(db: Session, room: "models.Room") -> "str | None":
+    """None if `room` is safe to delete, otherwise a human-readable reason.
+    Room's own FK cascades (accommodation_assignments, beds, and legacy
+    duty_assignments.room_id) are all ON DELETE CASCADE — deleting the room
+    would silently destroy this history rather than just unlinking it, so
+    this check runs before any deletion, matching EventLocation's existing
+    409 pattern rather than loosening the cascades themselves."""
+    if db.query(models.AccommodationAssignment).filter(models.AccommodationAssignment.room_id == room.id).count() > 0:
+        return f"Room '{room.name}' is used by existing accommodation assignments and cannot be deleted."
+    if db.query(models.DutyAssignment).filter(models.DutyAssignment.room_id == room.id).count() > 0:
+        return f"Room '{room.name}' is referenced by existing (legacy) staff duty assignments and cannot be deleted."
+    if db.query(models.EventLocation).filter(models.EventLocation.room_id == room.id).count() > 0:
+        return f"Room '{room.name}' is linked to a Staff Operations location and cannot be deleted."
+    return None
+
+
 # ---- Buildings ----
 @router.get("/buildings", response_model=list[schemas.BuildingRead])
 def list_buildings(db: Session = Depends(get_db)):
@@ -40,6 +56,17 @@ def delete_building(building_id: int, db: Session = Depends(get_db)):
     obj = db.get(models.Building, building_id)
     if not obj:
         raise HTTPException(404, "Building not found")
+
+    if db.query(models.EventLocation).filter(models.EventLocation.building_id == building_id).count() > 0:
+        raise HTTPException(
+            409, f"Building '{obj.name}' is linked to a Staff Operations location and cannot be deleted."
+        )
+    for floor in obj.floors or []:
+        for room in floor.rooms or []:
+            blocker = _room_delete_blocker(db, room)
+            if blocker:
+                raise HTTPException(409, f"Cannot delete building '{obj.name}': {blocker}")
+
     db.delete(obj)
     db.commit()
 
@@ -61,6 +88,12 @@ def delete_floor(floor_id: int, db: Session = Depends(get_db)):
     obj = db.get(models.Floor, floor_id)
     if not obj:
         raise HTTPException(404, "Floor not found")
+
+    for room in obj.rooms or []:
+        blocker = _room_delete_blocker(db, room)
+        if blocker:
+            raise HTTPException(409, f"Cannot delete floor '{obj.name}': {blocker}")
+
     db.delete(obj)
     db.commit()
 
@@ -94,5 +127,10 @@ def delete_room(room_id: int, db: Session = Depends(get_db)):
     obj = db.get(models.Room, room_id)
     if not obj:
         raise HTTPException(404, "Room not found")
+
+    blocker = _room_delete_blocker(db, obj)
+    if blocker:
+        raise HTTPException(409, blocker)
+
     db.delete(obj)
     db.commit()

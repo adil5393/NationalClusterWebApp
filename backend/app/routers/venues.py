@@ -38,5 +38,14 @@ def delete_venue(venue_id: int, db: Session = Depends(get_db)):
     v = db.get(models.Venue, venue_id)
     if not v:
         raise HTTPException(404, "Venue not found")
+
+    match_count = db.query(models.Match).filter(models.Match.venue_id == venue_id).count()
+    schedule_count = db.query(models.ScheduleEvent).filter(models.ScheduleEvent.venue_id == venue_id).count()
+    if match_count > 0 or schedule_count > 0:
+        raise HTTPException(
+            409,
+            f"'{v.name}' is referenced by {match_count} match(es) and {schedule_count} schedule event(s) and cannot be deleted.",
+        )
+
     db.delete(v)
     db.commit()

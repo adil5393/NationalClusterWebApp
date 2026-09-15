@@ -777,6 +777,13 @@ class EventLocationUpdate(BaseModel):
 
 class EventLocationRead(ORMModel, EventLocationBase):
     id: int
+    # "mat" | "building" | "room" | "event_location" — see
+    # routers/event_locations.py resolve_location_display(). name/
+    # location_type above already reflect the resolved live value for a
+    # linked wrapper; these two are additive, for callers that want to know
+    # which physical record backs it.
+    location_source: Optional[str] = None
+    location_source_id: Optional[int] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     duty_count: Optional[int] = 0
@@ -824,6 +831,14 @@ class DutyAssignmentCreate(BaseModel):
     shift_id: Optional[int] = None
     room_id: Optional[int] = None
     location_id: Optional[int] = None
+    # Normalized location selection (see GET /event-locations/available) —
+    # when both are set, the backend resolves/reuses an EventLocation
+    # wrapper and uses it instead of location_id. Lets the organizer pick an
+    # existing Mat/Building/Room without duplicating it as a new
+    # EventLocation. location_id keeps working unchanged for a direct
+    # standalone-EventLocation pick.
+    location_source: Optional[str] = None
+    location_source_id: Optional[int] = None
     duty_type: str
     operational_area_id: Optional[int] = None
     start_time: Optional[datetime] = None
@@ -836,6 +851,8 @@ class DutyAssignmentUpdate(BaseModel):
     shift_id: Optional[int] = None
     room_id: Optional[int] = None
     location_id: Optional[int] = None
+    location_source: Optional[str] = None
+    location_source_id: Optional[int] = None
     duty_type: Optional[str] = None
     operational_area_id: Optional[int] = None
     start_time: Optional[datetime] = None

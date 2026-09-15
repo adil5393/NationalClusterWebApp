@@ -39,6 +39,7 @@ from .routers import (
     search,
     staff,
     staff_locations,
+    staff_reports,
     structure,
     tasks,
     teams,
@@ -159,13 +160,14 @@ for router_module, module_key in (
     app.include_router(router_module.router, dependencies=[Depends(require_module(module_key))])
 
 # staff.py (Staff Directory, Shift Blocks, org-wide Duty Overview),
-# event_locations.py (the venue catalogue), and operational_areas.py (the
-# shift-wise reporting/team classification catalogue) are the organizer-wide
+# event_locations.py (the venue catalogue), operational_areas.py (the
+# shift-wise reporting/team classification catalogue), and staff_reports.py
+# (the Staff Operations reports & export suite) are the organizer-wide
 # Staff Operations surface — gated separately from the loop above because a
 # self-service staff login (an ordinary staff member's own account) must
 # never reach it, even though it's auto-granted "staff":"view" for other
 # modules' sake. See security.require_staff_operator.
-for router_module in (staff, event_locations, operational_areas):
+for router_module in (staff, event_locations, operational_areas, staff_reports):
     app.include_router(router_module.router, dependencies=[Depends(require_staff_operator)])
 
 # matches.py gets its own gate instead of the plain module check above — an

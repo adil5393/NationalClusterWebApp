@@ -41,7 +41,7 @@ import {
   StaffDutyItem,
   StaffTaskItem,
 } from "@/components/admin/StaffDetailDrawer";
-import { EventLocationItem, OperationalAreaItem } from "@/pages/admin/Duties";
+import { OperationalAreaItem, AvailableLocationOption } from "@/pages/admin/Duties";
 
 export interface ShiftBlockItem {
   id: number;
@@ -150,9 +150,11 @@ export default function Staff() {
   const [copyFromShiftId, setCopyFromShiftId] = useState<string>("");
 
   // Operational locations & duty types
-  const [locations, setLocations] = useState<EventLocationItem[]>([]);
   const [dutyTypes, setDutyTypes] = useState<string[]>([]);
   const [operationalAreas, setOperationalAreas] = useState<OperationalAreaItem[]>([]);
+  // Normalized catalogue (Mats, Buildings, Rooms, standalone EventLocations)
+  // for the duty Location selector — see GET /event-locations/available.
+  const [availableLocations, setAvailableLocations] = useState<AvailableLocationOption[]>([]);
 
   // Contextual Duty Modal State (from ShiftBlock view)
   const [openContextDutyModal, setOpenContextDutyModal] = useState(false);
@@ -161,7 +163,12 @@ export default function Staff() {
   const [contextDutyForm, setContextDutyForm] = useState({
     operational_area_id: "",
     duty_type: "",
-    location_id: "",
+    // The selected AvailableLocationOption's `key` (e.g. "mat:3",
+    // "room:17", "event_location:30") — parsed into location_source +
+    // location_source_id at submit time. Not a raw EventLocation.id: this
+    // lets the selector offer existing Mats/Buildings/Rooms directly
+    // instead of requiring one to already be duplicated as an EventLocation.
+    location_key: "",
     start_time: "",
     end_time: "",
     notes: "",
@@ -197,10 +204,10 @@ export default function Staff() {
       api.get<StaffDutyItem[]>("/staff/duties"),
       api.get<StaffTaskItem[]>("/tasks"),
       api.get<{ duty_types: string[]; staff_categories: string[] }>("/staff/meta"),
-      api.get<EventLocationItem[]>("/event-locations"),
       api.get<OperationalAreaItem[]>("/operational-areas"),
+      api.get<AvailableLocationOption[]>("/event-locations/available"),
     ])
-      .then(([s, sb, sh, d, t, m, l, oa]) => {
+      .then(([s, sb, sh, d, t, m, oa, avail]) => {
         setStaff(s.data);
         setShiftBlocks(sb.data);
         setShifts(sh.data);
@@ -208,8 +215,8 @@ export default function Staff() {
         setTasks(t.data);
         setDutyTypes(m.data.duty_types);
         setStaffCategories(m.data.staff_categories);
-        setLocations(l.data);
         setOperationalAreas(oa.data);
+        setAvailableLocations(avail.data);
       })
       .catch((err) => {
         console.error("Failed to load staff roster data:", err);
@@ -648,13 +655,24 @@ export default function Staff() {
     }
   };
 
-  const activeLocations = useMemo(() => {
-    return locations.filter((l) => l.is_active);
-  }, [locations]);
-
   const activeOperationalAreas = useMemo(() => {
     return operationalAreas.filter((a) => a.is_active);
   }, [operationalAreas]);
+
+  // Grouped for the duty Location selector's <optgroup>s — every
+  // Operational Area may pick from every group; no filtering by area.
+  const courtsAndGrounds = useMemo(
+    () => availableLocations.filter((o) => o.location_source === "mat"),
+    [availableLocations],
+  );
+  const buildingsAndRooms = useMemo(
+    () => availableLocations.filter((o) => o.location_source === "building" || o.location_source === "room"),
+    [availableLocations],
+  );
+  const otherEventLocations = useMemo(
+    () => availableLocations.filter((o) => o.location_source === "event_location"),
+    [availableLocations],
+  );
 
   const handleOpenContextDuty = (block: ShiftBlockItem, assignment: any) => {
     setContextDutyStaff({ id: assignment.staff_id, name: assignment.staff_name || `Staff #${assignment.staff_id}` });
@@ -662,7 +680,7 @@ export default function Staff() {
     setContextDutyForm({
       operational_area_id: "",
       duty_type: "",
-      location_id: "",
+      location_key: "",
       start_time: toLocalIso(block.start_time),
       end_time: toLocalIso(block.end_time),
       notes: "",
@@ -703,13 +721,22 @@ export default function Staff() {
       return toast.error("Duty end time must be after start time");
     }
 
+    // location_key is "mat:3" / "building:2" / "room:17" / "event_location:30"
+    // (see AvailableLocationOption) — split back into the normalized
+    // location_source + location_source_id the backend resolves/reuses an
+    // EventLocation wrapper from.
+    const [locationSource, locationSourceIdStr] = contextDutyForm.location_key
+      ? contextDutyForm.location_key.split(":")
+      : [null, null];
+
     try {
       const res = await api.post("/staff/duties", {
         staff_id: contextDutyStaff.id,
         shift_id: contextDutyShift.id,
         operational_area_id: Number(contextDutyForm.operational_area_id),
         duty_type: contextDutyForm.duty_type.trim(),
-        location_id: contextDutyForm.location_id ? Number(contextDutyForm.location_id) : null,
+        location_source: locationSource,
+        location_source_id: locationSourceIdStr ? Number(locationSourceIdStr) : null,
         start_time: startIso,
         end_time: endIso,
         notes: contextDutyForm.notes.trim() || null,
@@ -1931,7 +1958,7 @@ export default function Staff() {
               </span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-400">Shift Block:</span>
+              <span className="text-xs text-slate-400">Shift:</span>
               <span className="text-xs font-heading font-bold text-gold">
                 {contextDutyShift?.name}
               </span>
@@ -1952,15 +1979,12 @@ export default function Staff() {
                 </option>
               ))}
             </Select>
-            <p className="mt-1 text-[11px] text-slate-500 font-body">
-              WHO this duty reports under — its in-charge(s) for this shift. Separate from the specific duty below.
-            </p>
           </div>
 
           <div>
             <Label>Specific Duty *</Label>
             <Input
-              placeholder="e.g. Match Control, Court Support, Water Distribution"
+              placeholder="e.g. Team Check-in, Welcome Desk, Registration Support"
               list="staff-duty-types"
               value={contextDutyForm.duty_type}
               onChange={(e) => setContextDutyForm((f) => ({ ...f, duty_type: e.target.value }))}
@@ -1974,18 +1998,40 @@ export default function Staff() {
           </div>
 
           <div>
-            <Label>Operational Location (WHERE)</Label>
+            <Label>Location *</Label>
             <Select
-              value={contextDutyForm.location_id}
-              onChange={(e) => setContextDutyForm((f) => ({ ...f, location_id: e.target.value }))}
+              value={contextDutyForm.location_key}
+              onChange={(e) => setContextDutyForm((f) => ({ ...f, location_key: e.target.value }))}
               data-testid="context-duty-location-select"
             >
-              <option value="">Select Operational Venue (Ground, Gate, Reception…)</option>
-              {activeLocations.map((loc) => (
-                <option key={loc.id} value={loc.id}>
-                  📍 {loc.name} ({loc.location_type})
-                </option>
-              ))}
+              <option value="">Select an existing location…</option>
+              {courtsAndGrounds.length > 0 && (
+                <optgroup label="COURTS / GROUNDS">
+                  {courtsAndGrounds.map((o) => (
+                    <option key={o.key} value={o.key}>
+                      {o.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {buildingsAndRooms.length > 0 && (
+                <optgroup label="BUILDINGS / ROOMS">
+                  {buildingsAndRooms.map((o) => (
+                    <option key={o.key} value={o.key}>
+                      {o.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {otherEventLocations.length > 0 && (
+                <optgroup label="OTHER EVENT LOCATIONS">
+                  {otherEventLocations.map((o) => (
+                    <option key={o.key} value={o.key}>
+                      {o.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </Select>
           </div>
 

@@ -58,6 +58,12 @@ export interface Duty {
   notes?: string;
   warning?: string | null;
   outside_shift_minutes?: number | null;
+  // "mat" | "room" | "building" | "event_location" — see
+  // routers/event_locations.py resolve_location_display(). location_name/
+  // location_type already reflect the live-resolved value for a linked
+  // Mat/Building/Room; these two just say which physical record backs it.
+  location_source?: string | null;
+  location_source_id?: number | null;
 }
 
 export interface OperationalAreaItem {
@@ -74,12 +80,27 @@ export interface EventLocationItem {
   id: number;
   name: string;
   location_type: string;
+  location_source?: string | null;
+  location_source_id?: number | null;
   description?: string | null;
   is_active: boolean;
   sort_order: number;
   created_at?: string;
   updated_at?: string;
   duty_count?: number;
+}
+
+// GET /event-locations/available — normalized catalogue of every physical
+// location Staff Operations can assign a duty to: Mats, Buildings, Rooms
+// (grouped under their building), and standalone EventLocations. See
+// routers/event_locations.py list_available_duty_locations.
+export interface AvailableLocationOption {
+  key: string; // "mat:3" | "building:2" | "room:17" | "event_location:30"
+  name: string;
+  location_type: string;
+  location_source: "mat" | "building" | "room" | "event_location";
+  location_source_id: number;
+  event_location_id: number | null;
 }
 
 export interface ShiftOption {
@@ -184,6 +205,16 @@ export default function Duties() {
   };
 
   useEffect(load, []);
+
+  // Event Locations management stays for genuine standalone operational
+  // stations (Main Gate, Medical Desk, ...). Linked wrappers auto-created
+  // around an existing Mat/Building/Room (location_source !== "event_location")
+  // are never organizer-managed here — hidden rather than shown read-only,
+  // for a cleaner list; they're still fully visible/selectable from the
+  // duty Location picker (GET /event-locations/available).
+  const standaloneLocations = useMemo(() => {
+    return locations.filter((l) => !l.location_source || l.location_source === "event_location");
+  }, [locations]);
 
   // Distinct buildings from existing duty records for legacy filter compatibility
   const buildings = useMemo(() => {
@@ -983,7 +1014,9 @@ export default function Duties() {
             <div>
               <h3 className="font-heading font-bold text-white text-base">Operational Event Locations</h3>
               <p className="text-xs text-slate-400">
-                Catalogue of physical event venues, match courts, gates, hospitality and operational stations.
+                Standalone operational stations (Main Gate, Medical Desk, Reception…). Mats, Buildings and Rooms
+                already exist elsewhere and don't need to be duplicated here — pick them directly from the duty
+                Location selector.
               </p>
             </div>
             {canEdit && (
@@ -993,7 +1026,7 @@ export default function Duties() {
             )}
           </div>
 
-          {locations.length === 0 ? (
+          {standaloneLocations.length === 0 ? (
             <div className="rounded-xl border border-white/10 bg-obsidian-900 p-8">
               <EmptyState
                 title="No event locations configured"
@@ -1015,7 +1048,7 @@ export default function Duties() {
                   </TR>
                 </THead>
                 <TBody>
-                  {locations.map((loc, i) => (
+                  {standaloneLocations.map((loc, i) => (
                     <TR key={loc.id} data-testid={`location-row-${loc.id}`}>
                       <TD className="text-slate-500 font-mono text-xs">{i + 1}</TD>
                       <TD>

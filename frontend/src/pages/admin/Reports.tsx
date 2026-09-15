@@ -10,6 +10,7 @@ import { Table, THead, TH, TR, TD, TBody } from "@/components/ui/table";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { useModuleAccess, useMe } from "@/lib/permissions";
 import { LiveReportsPanel } from "@/components/admin/LiveReportsPanel";
+import { StaffOperationsReportsPanel } from "@/components/admin/StaffOperationsReportsPanel";
 import { formatDate } from "@/lib/meta";
 import { cn } from "@/lib/utils";
 
@@ -250,6 +251,9 @@ export default function Reports() {
           </div>
         </div>
       )}
+
+      {/* STAFF OPERATIONS REPORTS — organizer-wide workforce & deployment reports suite */}
+      {(staffAccess.canView || me?.is_admin) && <StaffOperationsReportsPanel />}
 
       {/* DANGER ZONE — admin-only, wipes the entire registration-fee ledger
           (all BILL/PAYMENT/REFUND rows, every team). See backend

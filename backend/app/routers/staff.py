@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..auth_utils import hash_password
 from ..database import get_db
+from .event_locations import _room_display_name, resolve_event_location_for_source, resolve_location_display
 
 router = APIRouter(prefix="/api/staff", tags=["staff"])
 
@@ -129,9 +130,32 @@ def _duty_shift_overflow_minutes(a: models.DutyAssignment) -> int | None:
     return minutes or None
 
 
+def _duty_location_fields(a: models.DutyAssignment) -> dict:
+    """location_name/location_type plus the normalized location_source/
+    location_source_id, for every path a duty's location can come from:
+    an EventLocation (standalone, or a live-resolved linked Mat/Building/
+    Room wrapper — see resolve_location_display), the true legacy direct
+    Room reference (a.room_id with no EventLocation at all), or neither."""
+    if a.location:
+        resolved = resolve_location_display(a.location)
+        return {
+            "location_name": resolved["name"],
+            "location_type": resolved["location_type"],
+            "location_source": resolved["location_source"],
+            "location_source_id": resolved["location_source_id"],
+        }
+    if a.room:
+        return {
+            "location_name": _room_display_name(a.room),
+            "location_type": "ROOM",
+            "location_source": "room",
+            "location_source_id": a.room_id,
+        }
+    return {"location_name": None, "location_type": None, "location_source": None, "location_source_id": None}
+
+
 def _duty_dict(a: models.DutyAssignment):
     floor, building = _room_context(a.room) if a.room else (None, None)
-    loc = a.location
     area = a.operational_area
     res = {
         "id": a.id,
@@ -147,8 +171,7 @@ def _duty_dict(a: models.DutyAssignment):
         "building_id": building.id if building else None,
         "building_name": building.name if building else None,
         "location_id": a.location_id,
-        "location_name": loc.name if loc else None,
-        "location_type": loc.location_type if loc else None,
+        **_duty_location_fields(a),
         "duty_type": a.duty_type,
         # WHO this duty reports under — see models.OperationalArea. None for
         # any duty that predates this column and whose duty_type wasn't
@@ -191,14 +214,6 @@ def create_duty(payload: schemas.DutyAssignmentCreate, db: Session = Depends(get
     if not db.get(models.StaffMember, payload.staff_id):
         raise HTTPException(404, "Staff member not found")
 
-    # Validate location_id if provided
-    if payload.location_id is not None:
-        loc = db.get(models.EventLocation, payload.location_id)
-        if not loc:
-            raise HTTPException(404, "Event location not found")
-        if not loc.is_active:
-            raise HTTPException(400, f"Location '{loc.name}' is inactive and cannot be used for new duty assignments.")
-
     # Validate room_id if provided (legacy)
     if payload.room_id is not None:
         if not db.get(models.Room, payload.room_id):
@@ -224,7 +239,28 @@ def create_duty(payload: schemas.DutyAssignmentCreate, db: Session = Depends(get
         if shift.staff_id != payload.staff_id:
             raise HTTPException(400, "Duty staff_id does not match shift staff_id")
 
-    a = models.DutyAssignment(**payload.model_dump())
+    data = payload.model_dump()
+    location_source = data.pop("location_source", None)
+    location_source_id = data.pop("location_source_id", None)
+
+    # Normalized location selection (see GET /event-locations/available)
+    # takes priority: resolves/reuses the matching EventLocation wrapper
+    # around an existing Mat/Building/Room instead of requiring the
+    # organizer to have pre-created one. Falls back to a direct location_id
+    # (an existing standalone EventLocation) when no source is given.
+    if location_source and location_source_id is not None:
+        wrapper = resolve_event_location_for_source(db, location_source, location_source_id)
+        if not wrapper.is_active:
+            raise HTTPException(400, f"Location '{wrapper.name}' is inactive and cannot be used for new duty assignments.")
+        data["location_id"] = wrapper.id
+    elif data.get("location_id") is not None:
+        loc = db.get(models.EventLocation, data["location_id"])
+        if not loc:
+            raise HTTPException(404, "Event location not found")
+        if not loc.is_active:
+            raise HTTPException(400, f"Location '{loc.name}' is inactive and cannot be used for new duty assignments.")
+
+    a = models.DutyAssignment(**data)
     db.add(a)
     db.commit()
     db.refresh(a)
@@ -240,11 +276,19 @@ def update_duty(duty_id: int, payload: schemas.DutyAssignmentUpdate, db: Session
     if not a:
         raise HTTPException(404, "Duty assignment not found")
     data = payload.model_dump(exclude_unset=True)
+    location_source = data.pop("location_source", None)
+    location_source_id = data.pop("location_source_id", None)
+
     target_staff_id = data.get("staff_id", a.staff_id)
     if "staff_id" in data and not db.get(models.StaffMember, target_staff_id):
         raise HTTPException(404, "Staff member not found")
 
-    if "location_id" in data and data["location_id"] is not None:
+    if location_source and location_source_id is not None:
+        wrapper = resolve_event_location_for_source(db, location_source, location_source_id)
+        if not wrapper.is_active and wrapper.id != a.location_id:
+            raise HTTPException(400, f"Location '{wrapper.name}' is inactive and cannot be used for new duty assignments.")
+        data["location_id"] = wrapper.id
+    elif "location_id" in data and data["location_id"] is not None:
         loc = db.get(models.EventLocation, data["location_id"])
         if not loc:
             raise HTTPException(404, "Event location not found")

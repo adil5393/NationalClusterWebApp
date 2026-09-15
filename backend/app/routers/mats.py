@@ -62,5 +62,19 @@ def delete_mat(mat_id: int, db: Session = Depends(get_db)):
     mat = db.get(models.Mat, mat_id)
     if not mat:
         raise HTTPException(404, "Mat/ground not found")
+
+    match_count = db.query(models.Match).filter(models.Match.mat_id == mat_id).count()
+    if match_count > 0:
+        raise HTTPException(
+            409, f"'{mat.name}' is assigned to {match_count} match(es) and cannot be deleted."
+        )
+
+    linked_location = db.query(models.EventLocation).filter(models.EventLocation.mat_id == mat_id).first()
+    if linked_location:
+        raise HTTPException(
+            409,
+            f"'{mat.name}' is linked to Staff Operations location '{linked_location.name}' and cannot be deleted.",
+        )
+
     db.delete(mat)
     db.commit()
