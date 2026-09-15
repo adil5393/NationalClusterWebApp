@@ -241,9 +241,19 @@ class Participant(TimestampMixin, Base):
     notes = Column(Text)
     # Attendance/check-in at the event — separate from registration itself.
     # Matches are only scheduled to reflect players actually here, so this is
-    # what the Matches builder's "present" counts read from.
+    # what the Matches builder's "present" counts read from. Toggled only
+    # via POST .../attendance (routers/attendance.py) — never the generic
+    # participant edit endpoint.
     is_present = Column(Boolean, nullable=False, default=False)
     checked_in_at = Column(DateTime(timezone=True))
+    # Weigh-in reading (kg) against the AKFI weight-category caps
+    # (routers/attendance.py AGE_GROUP_WEIGHT_CAPS), settable only via
+    # POST .../weight. Independent of is_present/attendance/billing — an
+    # overweight participant still counts as present and still gets billed;
+    # weight only excludes them from a team's present-player headcount for
+    # match/pool/fixture eligibility (see routers/matches.py
+    # _team_unplayable_reason / is_overweight).
+    weight = Column(Numeric(5, 2))
     # Set via the public /public/participants/{id}/photo upload (gated by
     # registration_no, see public.py) — a coach/manager uploads this for
     # their own roster, no admin action needed.

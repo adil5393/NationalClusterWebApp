@@ -555,12 +555,23 @@ class ParticipantRead(ORMModel, ParticipantBase):
     is_present: bool = False
     checked_in_at: Optional[datetime] = None
     photo_url: Optional[str] = None
+    weight: Optional[Decimal] = None
 
 
 class AttendanceUpdate(BaseModel):
     present: bool
     # Required only when flipping an already-present member back to absent
     # (see routers/attendance.py) — marking someone present needs no password.
+    admin_password: "str | None" = None
+
+
+class WeightUpdate(BaseModel):
+    # kg; None clears a previously-recorded weigh-in. Independent of
+    # is_present/AttendanceUpdate above — see routers/attendance.py
+    # set_weight; only feeds match/pool/fixture eligibility (matches.py).
+    weight: Optional[Decimal] = None
+    # Required only when changing an already-recorded weight (the first
+    # save is free) — see routers/attendance.py set_weight.
     admin_password: "str | None" = None
 
 

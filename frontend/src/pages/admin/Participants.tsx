@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, CheckCircle2, Circle, Upload, Download, Users, Search, Filter, FileSpreadsheet, IdCard, ImageOff } from "lucide-react";
+import { Plus, Pencil, Trash2, CheckCircle2, Circle, Upload, Download, Users, Search, Filter, FileSpreadsheet, IdCard, ImageOff, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ interface Participant {
   age?: number;
   age_group?: string;
   is_present?: boolean;
+  weight?: string | number | null;
   notes?: string;
   father_name?: string;
   date_of_birth?: string;
@@ -48,6 +49,20 @@ const PAGE_SIZE = 25;
 const empty: Partial<Participant> = { full_name: "", role: "Player", is_present: false };
 const emptyCoach: Partial<Coach> = { full_name: "", role: "Coach", is_present: false };
 
+// AKFI kabaddi weight-category caps (kg), keyed case-insensitively — mirrors
+// backend/app/routers/attendance.py AGE_GROUP_WEIGHT_CAPS. For these age
+// groups, attendance is derived from weight (no manual toggle); every other
+// age_group value keeps the manual present/absent toggle.
+const AGE_GROUP_WEIGHT_CAPS: Record<string, number> = {
+  "under 14": 51,
+  "under 17": 57,
+  "under 19": 75,
+};
+function weightCapFor(ageGroup?: string): number | undefined {
+  if (!ageGroup) return undefined;
+  return AGE_GROUP_WEIGHT_CAPS[ageGroup.trim().toLowerCase()];
+}
+
 export default function Participants() {
   const { canEdit } = useModuleAccess("teams");
   const canMarkAttendance = canEdit;
@@ -71,6 +86,12 @@ export default function Participants() {
   >(null);
   const [unmarkPassword, setUnmarkPassword] = useState("");
   const [unmarkBusy, setUnmarkBusy] = useState(false);
+  const [weightDrafts, setWeightDrafts] = useState<Record<number, string>>({});
+  const [savingWeightId, setSavingWeightId] = useState<number | null>(null);
+  const [pendingWeightEdit, setPendingWeightEdit] = useState<{ id: number; name: string } | null>(null);
+  const [weightEditValue, setWeightEditValue] = useState("");
+  const [weightEditPassword, setWeightEditPassword] = useState("");
+  const [weightEditBusy, setWeightEditBusy] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -194,6 +215,69 @@ export default function Participants() {
     } catch {
       toast.error("Could not update attendance");
       setParticipants((rows) => rows.map((r) => (r.id === p.id ? { ...r, is_present: false } : r)));
+    }
+  };
+
+  const weightDraftFor = (p: Participant) =>
+    weightDrafts[p.id] !== undefined ? weightDrafts[p.id] : p.weight != null ? String(p.weight) : "";
+
+  const saveWeight = async (p: Participant) => {
+    const raw = weightDraftFor(p).trim();
+    const current = p.weight != null ? String(p.weight) : "";
+    if (raw === current) return;
+    const value = raw === "" ? null : Number(raw);
+    if (value !== null && (!Number.isFinite(value) || value <= 0)) {
+      return toast.error("Enter a valid weight in kg");
+    }
+    setSavingWeightId(p.id);
+    try {
+      const r = await api.post<Participant>(`/participants/${p.id}/weight`, { weight: value });
+      setParticipants((rows) => rows.map((row) => (row.id === p.id ? { ...row, ...r.data } : row)));
+      setWeightDrafts((d) => {
+        const next = { ...d };
+        delete next[p.id];
+        return next;
+      });
+    } catch {
+      toast.error("Could not save weight");
+    } finally {
+      setSavingWeightId(null);
+    }
+  };
+
+  const openWeightEdit = (p: Participant) => {
+    setPendingWeightEdit({ id: p.id, name: p.full_name });
+    setWeightEditValue(p.weight != null ? String(p.weight) : "");
+    setWeightEditPassword("");
+  };
+
+  const closeWeightEditDialog = () => {
+    setPendingWeightEdit(null);
+    setWeightEditPassword("");
+  };
+
+  const confirmWeightEdit = async () => {
+    if (!pendingWeightEdit) return;
+    const raw = weightEditValue.trim();
+    const value = raw === "" ? null : Number(raw);
+    if (value !== null && (!Number.isFinite(value) || value <= 0)) {
+      return toast.error("Enter a valid weight in kg");
+    }
+    if (!weightEditPassword.trim()) return toast.error("Enter the admin password");
+    setWeightEditBusy(true);
+    try {
+      const r = await api.post<Participant>(`/participants/${pendingWeightEdit.id}/weight`, {
+        weight: value,
+        admin_password: weightEditPassword.trim(),
+      });
+      setParticipants((rows) => rows.map((row) => (row.id === pendingWeightEdit.id ? { ...row, ...r.data } : row)));
+      toast.success("Weight updated");
+      closeWeightEditDialog();
+    } catch (e: any) {
+      if (e?.response?.status === 401) toast.error(e.response?.data?.detail ?? "Incorrect admin password");
+      else toast.error("Could not update weight");
+    } finally {
+      setWeightEditBusy(false);
     }
   };
 
@@ -506,6 +590,55 @@ export default function Participants() {
                     )}
                   </div>
 
+                  <div className="flex items-center gap-1.5">
+                    <Label className="!mb-0 text-[10px]">Weight (kg)</Label>
+                    {(() => {
+                      const cap = weightCapFor(p.age_group);
+                      const draft = weightDraftFor(p);
+                      const draftNum = Number(draft);
+                      const overLimit = cap != null && draft !== "" && Number.isFinite(draftNum) && draftNum > cap;
+                      if (p.weight != null) {
+                        return (
+                          <>
+                            <Input
+                              type="number"
+                              value={String(p.weight)}
+                              disabled
+                              className={`h-7 w-20 text-xs ${overLimit ? "border-red-500 text-red-400" : ""}`}
+                              data-testid={`participant-weight-mobile-${p.id}`}
+                            />
+                            {canMarkAttendance && (
+                              <button
+                                type="button"
+                                onClick={() => openWeightEdit(p)}
+                                title="Change weight (admin password required)"
+                                className="text-slate-400 hover:text-white"
+                                data-testid={`participant-weight-mobile-edit-${p.id}`}
+                              >
+                                <Lock className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </>
+                        );
+                      }
+                      return (
+                        <Input
+                          type="number"
+                          min={0}
+                          step="0.1"
+                          disabled={!canMarkAttendance || savingWeightId === p.id}
+                          value={draft}
+                          onChange={(e) => setWeightDrafts((d) => ({ ...d, [p.id]: e.target.value }))}
+                          onBlur={() => saveWeight(p)}
+                          onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+                          placeholder={cap ? `≤ ${cap}` : "—"}
+                          className={`h-7 w-20 text-xs ${overLimit ? "border-red-500 text-red-400" : ""}`}
+                          data-testid={`participant-weight-mobile-${p.id}`}
+                        />
+                      );
+                    })()}
+                  </div>
+
                   <div className="flex flex-wrap gap-1 text-[11px] pt-1">
                     {p.registration_no && (
                       <span className="rounded bg-white/5 px-1.5 py-0.5 font-mono text-slate-300">
@@ -596,6 +729,7 @@ export default function Participants() {
                     <TH>Role</TH>
                     <TH className="text-right">Age</TH>
                     <TH>Age Group</TH>
+                    <TH>Weight (kg)</TH>
                     <TH>Attendance Verification</TH>
                     <TH className="text-right">Actions</TH>
                   </TR>
@@ -627,6 +761,67 @@ export default function Participants() {
                         ) : (
                           <span className="text-slate-500">—</span>
                         )}
+                      </TD>
+                      <TD>
+                        {(() => {
+                          const cap = weightCapFor(p.age_group);
+                          const draft = weightDraftFor(p);
+                          const draftNum = Number(draft);
+                          const overLimit = cap != null && draft !== "" && Number.isFinite(draftNum) && draftNum > cap;
+                          if (p.weight != null) {
+                            return (
+                              <div className="flex items-center gap-1.5">
+                                <Input
+                                  type="number"
+                                  value={String(p.weight)}
+                                  disabled
+                                  className={`h-8 w-20 text-xs ${overLimit ? "border-red-500 text-red-400" : ""}`}
+                                  data-testid={`participant-weight-${p.id}`}
+                                />
+                                {cap != null && (
+                                  <span className={`text-[10px] ${overLimit ? "text-red-400" : "text-slate-500"}`}>
+                                    / {cap} kg
+                                  </span>
+                                )}
+                                {canMarkAttendance && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openWeightEdit(p)}
+                                    title="Change weight (admin password required)"
+                                    className="text-slate-400 hover:text-white"
+                                    data-testid={`participant-weight-edit-${p.id}`}
+                                  >
+                                    <Lock className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          }
+                          return (
+                            <div className="flex items-center gap-1.5">
+                              <Input
+                                type="number"
+                                min={0}
+                                step="0.1"
+                                disabled={!canMarkAttendance || savingWeightId === p.id}
+                                value={draft}
+                                onChange={(e) =>
+                                  setWeightDrafts((d) => ({ ...d, [p.id]: e.target.value }))
+                                }
+                                onBlur={() => saveWeight(p)}
+                                onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+                                placeholder={cap ? `≤ ${cap}` : "—"}
+                                className={`h-8 w-20 text-xs ${overLimit ? "border-red-500 text-red-400" : ""}`}
+                                data-testid={`participant-weight-${p.id}`}
+                              />
+                              {cap != null && (
+                                <span className={`text-[10px] ${overLimit ? "text-red-400" : "text-slate-500"}`}>
+                                  / {cap} kg
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </TD>
                       <TD>
                         {canMarkAttendance ? (
@@ -1227,6 +1422,56 @@ export default function Participants() {
               data-testid="confirm-unmark-attendance-btn"
             >
               {unmarkBusy ? "Verifying…" : "Confirm Mark Absent"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={!!pendingWeightEdit}
+        onClose={closeWeightEditDialog}
+        title="Change Weight"
+        testId="weight-edit-dialog"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-slate-400 font-body">
+            A weigh-in has already been recorded for {pendingWeightEdit?.name}. Changing it requires an admin
+            account's password to confirm.
+          </p>
+          <div>
+            <Label>New Weight (kg)</Label>
+            <Input
+              type="number"
+              min={0}
+              step="0.1"
+              value={weightEditValue}
+              onChange={(e) => setWeightEditValue(e.target.value)}
+              data-testid="weight-edit-value-input"
+              autoFocus
+            />
+          </div>
+          <div>
+            <Label>Admin Password</Label>
+            <Input
+              type="password"
+              value={weightEditPassword}
+              onChange={(e) => setWeightEditPassword(e.target.value)}
+              data-testid="weight-edit-admin-password-input"
+              onKeyDown={(e) => e.key === "Enter" && confirmWeightEdit()}
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+            <Button variant="outline" size="sm" onClick={closeWeightEditDialog}>
+              Cancel
+            </Button>
+            <Button
+              variant="gold"
+              size="sm"
+              onClick={confirmWeightEdit}
+              disabled={weightEditBusy}
+              data-testid="confirm-weight-edit-btn"
+            >
+              {weightEditBusy ? "Verifying…" : "Confirm Change"}
             </Button>
           </div>
         </div>
