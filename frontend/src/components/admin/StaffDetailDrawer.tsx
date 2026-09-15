@@ -16,6 +16,7 @@ import {
   Check,
   User,
   ShieldAlert,
+  MapPin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -32,18 +33,44 @@ export interface StaffDetailMember {
   login_username?: string | null;
 }
 
+export interface StaffShiftItem {
+  id: number;
+  shift_block_id?: number;
+  shift_name?: string;
+  staff_id: number;
+  staff_name?: string;
+  staff_category?: string;
+  staff_phone?: string;
+  start_time: string;
+  end_time: string;
+  status: string;
+  derived_status: string;
+  is_active: boolean;
+  notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  duty_count?: number;
+  task_count?: number;
+}
+
 export interface StaffDutyItem {
   id: number;
   staff_id: number;
+  shift_id?: number | null;
+  shift_name?: string | null;
   staff_name?: string;
-  room_id: number;
+  room_id?: number | null;
   room_name?: string;
+  location_id?: number | null;
+  location_name?: string | null;
+  location_type?: string | null;
   floor_name?: string;
   building_name?: string;
   duty_type: string;
   start_time?: string;
   end_time?: string;
   notes?: string;
+  warning?: string | null;
 }
 
 export interface StaffTaskItem {
@@ -55,11 +82,13 @@ export interface StaffTaskItem {
   category: string;
   owner?: string | null;
   assigned_staff_id?: number | null;
+  shift_id?: number | null;
   due_date?: string | null;
 }
 
 interface StaffDetailDrawerProps {
   staff: StaffDetailMember | null;
+  shifts?: StaffShiftItem[];
   duties: StaffDutyItem[];
   tasks: StaffTaskItem[];
   open: boolean;
@@ -69,12 +98,14 @@ interface StaffDetailDrawerProps {
   onDeleteStaff: (id: number) => void;
   onCreateCredential: (staff: StaffDetailMember) => void;
   onDeleteDuty?: (id: number) => void;
+  onDeleteShift?: (id: number) => void;
   onToggleTask?: (task: StaffTaskItem) => void;
   creatingCredential?: boolean;
 }
 
 export function StaffDetailDrawer({
   staff,
+  shifts = [],
   duties,
   tasks,
   open,
@@ -84,13 +115,15 @@ export function StaffDetailDrawer({
   onDeleteStaff,
   onCreateCredential,
   onDeleteDuty,
+  onDeleteShift,
   onToggleTask,
   creatingCredential = false,
 }: StaffDetailDrawerProps) {
-  const [activeTab, setActiveTab] = useState<"overview" | "duties" | "tasks" | "login">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "shifts" | "duties" | "tasks" | "login">("overview");
 
   if (!open || !staff) return null;
 
+  const staffShifts = shifts.filter((s) => s.staff_id === staff.id);
   const staffDuties = duties.filter((d) => d.staff_id === staff.id);
   const staffTasks = tasks.filter((t) => t.assigned_staff_id === staff.id);
   const pendingTasks = staffTasks.filter((t) => t.status !== "completed");
@@ -173,6 +206,21 @@ export function StaffDetailDrawer({
               </button>
               <button
                 type="button"
+                onClick={() => setActiveTab("shifts")}
+                className={cn(
+                  "flex-1 rounded-md py-1.5 text-xs font-heading font-bold transition-colors flex items-center justify-center gap-1",
+                  activeTab === "shifts"
+                    ? "bg-gold text-obsidian font-black shadow-sm"
+                    : "text-slate-400 hover:bg-white/5 hover:text-white",
+                )}
+              >
+                <span>Shifts</span>
+                <span className={cn("rounded-full px-1.5 py-0.2 text-[10px] font-mono", activeTab === "shifts" ? "bg-obsidian/20 text-obsidian font-black" : "bg-white/10 text-slate-300")}>
+                  {staffShifts.length}
+                </span>
+              </button>
+              <button
+                type="button"
                 onClick={() => setActiveTab("duties")}
                 className={cn(
                   "flex-1 rounded-md py-1.5 text-xs font-heading font-bold transition-colors flex items-center justify-center gap-1",
@@ -223,18 +271,22 @@ export function StaffDetailDrawer({
             {activeTab === "overview" && (
               <div className="space-y-4">
                 {/* METRICS ROW */}
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="rounded-lg border border-white/10 bg-obsidian-900 p-2.5">
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  <div className="rounded-lg border border-white/10 bg-obsidian-900 p-2">
+                    <p className="text-[10px] font-heading font-extrabold uppercase text-slate-400">Shifts</p>
+                    <p className="font-heading text-base font-black text-white mt-0.5">{staffShifts.length}</p>
+                  </div>
+                  <div className="rounded-lg border border-white/10 bg-obsidian-900 p-2">
                     <p className="text-[10px] font-heading font-extrabold uppercase text-slate-400">Duties</p>
-                    <p className="font-heading text-lg font-black text-white mt-0.5">{staffDuties.length}</p>
+                    <p className="font-heading text-base font-black text-white mt-0.5">{staffDuties.length}</p>
                   </div>
-                  <div className="rounded-lg border border-white/10 bg-obsidian-900 p-2.5">
-                    <p className="text-[10px] font-heading font-extrabold uppercase text-slate-400">Open Tasks</p>
-                    <p className="font-heading text-lg font-black text-gold mt-0.5">{pendingTasks.length}</p>
+                  <div className="rounded-lg border border-white/10 bg-obsidian-900 p-2">
+                    <p className="text-[10px] font-heading font-extrabold uppercase text-slate-400">Tasks</p>
+                    <p className="font-heading text-base font-black text-gold mt-0.5">{pendingTasks.length}</p>
                   </div>
-                  <div className="rounded-lg border border-white/10 bg-obsidian-900 p-2.5">
+                  <div className="rounded-lg border border-white/10 bg-obsidian-900 p-2">
                     <p className="text-[10px] font-heading font-extrabold uppercase text-slate-400">Login</p>
-                    <p className="font-heading text-xs font-black text-emerald-400 mt-1 truncate">
+                    <p className="font-heading text-[11px] font-black text-emerald-400 mt-1 truncate">
                       {staff.login_username ? "ACTIVE" : "NONE"}
                     </p>
                   </div>
@@ -273,7 +325,8 @@ export function StaffDetailDrawer({
                           <div>
                             <span className="font-heading font-bold text-white">{d.duty_type}</span>
                             <span className="text-slate-400 block text-[11px]">
-                              {d.room_name || "Room"} {d.building_name ? `· ${d.building_name}` : ""}
+                              {d.location_name ? `📍 ${d.location_name}` : d.room_name || "Assigned Area"}
+                              {d.building_name ? ` · ${d.building_name}` : ""}
                             </span>
                           </div>
                           {d.start_time && (
@@ -318,6 +371,230 @@ export function StaffDetailDrawer({
                     </div>
                   )}
                 </div>
+                {/* QUICK SUMMARY OF SHIFTS */}
+                <div className="rounded-lg border border-white/10 bg-obsidian-900 p-3.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                      <Clock className="h-3 w-3 text-gold" /> Scheduled Shifts
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("shifts")}
+                      className="text-[11px] font-bold text-gold hover:underline"
+                    >
+                      View All ({staffShifts.length})
+                    </button>
+                  </div>
+                  {staffShifts.length === 0 ? (
+                    <p className="text-xs text-slate-500 py-1">No shifts scheduled for this person.</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {staffShifts.slice(0, 3).map((s) => {
+                        const sDate = new Date(s.start_time);
+                        const eDate = new Date(s.end_time);
+                        const timeStr = `${sDate.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })} – ${eDate.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })}`;
+                        const isNow = s.is_active;
+                        return (
+                          <div key={s.id} className="rounded bg-white/5 p-2 text-xs flex items-center justify-between">
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-heading font-bold text-white">{formatDate(s.start_time)}</span>
+                                <span className="text-slate-300 font-mono text-[11px]">({timeStr})</span>
+                              </div>
+                              {s.notes && <span className="text-slate-400 block text-[11px] italic">"{s.notes}"</span>}
+                            </div>
+                            <span className={cn(
+                              "text-[10px] font-heading font-extrabold px-1.5 py-0.5 rounded",
+                              isNow ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" :
+                              s.derived_status === "COMPLETED" ? "bg-white/10 text-slate-400" :
+                              s.derived_status === "CANCELLED" ? "bg-red-500/20 text-red-400" :
+                              "bg-gold/20 text-gold border border-gold/30"
+                            )}>
+                              {isNow ? "ON SHIFT" : s.derived_status}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* SHIFTS TAB */}
+            {activeTab === "shifts" && (
+              <div className="space-y-4">
+                {staffShifts.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-white/15 bg-white/[0.02] p-8 text-center space-y-2">
+                    <Clock className="h-8 w-8 text-slate-500 mx-auto" />
+                    <p className="font-heading text-sm font-bold text-white">No Shifts Scheduled</p>
+                    <p className="text-xs text-slate-400 font-body">
+                      Create shifts from the Staff page to define when {staff.full_name} is working for the tournament.
+                    </p>
+                  </div>
+                ) : (
+                  (() => {
+                    const now = new Date();
+                    const todayStr = now.toISOString().slice(0, 10);
+                    const todayShifts = staffShifts.filter((s) => s.start_time.slice(0, 10) === todayStr || s.is_active);
+                    const upcomingShifts = staffShifts.filter((s) => s.start_time.slice(0, 10) > todayStr && !s.is_active);
+                    const pastShifts = staffShifts.filter((s) => s.start_time.slice(0, 10) < todayStr && !s.is_active);
+
+                    const renderShiftCard = (s: StaffShiftItem) => {
+                      const pad = (n: number) => String(n).padStart(2, "0");
+                      const formatTime = (iso?: string | null) => {
+                        if (!iso) return "";
+                        const d = new Date(iso);
+                        if (Number.isNaN(d.getTime())) return "";
+                        return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                      };
+                      const timeStr = `${formatTime(s.start_time)} – ${formatTime(s.end_time)}`;
+                      const linkedDuties = staffDuties.filter((d) => d.shift_id === s.id);
+                      const linkedTasks = staffTasks.filter((t) => t.shift_id === s.id);
+
+                      return (
+                        <div
+                          key={s.id}
+                          className="rounded-lg border border-white/10 bg-obsidian-900 p-3.5 space-y-2.5"
+                          data-testid={`drawer-shift-${s.id}`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-heading font-bold text-white text-sm">
+                                  {s.shift_name || formatDate(s.start_time)}
+                                </span>
+                                {s.shift_name && (
+                                  <span className="text-xs text-slate-400 font-mono">
+                                    · {formatDate(s.start_time)}
+                                  </span>
+                                )}
+                                <span className={cn(
+                                  "text-[10px] font-heading font-extrabold px-2 py-0.5 rounded uppercase tracking-wider",
+                                  s.is_active ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40" :
+                                  s.derived_status === "COMPLETED" ? "bg-white/10 text-slate-400" :
+                                  s.derived_status === "CANCELLED" ? "bg-red-500/20 text-red-400 border border-red-500/30" :
+                                  "bg-gold/15 text-gold border border-gold/30"
+                                )}>
+                                  {s.is_active ? "ON SHIFT NOW" : s.derived_status}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-300 font-mono mt-0.5 flex items-center gap-1">
+                                <Clock className="h-3 w-3 text-gold" />
+                                {timeStr}
+                              </p>
+                            </div>
+
+                            {canEdit && onDeleteShift && (
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() => onDeleteShift(s.id)}
+                                title="Delete Shift"
+                                data-testid={`delete-shift-${s.id}`}
+                              >
+                                <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                              </Button>
+                            )}
+                          </div>
+
+                          {s.notes && (
+                            <p className="text-xs text-slate-300 font-body bg-white/5 rounded p-2 italic">
+                              "{s.notes}"
+                            </p>
+                          )}
+
+                          {/* SHIFT LINKED RESPONSIBILITIES (DUTIES & TASKS) */}
+                          <div className="border-t border-white/5 pt-2 space-y-2">
+                            <div>
+                              <p className="text-[10px] font-heading font-bold uppercase text-slate-400 mb-1">
+                                Duties during this shift ({linkedDuties.length}):
+                              </p>
+                              {linkedDuties.length === 0 ? (
+                                <p className="text-[11px] text-slate-500 italic">None specifically allotted to this shift.</p>
+                              ) : (
+                                <div className="space-y-1">
+                                  {linkedDuties.map((d) => (
+                                    <div key={d.id} className="text-xs text-white flex items-center justify-between gap-1.5 bg-black/20 rounded px-2 py-1">
+                                      <div className="flex items-center gap-1.5 min-w-0 truncate">
+                                        <HardHat className="h-3 w-3 text-gold shrink-0" />
+                                        <span className="font-semibold">{d.duty_type}</span>
+                                        <span className="text-slate-400 text-[11px] truncate">
+                                          @ {d.location_name ? `📍 ${d.location_name}` : d.room_name || "Assigned Area"}
+                                        </span>
+                                      </div>
+                                      {d.start_time && d.end_time && (
+                                        <span className="text-[10px] font-mono text-slate-400 shrink-0">
+                                          {formatTime(d.start_time)}–{formatTime(d.end_time)}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            <div>
+                              <p className="text-[10px] font-heading font-bold uppercase text-slate-400 mb-1">
+                                Tasks assigned to this shift ({linkedTasks.length}):
+                              </p>
+                              {linkedTasks.length === 0 ? (
+                                <p className="text-[11px] text-slate-500 italic">None specifically linked to this shift.</p>
+                              ) : (
+                                <div className="space-y-1">
+                                  {linkedTasks.map((t) => (
+                                    <div key={t.id} className="text-xs text-white flex items-center gap-1.5 bg-black/20 rounded px-2 py-1">
+                                      <CheckSquare className="h-3 w-3 text-cyan-400 shrink-0" />
+                                      <span className={cn(t.status === "completed" ? "line-through text-slate-500" : "")}>{t.title}</span>
+                                      <span className="text-[10px] text-slate-400 ml-auto uppercase font-mono">[{t.status}]</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    };
+
+                    return (
+                      <div className="space-y-4">
+                        {todayShifts.length > 0 && (
+                          <div className="space-y-2">
+                            <h4 className="text-xs font-heading font-black tracking-wider uppercase text-gold flex items-center gap-1.5">
+                              <Clock className="h-3.5 w-3.5" /> Today / Active
+                            </h4>
+                            <div className="space-y-2">
+                              {todayShifts.map(renderShiftCard)}
+                            </div>
+                          </div>
+                        )}
+
+                        {upcomingShifts.length > 0 && (
+                          <div className="space-y-2">
+                            <h4 className="text-xs font-heading font-black tracking-wider uppercase text-slate-300">
+                              Upcoming Shifts
+                            </h4>
+                            <div className="space-y-2">
+                              {upcomingShifts.map(renderShiftCard)}
+                            </div>
+                          </div>
+                        )}
+
+                        {pastShifts.length > 0 && (
+                          <div className="space-y-2">
+                            <h4 className="text-xs font-heading font-black tracking-wider uppercase text-slate-500">
+                              Past Shifts
+                            </h4>
+                            <div className="space-y-2">
+                              {pastShifts.map(renderShiftCard)}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()
+                )}
               </div>
             )}
 
@@ -341,14 +618,19 @@ export function StaffDetailDrawer({
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-heading font-bold text-white text-sm">
                               {d.duty_type}
                             </span>
                             <Badge tone="gold" size="sm">
-                              {d.room_name || "Assigned Area"}
+                              {d.location_name ? `📍 ${d.location_name}` : d.room_name || "Assigned Area"}
                             </Badge>
                           </div>
+                          {d.shift_name && (
+                            <p className="text-[11px] font-mono text-gold mt-0.5">
+                              Shift: {d.shift_name}
+                            </p>
+                          )}
                           {(d.building_name || d.floor_name) && (
                             <p className="text-xs text-slate-400 font-body mt-0.5 flex items-center gap-1">
                               <Building className="h-3 w-3 text-slate-500" />

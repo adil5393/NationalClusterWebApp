@@ -3,7 +3,7 @@
 This models the full domain so the schema is future-ready (Phase 2+), while only a
 subset has full CRUD wired in Phase 1.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
@@ -541,11 +541,13 @@ class Task(TimestampMixin, Base):
     owner = Column(String(160))
     category = Column(String(80), nullable=False, default="General")
     assigned_staff_id = Column(Integer, ForeignKey("staff_members.id", ondelete="SET NULL"))
+    shift_id = Column(Integer, ForeignKey("staff_shifts.id", ondelete="SET NULL"), nullable=True, index=True)
     due_date = Column(DateTime(timezone=True))
     knowledge_item_id = Column(Integer, ForeignKey("knowledge_items.id", ondelete="SET NULL"))
 
     knowledge_item = relationship("KnowledgeItem", back_populates="tasks")
     assigned_staff = relationship("StaffMember")
+    shift = relationship("StaffShift", back_populates="tasks")
 
 
 class Document(TimestampMixin, Base):
@@ -596,6 +598,7 @@ class StaffMember(TimestampMixin, Base):
     notes = Column(Text)
 
     duties = relationship("DutyAssignment", back_populates="staff", cascade="all, delete-orphan")
+    shifts = relationship("StaffShift", back_populates="staff", cascade="all, delete-orphan", order_by="StaffShift.id")
 
     @property
     def login_username(self) -> "str | None":
@@ -605,18 +608,113 @@ class StaffMember(TimestampMixin, Base):
         return self.organizer_users[0].username if self.organizer_users else None
 
 
+class ShiftBlock(TimestampMixin, Base):
+    """WHEN a workforce shift exists for tournament operations."""
+    __tablename__ = "shift_blocks"
+    id = Column(Integer, primary_key=True)
+    name = Column(String(120), nullable=False)  # e.g. "Morning Shift", "Ground 2 Night Shift"
+    start_time = Column(DateTime(timezone=True), nullable=False, index=True)
+    end_time = Column(DateTime(timezone=True), nullable=False, index=True)
+    status = Column(String(40), nullable=False, default="SCHEDULED")  # SCHEDULED | CANCELLED
+    notes = Column(Text)
+
+    staff_assignments = relationship("StaffShift", back_populates="shift_block", cascade="all, delete-orphan")
+
+    @property
+    def is_active(self) -> bool:
+        if self.status == "CANCELLED":
+            return False
+        now = datetime.now(timezone.utc)
+        st = self.start_time if self.start_time.tzinfo else self.start_time.replace(tzinfo=timezone.utc)
+        et = self.end_time if self.end_time.tzinfo else self.end_time.replace(tzinfo=timezone.utc)
+        return st <= now < et
+
+    @property
+    def derived_status(self) -> str:
+        if self.status == "CANCELLED":
+            return "CANCELLED"
+        now = datetime.now(timezone.utc)
+        st = self.start_time if self.start_time.tzinfo else self.start_time.replace(tzinfo=timezone.utc)
+        et = self.end_time if self.end_time.tzinfo else self.end_time.replace(tzinfo=timezone.utc)
+        if now < st:
+            return "UPCOMING"
+        if st <= now < et:
+            return "ON_SHIFT"
+        return "COMPLETED"
+
+
+class StaffShift(TimestampMixin, Base):
+    """WHO is assigned to a ShiftBlock. A StaffMember's membership in a ShiftBlock."""
+    __tablename__ = "staff_shifts"
+    id = Column(Integer, primary_key=True)
+    shift_block_id = Column(Integer, ForeignKey("shift_blocks.id", ondelete="CASCADE"), nullable=False, index=True)
+    staff_id = Column(Integer, ForeignKey("staff_members.id", ondelete="CASCADE"), nullable=False, index=True)
+    notes = Column(Text)
+
+    __table_args__ = (
+        UniqueConstraint("shift_block_id", "staff_id", name="uq_shift_block_staff"),
+    )
+
+    shift_block = relationship("ShiftBlock", back_populates="staff_assignments")
+    staff = relationship("StaffMember", back_populates="shifts")
+    duties = relationship("DutyAssignment", back_populates="shift")
+    tasks = relationship("Task", back_populates="shift")
+
+    @property
+    def is_active(self) -> bool:
+        return self.shift_block.is_active if self.shift_block else False
+
+    @property
+    def derived_status(self) -> str:
+        return self.shift_block.derived_status if self.shift_block else "SCHEDULED"
+
+    @property
+    def start_time(self):
+        return self.shift_block.start_time if self.shift_block else None
+
+    @property
+    def end_time(self):
+        return self.shift_block.end_time if self.shift_block else None
+
+    @property
+    def shift_name(self):
+        return self.shift_block.name if self.shift_block else None
+
+
+class EventLocation(TimestampMixin, Base):
+    """A named operational venue/place at the tournament (e.g., 'Ground 1',
+    'Main Gate', 'Dining Hall', 'Reception', 'Boys Hostel'). Used to assign
+    operational duties and track workforce deployment across tournament sites.
+    Independent from the accommodation bed hierarchy and match mat tables."""
+    __tablename__ = "event_locations"
+    __table_args__ = (UniqueConstraint("name", name="uq_event_locations_name"),)
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(120), nullable=False)
+    location_type = Column(String(40), nullable=False, default="OTHER")
+    description = Column(Text)
+    is_active = Column(Boolean, nullable=False, default=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+
+    duties = relationship("DutyAssignment", back_populates="location")
+
+
 class DutyAssignment(TimestampMixin, Base):
     __tablename__ = "duty_assignments"
     id = Column(Integer, primary_key=True)
     staff_id = Column(Integer, ForeignKey("staff_members.id", ondelete="CASCADE"), nullable=False)
-    room_id = Column(Integer, ForeignKey("rooms.id", ondelete="CASCADE"), nullable=False)
+    shift_id = Column(Integer, ForeignKey("staff_shifts.id", ondelete="SET NULL"), nullable=True, index=True)
+    room_id = Column(Integer, ForeignKey("rooms.id", ondelete="CASCADE"), nullable=True)
+    location_id = Column(Integer, ForeignKey("event_locations.id", ondelete="SET NULL"), nullable=True, index=True)
     duty_type = Column(String(80), nullable=False)  # free text; suggestions from DUTY_TYPES
     start_time = Column(DateTime(timezone=True))
     end_time = Column(DateTime(timezone=True))
     notes = Column(Text)
 
     staff = relationship("StaffMember", back_populates="duties")
+    shift = relationship("StaffShift", back_populates="duties")
     room = relationship("Room", back_populates="duty_assignments")
+    location = relationship("EventLocation", back_populates="duties")
 
 
 class StaffLocation(TimestampMixin, Base):

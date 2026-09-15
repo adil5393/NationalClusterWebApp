@@ -18,11 +18,42 @@ PROCUREMENT_STATUSES = [
 ]
 ANNOUNCEMENT_PRIORITIES = ["low", "normal", "high", "urgent"]
 ANNOUNCEMENT_AUDIENCES = ["everyone", "team", "organizers", "staff", "coaches"]
-DUTY_TYPES = ["Fooding", "Lodging", "Cleaning", "Medical", "Security", "Transport", "Reception", "Electricity"]
+LOCATION_TYPES = [
+    "GROUND",
+    "MAT",
+    "GATE",
+    "ROOM",
+    "ACCOMMODATION",
+    "FOOD",
+    "TRANSPORT",
+    "MEDICAL",
+    "OPERATIONS",
+    "PARKING",
+    "OTHER",
+]
+DUTY_TYPES = [
+    "Ground Coordination",
+    "Match Control",
+    "Team Reception",
+    "Accommodation",
+    "Transport",
+    "Food",
+    "Security",
+    "Medical",
+    "Cleaning",
+    "Technical / Electricity",
+    "General Operations",
+    # Legacy aliases preserved for backward compatibility
+    "Fooding",
+    "Lodging",
+    "Reception",
+    "Electricity",
+]
 # A staff member's broad category (who they are) — separate from duty_type (what
 # they're doing on a given assignment, e.g. Fooding/Lodging), which is decided at
 # allotment time, not when the person is added.
 STAFF_CATEGORIES = ["Academic & Administrative", "Support & Housekeeping", "Transport", "Observer", "Game Manager"]
+SHIFT_STATUSES = ["SCHEDULED", "CANCELLED"]
 
 
 class ORMModel(BaseModel):
@@ -643,9 +674,119 @@ class StaffLocationUpdate(BaseModel):
     accuracy: Optional[float] = Field(None, ge=0)
 
 
+# --- Shift Blocks (common workforce shift windows) ---
+class ShiftBlockBase(BaseModel):
+    name: str
+    start_time: datetime
+    end_time: datetime
+    status: str = "SCHEDULED"
+    notes: Optional[str] = None
+
+    @field_validator("status")
+    @classmethod
+    def valid_status(cls, v: str) -> str:
+        if v not in SHIFT_STATUSES:
+            raise ValueError(f"Invalid status '{v}'. Allowed: {SHIFT_STATUSES}")
+        return v
+
+
+class ShiftBlockCreate(ShiftBlockBase):
+    staff_ids: Optional[list[int]] = None
+
+
+class ShiftBlockUpdate(BaseModel):
+    name: Optional[str] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
+    @field_validator("status")
+    @classmethod
+    def valid_status(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in SHIFT_STATUSES:
+            raise ValueError(f"Invalid status '{v}'. Allowed: {SHIFT_STATUSES}")
+        return v
+
+
+class ShiftBlockStaffSync(BaseModel):
+    staff_ids: list[int]
+
+
+class StaffShiftRead(ORMModel):
+    id: int
+    shift_block_id: int
+    staff_id: int
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    # Augmented / derived fields
+    shift_name: Optional[str] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    status: str = "SCHEDULED"
+    derived_status: str = "SCHEDULED"
+    is_active: bool = False
+    staff_name: Optional[str] = None
+    staff_category: Optional[str] = None
+    staff_phone: Optional[str] = None
+    duty_count: int = 0
+    task_count: int = 0
+
+
+class ShiftBlockRead(ORMModel, ShiftBlockBase):
+    id: int
+    derived_status: str = "SCHEDULED"
+    is_active: bool = False
+    staff_count: int = 0
+    staff_assignments: list[StaffShiftRead] = []
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class StaffShiftCreate(BaseModel):
+    shift_block_id: int
+    staff_id: int
+    notes: Optional[str] = None
+
+
+class StaffShiftUpdate(BaseModel):
+    notes: Optional[str] = None
+
+
+# --- Event Locations (Operational Tournament Places) ---
+class EventLocationBase(BaseModel):
+    name: str
+    location_type: str = "OTHER"
+    description: Optional[str] = None
+    is_active: bool = True
+    sort_order: int = 0
+
+
+class EventLocationCreate(EventLocationBase):
+    pass
+
+
+class EventLocationUpdate(BaseModel):
+    name: Optional[str] = None
+    location_type: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+
+class EventLocationRead(ORMModel, EventLocationBase):
+    id: int
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    duty_count: Optional[int] = 0
+
+
 class DutyAssignmentCreate(BaseModel):
     staff_id: int
-    room_id: int
+    shift_id: Optional[int] = None
+    room_id: Optional[int] = None
+    location_id: Optional[int] = None
     duty_type: str
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
@@ -654,7 +795,9 @@ class DutyAssignmentCreate(BaseModel):
 
 class DutyAssignmentUpdate(BaseModel):
     staff_id: Optional[int] = None
+    shift_id: Optional[int] = None
     room_id: Optional[int] = None
+    location_id: Optional[int] = None
     duty_type: Optional[str] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
@@ -1026,6 +1169,7 @@ class TaskCreate(BaseModel):
     category: str = "General"
     status: str = "pending"
     assigned_staff_id: Optional[int] = None
+    shift_id: Optional[int] = None
     due_date: Optional[datetime] = None
 
     @field_validator("status")
@@ -1042,6 +1186,7 @@ class TaskUpdate(BaseModel):
     category: Optional[str] = None
     status: Optional[str] = None
     assigned_staff_id: Optional[int] = None
+    shift_id: Optional[int] = None
     due_date: Optional[datetime] = None
 
     @field_validator("status")

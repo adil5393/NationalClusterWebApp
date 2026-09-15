@@ -94,8 +94,12 @@ credentials.json
 .claude/
 
 /backend/tests/*
+!backend/tests/test_staff_shifts.py
+!backend/tests/test_event_locations_and_duties.py
 
 *test*.py
+!backend/tests/test_staff_shifts.py
+!backend/tests/test_event_locations_and_duties.py
 backend/make_school_images.py
 # Runtime-uploaded content (gallery/participant/team photos) lives under
 # here and is never committed — but id_card_template.png and the receipt's
