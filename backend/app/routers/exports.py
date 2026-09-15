@@ -1259,12 +1259,13 @@ def export_idcard_all(db: Session = Depends(get_db)):
 
 @router.get("/payments.xlsx", dependencies=[Depends(require_module("teams"))])
 def export_payments_xlsx(db: Session = Depends(get_db)):
-    """Per-team registration-fee ledger — total billed, total paid, balance
-    due, total refunded, net collected, and the most recent date of each
-    transaction kind — one row per team that has at least one payment
-    record. Individual transactions live in the Organizer Portal's Bill/
-    Payment/Refund dialog (routers/payments.py); this is the roll-up for
-    finance tracking."""
+    """Per-team registration-fee ledger — total billed, total paid (split
+    Cash vs UPI), balance due, total refunded (split Cash vs UPI), net
+    collected, and the most recent date of each transaction kind — one row
+    per team that has at least one payment record. Individual transactions
+    live in the Organizer Portal's Bill/Payment/Refund dialog
+    (routers/payments.py) and in the Transaction Detail sheet below; this
+    sheet is the roll-up for finance tracking."""
     teams = db.query(models.Team).order_by(models.Team.name).all()
     rows = []
     for t in teams:
@@ -1274,10 +1275,15 @@ def export_payments_xlsx(db: Session = Depends(get_db)):
         if not bills and not pays and not refunds:
             continue
         billed = sum(p.amount for p in bills)
-        paid = sum(p.amount for p in pays)
-        refunded = sum(p.amount for p in refunds)
+        paid_cash = sum(p.amount for p in pays if p.payment_mode == "Cash")
+        paid_upi = sum(p.amount for p in pays if p.payment_mode == "UPI")
+        paid = paid_cash + paid_upi
+        refunded_cash = sum(p.amount for p in refunds if p.payment_mode == "Cash")
+        refunded_upi = sum(p.amount for p in refunds if p.payment_mode == "UPI")
+        refunded = refunded_cash + refunded_upi
         rows.append({
-            "team": t, "billed": billed, "paid": paid, "refunded": refunded,
+            "team": t, "billed": billed, "paid": paid, "paid_cash": paid_cash, "paid_upi": paid_upi,
+            "refunded": refunded, "refunded_cash": refunded_cash, "refunded_upi": refunded_upi,
             "balance_due": billed - paid, "net_collected": paid - refunded,
             "last_bill": max((p.payment_date for p in bills), default=None),
             "last_payment": max((p.payment_date for p in pays), default=None),
@@ -1288,7 +1294,7 @@ def export_payments_xlsx(db: Session = Depends(get_db)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Payments Ledger"
-    max_cols = 11
+    max_cols = 15
 
     next_row = style_header_banner(
         ws,
@@ -1317,8 +1323,12 @@ def export_payments_xlsx(db: Session = Depends(get_db)):
         ("SCHOOL CODE", 14, ALIGN_HEADER_CENTER),
         ("TOTAL BILLED (RS.)", 16, ALIGN_HEADER_CENTER),
         ("TOTAL PAID (RS.)", 16, ALIGN_HEADER_CENTER),
+        ("PAID · CASH (RS.)", 15, ALIGN_HEADER_CENTER),
+        ("PAID · UPI (RS.)", 15, ALIGN_HEADER_CENTER),
         ("BALANCE DUE (RS.)", 16, ALIGN_HEADER_CENTER),
         ("TOTAL REFUNDED (RS.)", 16, ALIGN_HEADER_CENTER),
+        ("REFUNDED · CASH (RS.)", 17, ALIGN_HEADER_CENTER),
+        ("REFUNDED · UPI (RS.)", 17, ALIGN_HEADER_CENTER),
         ("NET COLLECTED (RS.)", 16, ALIGN_HEADER_CENTER),
         ("LAST BILL DATE", 16, ALIGN_HEADER_CENTER),
         ("LAST PAYMENT DATE", 16, ALIGN_HEADER_CENTER),
@@ -1347,8 +1357,12 @@ def export_payments_xlsx(db: Session = Depends(get_db)):
             (r["team"].school_code or "—", ALIGN_CENTER, FONT_TD),
             (r["billed"], ALIGN_CENTER, FONT_TD),
             (r["paid"], ALIGN_CENTER, FONT_TD),
+            (r["paid_cash"], ALIGN_CENTER, FONT_TD),
+            (r["paid_upi"], ALIGN_CENTER, FONT_TD),
             (r["balance_due"], ALIGN_CENTER, FONT_TD_BOLD),
             (r["refunded"], ALIGN_CENTER, FONT_TD),
+            (r["refunded_cash"], ALIGN_CENTER, FONT_TD),
+            (r["refunded_upi"], ALIGN_CENTER, FONT_TD),
             (r["net_collected"], ALIGN_CENTER, FONT_TD_BOLD),
             (_fmt_date(r["last_bill"]), ALIGN_CENTER, FONT_TD),
             (_fmt_date(r["last_payment"]), ALIGN_CENTER, FONT_TD),
@@ -1373,7 +1387,7 @@ def export_payments_xlsx(db: Session = Depends(get_db)):
 
     # ---------- Second sheet: every transaction as its own dated row ----------
     ws2 = wb.create_sheet("Transaction Detail")
-    max_cols2 = 7
+    max_cols2 = 8
 
     next_row2 = style_header_banner(
         ws2,
@@ -1391,7 +1405,8 @@ def export_payments_xlsx(db: Session = Depends(get_db)):
         ("DATE", 16, ALIGN_HEADER_CENTER),
         ("TYPE", 12, ALIGN_HEADER_CENTER),
         ("AMOUNT (RS.)", 16, ALIGN_HEADER_CENTER),
-        ("PAYMENT MODE", 14, ALIGN_HEADER_CENTER),
+        ("CASH (RS.)", 14, ALIGN_HEADER_CENTER),
+        ("UPI (RS.)", 14, ALIGN_HEADER_CENTER),
         ("REFERENCE / NOTE", 34, ALIGN_HEADER_LEFT),
     ]
     ws2.row_dimensions[next_row2].height = 22
@@ -1410,13 +1425,17 @@ def export_payments_xlsx(db: Session = Depends(get_db)):
         for p in sorted(r["team"].payments, key=lambda p: (p.payment_date, p.id)):
             if p.kind == "BILL":
                 reference = f"{len(p.members)} member{'s' if len(p.members) != 1 else ''}" if p.members else "—"
+                if p.security_fee:
+                    reference += f" · incl. Rs. {p.security_fee:,} security fee"
             elif p.kind == "REFUND":
                 reference = p.reason or "—"
             else:
                 reference = p.transaction_id or "—"
-            txn_rows.append((r["team"], p, reference))
+            cash_amount = p.amount if p.payment_mode == "Cash" else None
+            upi_amount = p.amount if p.payment_mode == "UPI" else None
+            txn_rows.append((r["team"], p, reference, cash_amount, upi_amount))
 
-    for idx, (team, p, reference) in enumerate(txn_rows, start=1):
+    for idx, (team, p, reference, cash_amount, upi_amount) in enumerate(txn_rows, start=1):
         ws2.row_dimensions[next_row2].height = 20
         fill = FILL_ZEBRA_EVEN if idx % 2 == 0 else FILL_ZEBRA_ODD
         row_data2 = [
@@ -1425,7 +1444,8 @@ def export_payments_xlsx(db: Session = Depends(get_db)):
             (p.payment_date.strftime("%d-%b-%Y"), ALIGN_CENTER, FONT_TD),
             (kind_labels.get(p.kind, p.kind), ALIGN_CENTER, FONT_TD_BOLD),
             (p.amount, ALIGN_CENTER, FONT_TD),
-            (p.payment_mode or "—", ALIGN_CENTER, FONT_TD),
+            (cash_amount if cash_amount is not None else "—", ALIGN_CENTER, FONT_TD),
+            (upi_amount if upi_amount is not None else "—", ALIGN_CENTER, FONT_TD),
             (reference, ALIGN_LEFT, FONT_TD),
         ]
         for col_idx, (val, align, font) in enumerate(row_data2, start=1):

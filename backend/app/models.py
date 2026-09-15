@@ -109,7 +109,10 @@ class Payment(TimestampMixin, Base):
       "who's present but not yet billed" by diffing against every prior
       BILL's members for that team. `subtotal` (per-member amount x count)
       and `discount` are kept alongside the final `amount` (subtotal minus
-      discount) so a re-printed invoice shows the same breakdown later.
+      discount plus security_fee) so a re-printed invoice shows the same
+      breakdown later. `security_fee` is a flat, one-time-per-team charge
+      (default receipt.SECURITY_FEE_DEFAULT, editable) — only ever non-zero
+      on a team's first bill; see routers/payments.py create_bill.
     - PAYMENT: money actually received against the team's outstanding
       balance (total BILL amount minus total PAYMENT amount so far) — free-form,
       capped at that balance, supports partial payments over multiple rows.
@@ -132,6 +135,7 @@ class Payment(TimestampMixin, Base):
     members = Column(JSON)  # BILL only
     subtotal = Column(Integer)  # BILL only: per_member_amount x member count, before discount
     discount = Column(Integer)  # BILL only: flat Rs. knocked off subtotal to get `amount`
+    security_fee = Column(Integer)  # BILL only: flat one-time team security fee, added to (subtotal - discount)
 
     team = relationship("Team", back_populates="payments")
 

@@ -7,9 +7,13 @@ A team can be billed more than once over time — each "Bill" only charges
 present members who haven't already been billed by an earlier one (a
 straggler who checks in later gets picked up by the next bill), so the
 member set a bill charges is computed fresh from current attendance minus
-every prior BILL's snapshot, never re-derived after the fact. Per-member
-amount and a flat discount are both entered at billing time and apply to
-every member that bill covers.
+every prior BILL's snapshot, never re-derived after the fact. The per-member
+rate is a static, non-editable flat fee (receipt.PER_MEMBER_FEE — Rs.
+receipt.DAILY_MEMBER_FEE per day x receipt.EVENT_DAYS) applied to every
+member a bill covers. A flat, one-time security fee (default
+receipt.SECURITY_FEE_DEFAULT, editable) is applied once per team, only on
+its first bill. A flat discount is entered at billing time and applies to
+that bill's member subtotal only.
 
 Bill and Payment are record-only (no PDF) — the downloadable Invoice
 (get_invoice) always reflects the team's current billed/paid/balance state
@@ -78,27 +82,31 @@ def _billed_keys(team: models.Team) -> set:
     return keys
 
 
-def _live_bill_breakdown(team: models.Team) -> tuple[list[dict], int, int, int]:
-    """Every prior BILL's own row (amount/subtotal/discount/members) stays an
-    untouched, append-only record of what was charged and when — but nothing
-    downstream (the on-screen billing summary, the downloadable Invoice PDF)
-    should just trust that frozen amount forever. If someone a bill charged
-    for is no longer marked present (e.g. correcting an is_present mistake
-    after the fact — there's deliberately no separate "un-bill this person"
-    action), this recomputes that bill's live contribution as if it had only
-    ever billed the still-present subset, at the same per-member rate it was
-    created with — the flat discount is kept as-is unless it would now
-    exceed the shrunk subtotal, in which case it's capped there (never a
-    negative bill). Returns (still-present members with their per-member
-    amount — for the Invoice's line items, live subtotal, live discount,
-    live total_billed) so every caller derives the same numbers from the
-    same correction; shared by _totals (billing_summary, refetched every
-    time the billing modal opens) and get_invoice below so they can never
-    show different figures for the same team."""
+def _live_bill_breakdown(team: models.Team) -> tuple[list[dict], int, int, int, int]:
+    """Every prior BILL's own row (amount/subtotal/discount/security_fee/
+    members) stays an untouched, append-only record of what was charged and
+    when — but nothing downstream (the on-screen billing summary, the
+    downloadable Invoice PDF) should just trust that frozen amount forever.
+    If someone a bill charged for is no longer marked present (e.g.
+    correcting an is_present mistake after the fact — there's deliberately
+    no separate "un-bill this person" action), this recomputes that bill's
+    live contribution as if it had only ever billed the still-present
+    subset, at the same per-member rate it was created with — the flat
+    discount is kept as-is unless it would now exceed the shrunk subtotal,
+    in which case it's capped there (never a negative bill). security_fee is
+    a flat one-time team charge, not tied to any individual member, so it's
+    summed as-is regardless of attendance corrections. Returns (still-present
+    members with their per-member amount — for the Invoice's line items,
+    live subtotal, live discount, live security_fee total, live
+    total_billed) so every caller derives the same numbers from the same
+    correction; shared by _totals (billing_summary, refetched every time the
+    billing modal opens) and get_invoice below so they can never show
+    different figures for the same team."""
     present_keys = {(m["kind"], m["id"]) for m in _present_members(team)}
     members: list[dict] = []
     subtotal = 0
     discount = 0
+    security_fee = 0
     total_billed = 0
     for p in team.payments:
         if p.kind != "BILL" or not p.members:
@@ -110,20 +118,34 @@ def _live_bill_breakdown(team: models.Team) -> tuple[list[dict], int, int, int]:
         bill_discount = min(p.discount or 0, bill_subtotal)
         subtotal += bill_subtotal
         discount += bill_discount
+        security_fee += p.security_fee or 0
         total_billed += bill_subtotal - bill_discount
         for m in still_present:
             members.append({"name": m["name"], "role": m["role"], "amount": per_member})
-    return members, subtotal, discount, total_billed
+    total_billed += security_fee
+    return members, subtotal, discount, security_fee, total_billed
 
 
 def _totals(team: models.Team) -> dict:
-    total_billed = _live_bill_breakdown(team)[3]
-    total_paid = sum(p.amount for p in team.payments if p.kind == "PAYMENT")
-    total_refunded = sum(p.amount for p in team.payments if p.kind == "REFUND")
+    """Cash and UPI are tracked separately throughout (paid_cash/paid_upi,
+    refunded_cash/refunded_upi) alongside the combined total_paid/
+    total_refunded, so the billing summary and every export can show either
+    the combined figure or the per-mode breakdown without re-deriving it."""
+    total_billed = _live_bill_breakdown(team)[4]
+    paid_cash = sum(p.amount for p in team.payments if p.kind == "PAYMENT" and p.payment_mode == "Cash")
+    paid_upi = sum(p.amount for p in team.payments if p.kind == "PAYMENT" and p.payment_mode == "UPI")
+    refunded_cash = sum(p.amount for p in team.payments if p.kind == "REFUND" and p.payment_mode == "Cash")
+    refunded_upi = sum(p.amount for p in team.payments if p.kind == "REFUND" and p.payment_mode == "UPI")
+    total_paid = paid_cash + paid_upi
+    total_refunded = refunded_cash + refunded_upi
     return {
         "total_billed": total_billed,
         "total_paid": total_paid,
+        "paid_cash": paid_cash,
+        "paid_upi": paid_upi,
         "total_refunded": total_refunded,
+        "refunded_cash": refunded_cash,
+        "refunded_upi": refunded_upi,
         "balance_due": total_billed - total_paid,
         "net_collected": total_paid - total_refunded,
     }
@@ -142,11 +164,16 @@ def _billing_summary_dict(team: models.Team) -> dict:
     billed_keys = _billed_keys(team)
     unbilled = [m for m in _present_members(team) if (m["kind"], m["id"]) not in billed_keys]
     totals = _totals(team)
+    security_fee_applied = any(p.kind == "BILL" and (p.security_fee or 0) > 0 for p in team.payments)
     payments_sorted = sorted(team.payments, key=lambda p: (p.payment_date, p.id), reverse=True)
     return {
         "team_id": team.id,
         "unbilled_present_members": unbilled,
-        "default_per_member_amount": receipt.REGISTRATION_FEE,
+        "per_member_fee": receipt.PER_MEMBER_FEE,
+        "daily_member_fee": receipt.DAILY_MEMBER_FEE,
+        "event_days": receipt.EVENT_DAYS,
+        "default_security_fee": receipt.SECURITY_FEE_DEFAULT,
+        "security_fee_applied": security_fee_applied,
         **totals,
         "payments": [
             {
@@ -160,6 +187,7 @@ def _billing_summary_dict(team: models.Team) -> dict:
                 "member_count": len(p.members) if p.members else None,
                 "subtotal": p.subtotal,
                 "discount": p.discount,
+                "security_fee": p.security_fee,
             }
             for p in payments_sorted
         ],
@@ -178,12 +206,19 @@ def create_bill(team_id: int, payload: schemas.BillCreate, db: Session = Depends
     via get_invoice below once ready."""
     team = _get_team(db, team_id)
     txn_date = payload.payment_date or date.today()
-    per_member_amount = payload.per_member_amount if payload.per_member_amount is not None else receipt.REGISTRATION_FEE
-    if per_member_amount < 0:
-        raise HTTPException(400, "Per-member amount can't be negative")
+    per_member_amount = receipt.PER_MEMBER_FEE  # static: Rs. per member x fixed event days, not editable
     discount = payload.discount or 0
     if discount < 0:
         raise HTTPException(400, "Discount can't be negative")
+
+    is_first_bill = not any(p.kind == "BILL" for p in team.payments)
+    security_fee = payload.security_fee if payload.security_fee is not None else (
+        receipt.SECURITY_FEE_DEFAULT if is_first_bill else 0
+    )
+    if security_fee < 0:
+        raise HTTPException(400, "Security fee can't be negative")
+    if security_fee > 0 and not is_first_bill:
+        raise HTTPException(400, "The security fee has already been applied to this team")
 
     billed_keys = _billed_keys(team)
     members = [m for m in _present_members(team) if (m["kind"], m["id"]) not in billed_keys]
@@ -193,11 +228,11 @@ def create_bill(team_id: int, payload: schemas.BillCreate, db: Session = Depends
     subtotal = per_member_amount * len(members)
     if discount > subtotal:
         raise HTTPException(400, f"Discount can't exceed the bill subtotal of Rs. {subtotal:,}")
-    amount = subtotal - discount
+    amount = subtotal - discount + security_fee
 
     payment = models.Payment(
         team_id=team.id, kind="BILL", amount=amount, payment_date=txn_date,
-        members=members, subtotal=subtotal, discount=discount,
+        members=members, subtotal=subtotal, discount=discount, security_fee=security_fee,
     )
     db.add(payment)
     db.commit()
@@ -221,9 +256,9 @@ def get_invoice(team_id: int, db: Session = Depends(get_db)):
     if not any(p.kind == "BILL" for p in team.payments):
         raise HTTPException(404, "This team has no bills yet")
 
-    members, subtotal, discount, _ = _live_bill_breakdown(team)
+    members, subtotal, discount, security_fee, _ = _live_bill_breakdown(team)
     totals = _totals(team)
-    pdf = receipt.render_invoice(team, members, subtotal, discount, totals["total_paid"], date.today())
+    pdf = receipt.render_invoice(team, members, subtotal, discount, security_fee, totals["total_paid"], date.today())
     return _pdf_response(pdf, f"invoice-{team.school_code or team.id}.pdf")
 
 

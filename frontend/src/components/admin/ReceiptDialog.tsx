@@ -24,14 +24,23 @@ interface PaymentRow {
   member_count?: number | null;
   subtotal?: number | null;
   discount?: number | null;
+  security_fee?: number | null;
 }
 
 interface BillingSummary {
   unbilled_present_members: BillableMember[];
-  default_per_member_amount: number;
+  per_member_fee: number;
+  daily_member_fee: number;
+  event_days: number;
+  default_security_fee: number;
+  security_fee_applied: boolean;
   total_billed: number;
   total_paid: number;
+  paid_cash: number;
+  paid_upi: number;
   total_refunded: number;
+  refunded_cash: number;
+  refunded_upi: number;
   balance_due: number;
   net_collected: number;
   payments: PaymentRow[];
@@ -86,8 +95,8 @@ export function ReceiptDialog({
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const [perMemberAmount, setPerMemberAmount] = useState("");
   const [discount, setDiscount] = useState("0");
+  const [securityFee, setSecurityFee] = useState("0");
   const [billDate, setBillDate] = useState(todayLocal);
 
   const [paymentAmount, setPaymentAmount] = useState("");
@@ -107,7 +116,7 @@ export function ReceiptDialog({
     try {
       const r = await api.get<BillingSummary>(`/teams/${team.id}/billing-summary`);
       setSummary(r.data);
-      setPerMemberAmount(String(r.data.default_per_member_amount));
+      setSecurityFee(r.data.security_fee_applied ? "0" : String(r.data.default_security_fee));
     } catch {
       toast.error("Could not load billing summary");
     } finally {
@@ -119,6 +128,7 @@ export function ReceiptDialog({
     if (open && team) {
       setTab("bill");
       setDiscount("0");
+      setSecurityFee("0");
       setBillDate(todayLocal());
       setPaymentAmount("");
       setPaymentMode("Cash");
@@ -136,25 +146,26 @@ export function ReceiptDialog({
 
   const billPreview = useMemo(() => {
     const count = summary?.unbilled_present_members.length ?? 0;
-    const rate = Number(perMemberAmount) || 0;
+    const rate = summary?.per_member_fee ?? 0;
     const subtotal = rate * count;
     const disc = Number(discount) || 0;
-    return { count, subtotal, discount: disc, total: Math.max(0, subtotal - disc) };
-  }, [summary, perMemberAmount, discount]);
+    const secFee = summary?.security_fee_applied ? 0 : Number(securityFee) || 0;
+    return { count, subtotal, discount: disc, securityFee: secFee, total: Math.max(0, subtotal - disc) + secFee };
+  }, [summary, discount, securityFee]);
 
   const submitBill = async () => {
     if (!team) return;
     if (!summary || summary.unbilled_present_members.length === 0) {
       return toast.error("Every present member on this team has already been billed");
     }
-    const rate = Number(perMemberAmount);
-    if (!Number.isFinite(rate) || rate < 0) return toast.error("Enter a valid per-member amount");
     const disc = Number(discount) || 0;
     if (disc < 0) return toast.error("Discount can't be negative");
     if (disc > billPreview.subtotal) return toast.error("Discount can't exceed the bill subtotal");
+    const secFee = summary.security_fee_applied ? 0 : Number(securityFee) || 0;
+    if (secFee < 0) return toast.error("Security fee can't be negative");
     setBusy(true);
     try {
-      await api.post(`/teams/${team.id}/bills`, { per_member_amount: rate, discount: disc, payment_date: billDate });
+      await api.post(`/teams/${team.id}/bills`, { discount: disc, security_fee: secFee, payment_date: billDate });
       toast.success("Bill created — download the invoice from the Invoice tab");
       setTab("invoice");
       loadSummary();
@@ -305,13 +316,21 @@ export function ReceiptDialog({
                 Total Billed: <strong className="text-white">Rs. {(summary?.total_billed ?? 0).toLocaleString()}</strong>
               </p>
               <p>
-                Total Paid: <strong className="text-white">Rs. {(summary?.total_paid ?? 0).toLocaleString()}</strong>
-              </p>
-              <p>
                 Balance Due: <strong className="text-amber-400">Rs. {(summary?.balance_due ?? 0).toLocaleString()}</strong>
               </p>
-              <p>
+              <p className="col-span-2">
+                Total Paid: <strong className="text-white">Rs. {(summary?.total_paid ?? 0).toLocaleString()}</strong>
+                <span className="text-slate-500">
+                  {" "}
+                  (Cash Rs. {(summary?.paid_cash ?? 0).toLocaleString()} · UPI Rs. {(summary?.paid_upi ?? 0).toLocaleString()})
+                </span>
+              </p>
+              <p className="col-span-2">
                 Total Refunded: <strong className="text-white">Rs. {(summary?.total_refunded ?? 0).toLocaleString()}</strong>
+                <span className="text-slate-500">
+                  {" "}
+                  (Cash Rs. {(summary?.refunded_cash ?? 0).toLocaleString()} · UPI Rs. {(summary?.refunded_upi ?? 0).toLocaleString()})
+                </span>
               </p>
               <p className="col-span-2">
                 Net Collected: <strong className="text-gold">Rs. {(summary?.net_collected ?? 0).toLocaleString()}</strong>
@@ -344,17 +363,15 @@ export function ReceiptDialog({
                   </p>
                 )}
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label>Per-Member Amount (Rs.)</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      value={perMemberAmount}
-                      onChange={(e) => setPerMemberAmount(e.target.value)}
-                      data-testid="bill-per-member-amount-input"
-                    />
+                <div>
+                  <Label>Per-Member Fee (Rs., fixed)</Label>
+                  <div className="mt-1.5 rounded-lg border border-white/10 bg-obsidian-950 px-3 py-2 text-sm text-slate-300 font-mono" data-testid="bill-per-member-fee-readonly">
+                    Rs. {(summary?.daily_member_fee ?? 0).toLocaleString()} × {summary?.event_days ?? 0} days = Rs.{" "}
+                    {(summary?.per_member_fee ?? 0).toLocaleString()} / member
                   </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label>Discount (Rs.)</Label>
                     <Input
@@ -365,16 +382,33 @@ export function ReceiptDialog({
                       data-testid="bill-discount-input"
                     />
                   </div>
+                  <div>
+                    <Label>Security Fee (Rs.)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={securityFee}
+                      onChange={(e) => setSecurityFee(e.target.value)}
+                      disabled={summary?.security_fee_applied}
+                      data-testid="bill-security-fee-input"
+                    />
+                    {summary?.security_fee_applied && (
+                      <p className="mt-1 text-[11px] text-slate-500">Already applied to this team.</p>
+                    )}
+                  </div>
                 </div>
 
                 {billPreview.count > 0 && (
                   <div className="rounded-xl border border-white/10 bg-obsidian-950 p-3.5 text-xs font-mono space-y-1">
                     <p className="text-slate-400">
-                      Subtotal: {billPreview.count} × Rs. {(Number(perMemberAmount) || 0).toLocaleString()} = Rs.{" "}
+                      Subtotal: {billPreview.count} × Rs. {(summary?.per_member_fee ?? 0).toLocaleString()} = Rs.{" "}
                       {billPreview.subtotal.toLocaleString()}
                     </p>
                     {billPreview.discount > 0 && (
                       <p className="text-red-400">Discount: − Rs. {billPreview.discount.toLocaleString()}</p>
+                    )}
+                    {billPreview.securityFee > 0 && (
+                      <p className="text-slate-400">Security Fee: + Rs. {billPreview.securityFee.toLocaleString()}</p>
                     )}
                     <p className="text-gold font-bold">This bill's total due: Rs. {billPreview.total.toLocaleString()}</p>
                   </div>
@@ -585,6 +619,7 @@ export function ReceiptDialog({
                         {p.payment_date}
                         {p.payment_mode ? ` · ${p.payment_mode}` : ""}
                         {p.reason ? ` · ${p.reason}` : ""}
+                        {p.kind === "BILL" && p.security_fee ? ` · incl. Rs. ${p.security_fee.toLocaleString()} security fee` : ""}
                       </span>
                       <span className="text-white">Rs. {p.amount.toLocaleString()}</span>
                       {p.kind === "REFUND" && (

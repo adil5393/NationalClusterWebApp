@@ -1255,10 +1255,11 @@ class TaskUpdate(BaseModel):
 
 # --- Payments (registration-fee billing/payment/refund ledger, see routers/payments.py) ---
 class BillCreate(BaseModel):
-    # Rs. charged per newly-billed member; defaults to receipt.REGISTRATION_FEE
-    # (500) when omitted. Applies uniformly to every member this bill covers.
-    per_member_amount: Optional[int] = None
     discount: Optional[int] = 0  # flat Rs. knocked off the computed subtotal
+    # Flat one-time team fee (Rs.); defaults to receipt.SECURITY_FEE_DEFAULT
+    # (2000) on a team's first bill, and must be omitted/zero on any later
+    # bill for the same team (see routers/payments.py create_bill).
+    security_fee: Optional[int] = None
     payment_date: Optional[date] = None  # invoice date; defaults to today
 
 
@@ -1289,4 +1290,5 @@ class PaymentRead(ORMModel):
     members: Optional[list] = None
     subtotal: Optional[int] = None
     discount: Optional[int] = None
+    security_fee: Optional[int] = None
     created_at: datetime

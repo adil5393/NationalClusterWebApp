@@ -22,9 +22,18 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-# Flat per-member registration fee (Rs.) — the default a bill uses unless the
-# organizer overrides it; change here if the org's default fee ever changes.
-REGISTRATION_FEE = 500
+# Per-member registration fee (Rs.) — static, not editable per bill: every
+# present member is charged for the full fixed event duration regardless of
+# which specific days they attended (attendance is tracked as a single
+# is_present flag, not per-day — see routers/payments.py _present_members).
+DAILY_MEMBER_FEE = 500  # Rs. per member, per day
+EVENT_DAYS = 6  # fixed tournament duration; change here if it ever changes
+PER_MEMBER_FEE = DAILY_MEMBER_FEE * EVENT_DAYS  # Rs. 3,000 per member
+
+# Flat one-time security fee (Rs.) charged once per team — the default a
+# bill uses unless the organizer overrides it (see routers/payments.py
+# create_bill: only ever applied on a team's first bill).
+SECURITY_FEE_DEFAULT = 2000
 
 HOST_SCHOOL_NAME = "New Angels Sr. Sec. School, Pratapgarh, Uttar Pradesh"
 TOURNAMENT_NAME = "CBSE Kabaddi Nationals Championship 2026-2027"
@@ -290,6 +299,7 @@ def render_invoice_image(
     members: list[dict],
     subtotal: int,
     discount: int,
+    security_fee: int,
     total_paid: int,
     invoice_date: date,
 ) -> Image.Image:
@@ -298,9 +308,9 @@ def render_invoice_image(
     y = _draw_letterhead(draw, img, "Registration Fee Invoice", is_refund=False)
 
     footer_y = PAGE_H - MARGIN - 60
-    total_billed = subtotal - discount
+    total_billed = subtotal - discount + security_fee
     balance_due = total_billed - total_paid
-    summary_rows = 1 + (2 if discount else 0)
+    summary_rows = 1 + (2 if discount else 0) + (1 if security_fee else 0)
     rows_needed = 1 + len(members) + summary_rows
 
     meta_h = 110
@@ -393,10 +403,21 @@ def render_invoice_image(
         draw.line([(table_left, y + row_h), (table_right, y + row_h)], fill=CLR_CARD_BORDER, width=1)
         y += row_h
 
+    if security_fee:
+        security_mid = y + row_h / 2
+        _cell("Security Fee (one-time)", col_x["no"], col_w["no"] + col_w["name"] + col_w["role"], security_mid, body_font, CLR_NAVY_DARK, align="left")
+        _cell(f"{security_fee:,}", col_x["amount"], col_w["amount"], security_mid, body_font, CLR_NAVY_DARK, align="right")
+        draw.line([(table_left, y + row_h), (table_right, y + row_h)], fill=CLR_CARD_BORDER, width=1)
+        y += row_h
+
     # Total Billed Row
     draw.rectangle([table_left, y, table_right, y + row_h], fill=(241, 245, 249))
     total_mid = y + row_h / 2
-    total_label = "Total Billed Amount" if discount else f"Total Billed Amount ({len(members)} member{'s' if len(members) != 1 else ''})"
+    total_label = (
+        "Total Billed Amount"
+        if (discount or security_fee)
+        else f"Total Billed Amount ({len(members)} member{'s' if len(members) != 1 else ''})"
+    )
     _cell(total_label, col_x["no"], col_w["no"] + col_w["name"] + col_w["role"], total_mid, total_font, CLR_NAVY_DARK, align="left")
     _cell(f"Rs. {total_billed:,}", col_x["amount"], col_w["amount"], total_mid, total_font, CLR_NAVY_DARK, align="right")
     y += row_h
@@ -462,11 +483,12 @@ def render_invoice(
     members: list[dict],
     subtotal: int,
     discount: int,
+    security_fee: int,
     total_paid: int,
     invoice_date: date,
 ) -> bytes:
     """The team's full current billing-state PDF bytes."""
-    img = render_invoice_image(team, members, subtotal, discount, total_paid, invoice_date)
+    img = render_invoice_image(team, members, subtotal, discount, security_fee, total_paid, invoice_date)
     buf = io.BytesIO()
     img.save(buf, format="PDF", resolution=float(PRINT_DPI))
     return buf.getvalue()
