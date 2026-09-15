@@ -47,6 +47,67 @@ def require_module(module_key: str):
     return _dep
 
 
+def is_self_service_staff(user: "models.OrganizerUser") -> bool:
+    """True for an ordinary staff member's own login — as opposed to an
+    admin, or a non-admin account an admin has deliberately given real
+    "staff":"edit" access to run Staff Operations on others' behalf.
+
+    Auto-provisioned staff logins (routers/staff.py create_staff_credential)
+    are granted schemas.STAFF_BASE_PERMISSIONS, which includes "staff":"view"
+    so they can see day-to-day operational modules — but that "view" grant
+    was never meant to expose the organizer-wide Staff Directory / Duty
+    Overview / Shift Blocks / global Tasks board, only this account's own
+    data (see routers/me.py). Keying off the OrganizerUser<->StaffMember
+    link (not the stored permission level, which an old/legacy account might
+    still carry) means this stays correct even if STAFF_BASE_PERMISSIONS
+    changes later or a row predates this check.
+    """
+    if user.is_admin:
+        return False
+    if (user.permissions or {}).get("staff") == "edit":
+        return False
+    return bool(user.staff_members)
+
+
+def resolve_self_staff(user: "models.OrganizerUser") -> "models.StaffMember | None":
+    """The one StaffMember this session's self-service data belongs to.
+
+    Identity always comes from the authenticated account's existing
+    OrganizerUser<->StaffMember link — never from a client-supplied staff
+    id. Returns None when nothing is linked (e.g. a pure admin account).
+
+    That link is modeled many-to-many (see models.organizer_user_staff /
+    OrganizerUserRead's staff_members list, and the Accounts page's
+    MultiStaffSelector, which lets an admin deliberately link more than one
+    StaffMember to a single shared login). When more than one is linked
+    there is no deterministic "this one is me" rule, so this raises rather
+    than silently picking staff_members[0] the way the display-only
+    /auth/me payload and Staff Live Map already do — those are read-only
+    name tags, not an authorization boundary for private per-staff data.
+    """
+    if not user.staff_members:
+        return None
+    if len(user.staff_members) > 1:
+        raise HTTPException(
+            409,
+            "This account is linked to multiple staff profiles, so self-service data is ambiguous. Ask an admin to link a single staff profile to this login.",
+        )
+    return user.staff_members[0]
+
+
+def require_staff_operator(request: Request, db: Session = Depends(get_db)) -> "models.OrganizerUser":
+    """Gate for the organizer-wide Staff Operations surface (staff.py,
+    event_locations.py) — like require_module("staff"), but a self-service
+    staff account never gets in here even though it carries "staff":"view"
+    for other purposes (see is_self_service_staff). Real Staff Ops
+    coordinators still get in via is_admin or an explicit "staff":"edit"
+    grant, exactly as require_module("staff") already worked for them."""
+    user = require_module("staff")(request, db)
+    if is_self_service_staff(user):
+        raise HTTPException(403, "Use your My Work page for your own shifts, duties and tasks")
+    return user
+
+
 # Router-level gate for routers/matches.py only (registered in main.py in place
 # of require_module("matches") — pools/buckets/reports/mats keep the plain
 # module gate). An account assigned to a match (models.Match.assigned_users)

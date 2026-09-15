@@ -782,12 +782,50 @@ class EventLocationRead(ORMModel, EventLocationBase):
     duty_count: Optional[int] = 0
 
 
+# --- Operational Areas (shift-wise reporting/team classification) ---
+# See models.OperationalArea: WHO A DUTY REPORTS UNDER, distinct from
+# duty_type (WHAT specific task) and EventLocation (WHERE). Same small
+# lookup shape/conventions as EventLocation above.
+class OperationalAreaBase(BaseModel):
+    code: str
+    name: str
+    description: Optional[str] = None
+    is_active: bool = True
+    sort_order: int = 0
+
+
+class OperationalAreaCreate(OperationalAreaBase):
+    pass
+
+
+class OperationalAreaUpdate(BaseModel):
+    code: Optional[str] = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+
+class OperationalAreaRead(ORMModel, OperationalAreaBase):
+    id: int
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    duty_count: Optional[int] = 0
+
+
+# One area's in-charge roster for one ShiftBlock (bulk-sync request shape).
+class ShiftAreaInchargeGroup(BaseModel):
+    operational_area_id: int
+    staff_ids: list[int] = []
+
+
 class DutyAssignmentCreate(BaseModel):
     staff_id: int
     shift_id: Optional[int] = None
     room_id: Optional[int] = None
     location_id: Optional[int] = None
     duty_type: str
+    operational_area_id: Optional[int] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     notes: Optional[str] = None
@@ -799,6 +837,7 @@ class DutyAssignmentUpdate(BaseModel):
     room_id: Optional[int] = None
     location_id: Optional[int] = None
     duty_type: Optional[str] = None
+    operational_area_id: Optional[int] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     notes: Optional[str] = None

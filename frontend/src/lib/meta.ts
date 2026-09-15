@@ -40,6 +40,20 @@ export const priorityTone = (p: string): Tone => {
 export const formatDate = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
 
+// Compact "+1h" / "+45m" / "+1h 30m" style for a duty's outside-shift-window
+// overflow (backend's DutyAssignment `outside_shift_minutes` — see
+// routers/staff.py `_duty_shift_overflow_minutes`). Shared by the organizer
+// ShiftBlock roster (Staff.tsx) and the staff self-service My Work page so
+// both render the same overflow the same way.
+export const formatOverflowMinutes = (minutes?: number | null): string | null => {
+  if (!minutes || minutes <= 0) return null;
+  const hrs = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hrs > 0 && mins > 0) return `+${hrs}h ${mins}m`;
+  if (hrs > 0) return `+${hrs}h`;
+  return `+${mins}m`;
+};
+
 export const formatMoney = (v?: number | string | null, currency = "INR") => {
   if (v === null || v === undefined || v === "") return "—";
   const n = typeof v === "string" ? parseFloat(v) : v;

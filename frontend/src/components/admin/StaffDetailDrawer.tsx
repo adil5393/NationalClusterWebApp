@@ -606,7 +606,7 @@ export function StaffDetailDrawer({
                     <HardHat className="h-8 w-8 text-slate-500 mx-auto" />
                     <p className="font-heading text-sm font-bold text-white">No Duty Assignments</p>
                     <p className="text-xs text-slate-400 font-body">
-                      Assign this staff member to rooms or tournament posts from the Staff Duties page.
+                      Assign operational duties to this staff member from their scheduled Shift Block in Staff Operations.
                     </p>
                   </div>
                 ) : (

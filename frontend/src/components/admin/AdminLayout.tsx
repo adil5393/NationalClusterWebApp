@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Capacitor } from "@capacitor/core";
 import { Geolocation } from "@capacitor/geolocation";
 import {
@@ -54,6 +54,26 @@ interface NavGroup {
     moduleKey?: string;
   }[];
 }
+
+// Paths that only make sense for someone running Staff Operations for
+// everyone (an admin, or an account with real "staff":"edit" access) — a
+// self-service staff account (an ordinary staff member's own login) never
+// sees these, regardless of what its auto-granted module permissions say.
+// See security.is_self_service_staff on the backend, which is the actual
+// enforcement boundary; this is only what decides what to render.
+const STAFF_OPS_ONLY_PATHS = new Set([
+  "/admin",
+  "/admin/staff",
+  "/admin/duties",
+  "/admin/staff-map",
+  "/admin/tasks",
+  "/admin/accounts",
+]);
+
+const MY_WORK_GROUP: NavGroup = {
+  title: "My Work",
+  items: [{ to: "/admin/my-work", label: "My Work", icon: ClipboardList, end: true }],
+};
 
 const NAV_GROUPS: NavGroup[] = [
   {
@@ -133,6 +153,7 @@ export function AdminLayout() {
   const [me, setMe] = useState<Me | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -149,6 +170,15 @@ export function AdminLayout() {
       .catch(() => navigate("/admin/login"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // A self-service staff account has no organizer Dashboard to land on
+  // (STAFF_OPS_ONLY_PATHS hides it from the sidebar) — send them straight to
+  // their own work instead of the generic organizer overview.
+  useEffect(() => {
+    if (me?.is_self_service_staff && location.pathname === "/admin") {
+      navigate("/admin/my-work", { replace: true });
+    }
+  }, [me, location.pathname, navigate]);
 
   const logout = async () => {
     await api.post("/auth/logout");
@@ -234,6 +264,10 @@ export function AdminLayout() {
   }
 
   const isItemVisible = (moduleKey?: string, to?: string) => {
+    // Drastically reduced nav for a self-service staff account: never the
+    // organizer-wide Staff Operations surface, no matter what its
+    // auto-granted module permissions look like (see STAFF_OPS_ONLY_PATHS).
+    if (me?.is_self_service_staff && to && STAFF_OPS_ONLY_PATHS.has(to)) return false;
     if (!moduleKey) return true;
     // Both of these are deliberately not real gate-able modules (see
     // schemas.ORGANIZER_MODULES) — admin-only, full stop, not something a
@@ -302,7 +336,7 @@ export function AdminLayout() {
 
         {/* NAVIGATION GROUPS */}
         <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-5" aria-label="Operations Navigation">
-          {NAV_GROUPS.map((group) => {
+          {(me?.is_self_service_staff ? [MY_WORK_GROUP, ...NAV_GROUPS] : NAV_GROUPS).map((group) => {
             const visibleItems = group.items.filter((item) => isItemVisible(item.moduleKey, item.to));
             if (visibleItems.length === 0) return null;
 
@@ -360,7 +394,7 @@ export function AdminLayout() {
                     </span>
                   ) : (
                     <span className="rounded bg-white/10 px-1 py-0.2 text-[9px] font-medium text-slate-400">
-                      OFFICER
+                      {me.is_self_service_staff ? "STAFF" : "OFFICER"}
                     </span>
                   )}
                 </div>

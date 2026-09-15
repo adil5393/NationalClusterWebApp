@@ -50,10 +50,24 @@ export interface Duty {
   building_id?: number;
   building_name?: string;
   duty_type: string;
+  operational_area_id?: number | null;
+  operational_area_name?: string | null;
+  operational_area_code?: string | null;
   start_time?: string;
   end_time?: string;
   notes?: string;
   warning?: string | null;
+  outside_shift_minutes?: number | null;
+}
+
+export interface OperationalAreaItem {
+  id: number;
+  code: string;
+  name: string;
+  description?: string | null;
+  is_active: boolean;
+  sort_order: number;
+  duty_count?: number;
 }
 
 export interface EventLocationItem {
@@ -79,14 +93,6 @@ export interface ShiftOption {
   is_active?: boolean;
 }
 
-interface RoomOpt {
-  id: number;
-  name: string;
-  floor: string;
-  building: string;
-  label: string;
-}
-
 export const LOCATION_TYPES = [
   "GROUND",
   "MAT",
@@ -105,7 +111,6 @@ const emptyAssignForm = {
   staff_id: null as number | null,
   shift_id: "" as string,
   location_id: "" as string,
-  room_id: "" as string,
   duty_type: "",
   start_time: "",
   end_time: "",
@@ -127,7 +132,6 @@ export default function Duties() {
   // Core data
   const [duties, setDuties] = useState<Duty[]>([]);
   const [staff, setStaff] = useState<StaffOption[]>([]);
-  const [rooms, setRooms] = useState<RoomOpt[]>([]);
   const [locations, setLocations] = useState<EventLocationItem[]>([]);
   const [shifts, setShifts] = useState<ShiftOption[]>([]);
   const [dutyTypes, setDutyTypes] = useState<string[]>([]);
@@ -160,15 +164,13 @@ export default function Duties() {
     Promise.all([
       api.get<Duty[]>("/staff/duties"),
       api.get<StaffOption[]>("/staff"),
-      api.get<RoomOpt[]>("/accommodation/rooms"),
       api.get<EventLocationItem[]>("/event-locations"),
       api.get<ShiftOption[]>("/staff/shifts"),
       api.get<{ duty_types: string[]; staff_categories: string[] }>("/staff/meta"),
     ])
-      .then(([d, s, r, l, sh, m]) => {
+      .then(([d, s, l, sh, m]) => {
         setDuties(d.data);
         setStaff(s.data);
-        setRooms(r.data);
         setLocations(l.data);
         setShifts(sh.data);
         setDutyTypes(m.data.duty_types);
@@ -183,14 +185,14 @@ export default function Duties() {
 
   useEffect(load, []);
 
-  // Distinct buildings from rooms for filter
+  // Distinct buildings from existing duty records for legacy filter compatibility
   const buildings = useMemo(() => {
     const set = new Set<string>();
-    for (const r of rooms) {
-      if (r.building) set.add(r.building);
+    for (const d of duties) {
+      if (d.building_name) set.add(d.building_name);
     }
     return Array.from(set).sort();
-  }, [rooms]);
+  }, [duties]);
 
   // Distinct duty types currently assigned or available
   const allDutyTypes = useMemo(() => {
@@ -353,7 +355,6 @@ export default function Duties() {
         staff_id: Number(dutyForm.staff_id),
         shift_id: dutyForm.shift_id ? Number(dutyForm.shift_id) : null,
         location_id: dutyForm.location_id ? Number(dutyForm.location_id) : null,
-        room_id: dutyForm.room_id ? Number(dutyForm.room_id) : null,
         duty_type: dutyForm.duty_type.trim(),
         start_time: startIso,
         end_time: endIso,
@@ -495,25 +496,10 @@ export default function Duties() {
             Operational Duties & Venues
           </h1>
           <p className="mt-1 text-xs sm:text-sm text-slate-400 font-body">
-            Manage operational deployments: <strong>WHO</strong> (Staff), <strong>WHAT</strong> (Duty),{" "}
-            <strong>WHERE</strong> (Event Location / Venue), and <strong>WHEN</strong> (Shift Window).
+            Overview and monitoring of operational responsibilities across shifts, personnel, and event venues.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {mainTab === "duties" && canEdit && (
-            <Button
-              variant="gold"
-              size="sm"
-              onClick={() => {
-                setDutyForm(emptyAssignForm);
-                setOpenDutyModal(true);
-              }}
-              data-testid="add-duty-btn"
-              className="text-xs font-extrabold shrink-0"
-            >
-              <Plus className="h-4 w-4" /> Assign New Duty
-            </Button>
-          )}
           {mainTab === "locations" && canEdit && (
             <Button
               variant="gold"
@@ -542,7 +528,7 @@ export default function Duties() {
           )}
         >
           <Briefcase className="h-3.5 w-3.5" />
-          <span>Duty Allotments ({duties.length})</span>
+          <span>Duty Overview ({duties.length})</span>
         </button>
 
         <button
@@ -557,7 +543,7 @@ export default function Duties() {
           )}
         >
           <MapPin className="h-3.5 w-3.5" />
-          <span>Event Locations Catalogue ({locations.length})</span>
+          <span>Event Locations ({locations.length})</span>
         </button>
       </div>
 
@@ -700,7 +686,7 @@ export default function Duties() {
             <div className="rounded-xl border border-white/10 bg-obsidian-900 p-8">
               <EmptyState
                 title="No duty allotments yet"
-                hint="Click 'Assign New Duty' above to assign personnel to operational venues and shifts."
+                hint="Operational duties are allocated to personnel within their scheduled Shift Block in Staff Operations."
               />
             </div>
           ) : filteredDuties.length === 0 ? (
@@ -1169,7 +1155,7 @@ export default function Duties() {
             <Label>Operational Location (WHERE)</Label>
             <Select
               value={dutyForm.location_id}
-              onChange={(e) => setDutyForm((f) => ({ ...f, location_id: e.target.value, room_id: "" }))}
+              onChange={(e) => setDutyForm((f) => ({ ...f, location_id: e.target.value }))}
               data-testid="duty-location-select"
             >
               <option value="">Select Operational Venue (Ground, Gate, Reception…) </option>
@@ -1180,25 +1166,6 @@ export default function Duties() {
               ))}
             </Select>
           </div>
-
-          {/* LEGACY ROOM ASSIGNMENT (OPTIONAL) */}
-          {rooms.length > 0 && !dutyForm.location_id && (
-            <div>
-              <Label>Or Legacy Room Assignment</Label>
-              <Select
-                value={dutyForm.room_id}
-                onChange={(e) => setDutyForm((f) => ({ ...f, room_id: e.target.value, location_id: "" }))}
-                data-testid="duty-room-select"
-              >
-                <option value="">None (Operational Venue above preferred)</option>
-                {rooms.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.label}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          )}
 
           {/* TIME WINDOW */}
           <div className="grid gap-3 sm:grid-cols-2">

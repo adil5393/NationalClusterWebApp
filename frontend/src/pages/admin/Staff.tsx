@@ -20,6 +20,7 @@ import {
   Calendar,
   MapPin,
   AlertTriangle,
+  Shield,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -30,8 +31,9 @@ import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { formatOverflowMinutes } from "@/lib/meta";
 import { useModuleAccess } from "@/lib/permissions";
-import { StaffSelector, MultiStaffSelector } from "@/components/admin/StaffSelector";
+import { StaffSelector, MultiStaffSelector, StaffOption } from "@/components/admin/StaffSelector";
 import {
   StaffDetailDrawer,
   StaffDetailMember,
@@ -39,7 +41,7 @@ import {
   StaffDutyItem,
   StaffTaskItem,
 } from "@/components/admin/StaffDetailDrawer";
-import { EventLocationItem } from "@/pages/admin/Duties";
+import { EventLocationItem, OperationalAreaItem } from "@/pages/admin/Duties";
 
 export interface ShiftBlockItem {
   id: number;
@@ -60,6 +62,8 @@ export interface ShiftBlockItem {
       location_name?: string;
       room_name?: string;
       notes?: string;
+      warning?: string | null;
+      outside_shift_minutes?: number | null;
     }[];
     tasks?: {
       id: number;
@@ -69,6 +73,14 @@ export interface ShiftBlockItem {
       due_date?: string;
     }[];
   })[];
+  // WHO leads WHICH Operational Area for this ShiftBlock — see
+  // models.ShiftOperationalIncharge. Grouped by area already, server-side.
+  incharges?: {
+    operational_area_id: number;
+    operational_area_name: string | null;
+    operational_area_code: string | null;
+    staff: { id: number; full_name: string }[];
+  }[];
   created_at?: string;
   updated_at?: string;
 }
@@ -140,18 +152,29 @@ export default function Staff() {
   // Operational locations & duty types
   const [locations, setLocations] = useState<EventLocationItem[]>([]);
   const [dutyTypes, setDutyTypes] = useState<string[]>([]);
+  const [operationalAreas, setOperationalAreas] = useState<OperationalAreaItem[]>([]);
 
   // Contextual Duty Modal State (from ShiftBlock view)
   const [openContextDutyModal, setOpenContextDutyModal] = useState(false);
   const [contextDutyStaff, setContextDutyStaff] = useState<{ id: number; name: string } | null>(null);
   const [contextDutyShift, setContextDutyShift] = useState<{ id: number; name: string; start_time: string; end_time: string } | null>(null);
   const [contextDutyForm, setContextDutyForm] = useState({
+    operational_area_id: "",
     duty_type: "",
     location_id: "",
     start_time: "",
     end_time: "",
     notes: "",
   });
+
+  // Manage In-Charges Modal State (from ShiftBlock view) — see
+  // models.ShiftOperationalIncharge: WHO leads WHICH Operational Area for
+  // this one ShiftBlock. Only staff already on this block's own roster are
+  // eligible (enforced server-side too).
+  const [openInchargesModal, setOpenInchargesModal] = useState(false);
+  const [managingInchargesBlock, setManagingInchargesBlock] = useState<ShiftBlockItem | null>(null);
+  const [inchargesForm, setInchargesForm] = useState<Record<number, number[]>>({});
+  const [savingIncharges, setSavingIncharges] = useState(false);
 
   // Contextual Task Modal State (from ShiftBlock view)
   const [openContextTaskModal, setOpenContextTaskModal] = useState(false);
@@ -175,8 +198,9 @@ export default function Staff() {
       api.get<StaffTaskItem[]>("/tasks"),
       api.get<{ duty_types: string[]; staff_categories: string[] }>("/staff/meta"),
       api.get<EventLocationItem[]>("/event-locations"),
+      api.get<OperationalAreaItem[]>("/operational-areas"),
     ])
-      .then(([s, sb, sh, d, t, m, l]) => {
+      .then(([s, sb, sh, d, t, m, l, oa]) => {
         setStaff(s.data);
         setShiftBlocks(sb.data);
         setShifts(sh.data);
@@ -185,6 +209,7 @@ export default function Staff() {
         setDutyTypes(m.data.duty_types);
         setStaffCategories(m.data.staff_categories);
         setLocations(l.data);
+        setOperationalAreas(oa.data);
       })
       .catch((err) => {
         console.error("Failed to load staff roster data:", err);
@@ -561,6 +586,58 @@ export default function Staff() {
     }
   };
 
+  // Only staff already on this ShiftBlock's own roster are eligible to lead
+  // it (enforced server-side too) — never the whole staff directory.
+  const eligibleInchargeStaff: StaffOption[] = useMemo(() => {
+    return (managingInchargesBlock?.staff_assignments || []).map((a) => ({
+      id: a.staff_id,
+      full_name: a.staff_name || `Staff #${a.staff_id}`,
+      category: a.staff_category || null,
+      phone: a.staff_phone || null,
+    }));
+  }, [managingInchargesBlock]);
+
+  const openInchargesDialog = (block: ShiftBlockItem) => {
+    const initial: Record<number, number[]> = {};
+    for (const g of block.incharges || []) {
+      initial[g.operational_area_id] = g.staff.map((s) => s.id);
+    }
+    setManagingInchargesBlock(block);
+    setInchargesForm(initial);
+    setOpenInchargesModal(true);
+  };
+
+  const toggleInchargeStaff = (areaId: number, staffIds: number[]) => {
+    setInchargesForm((prev) => ({ ...prev, [areaId]: staffIds }));
+  };
+
+  const saveIncharges = async () => {
+    if (!managingInchargesBlock) return;
+    setSavingIncharges(true);
+    try {
+      // Send every active area, plus any area already carrying in-charges
+      // (even if since deactivated) so this save never silently wipes an
+      // area the dialog doesn't show a selector for.
+      const areaIds = new Set<number>([
+        ...activeOperationalAreas.map((a) => a.id),
+        ...Object.keys(inchargesForm).map(Number),
+      ]);
+      const payload = Array.from(areaIds).map((areaId) => ({
+        operational_area_id: areaId,
+        staff_ids: inchargesForm[areaId] || [],
+      }));
+      await api.put(`/staff/shift-blocks/${managingInchargesBlock.id}/incharges`, payload);
+      toast.success("In-charges updated");
+      setOpenInchargesModal(false);
+      setManagingInchargesBlock(null);
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not update in-charges");
+    } finally {
+      setSavingIncharges(false);
+    }
+  };
+
   const toLocalIso = (isoStr: string) => {
     try {
       const d = new Date(isoStr);
@@ -575,10 +652,15 @@ export default function Staff() {
     return locations.filter((l) => l.is_active);
   }, [locations]);
 
+  const activeOperationalAreas = useMemo(() => {
+    return operationalAreas.filter((a) => a.is_active);
+  }, [operationalAreas]);
+
   const handleOpenContextDuty = (block: ShiftBlockItem, assignment: any) => {
     setContextDutyStaff({ id: assignment.staff_id, name: assignment.staff_name || `Staff #${assignment.staff_id}` });
     setContextDutyShift({ id: assignment.id, name: block.name, start_time: block.start_time, end_time: block.end_time });
     setContextDutyForm({
+      operational_area_id: "",
       duty_type: "",
       location_id: "",
       start_time: toLocalIso(block.start_time),
@@ -603,7 +685,8 @@ export default function Staff() {
 
   const saveContextDuty = async () => {
     if (!contextDutyStaff || !contextDutyShift) return;
-    if (!contextDutyForm.duty_type.trim()) return toast.error("Duty responsibility is required");
+    if (!contextDutyForm.operational_area_id) return toast.error("Operational area is required");
+    if (!contextDutyForm.duty_type.trim()) return toast.error("Specific duty is required");
 
     let startIso: string | null = null;
     let endIso: string | null = null;
@@ -624,6 +707,7 @@ export default function Staff() {
       const res = await api.post("/staff/duties", {
         staff_id: contextDutyStaff.id,
         shift_id: contextDutyShift.id,
+        operational_area_id: Number(contextDutyForm.operational_area_id),
         duty_type: contextDutyForm.duty_type.trim(),
         location_id: contextDutyForm.location_id ? Number(contextDutyForm.location_id) : null,
         start_time: startIso,
@@ -717,41 +801,7 @@ export default function Staff() {
         )}
       </div>
 
-      {/* METRIC CARDS */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        <div className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-1">
-          <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400">
-            Total Personnel
-          </p>
-          <p className="font-heading text-xl sm:text-2xl font-black text-white">{staff.length}</p>
-        </div>
-        <div className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-1">
-          <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400">
-            On Shift Now
-          </p>
-          <p className="font-heading text-xl sm:text-2xl font-black text-emerald-400">{activeNowCount}</p>
-        </div>
-        <div className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-1">
-          <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400">
-            Total Shifts
-          </p>
-          <p className="font-heading text-xl sm:text-2xl font-black text-white">{shifts.length}</p>
-        </div>
-        <div className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-1">
-          <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400">
-            Allotted Duties
-          </p>
-          <p className="font-heading text-xl sm:text-2xl font-black text-gold">{duties.length}</p>
-        </div>
-        <div className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-1 col-span-2 sm:col-span-1">
-          <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400">
-            Total Tasks
-          </p>
-          <p className="font-heading text-xl sm:text-2xl font-black text-cyan-400">{tasks.length}</p>
-        </div>
-      </div>
-
-      {/* TABS: PERSONNEL DIRECTORY vs SHIFT BLOCKS */}
+      {/* TABS: PEOPLE vs SHIFT BLOCKS */}
       <div className="flex items-center gap-2 border-b border-white/10 pb-2">
         <button
           type="button"
@@ -765,7 +815,7 @@ export default function Staff() {
           data-testid="tab-staff-directory"
         >
           <Users className="h-3.5 w-3.5" />
-          <span>Personnel Directory</span>
+          <span>People</span>
           <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-mono", viewTab === "staff" ? "bg-obsidian/20 text-obsidian font-black" : "bg-white/10 text-slate-300")}>
             {staff.length}
           </span>
@@ -791,6 +841,33 @@ export default function Staff() {
 
       {viewTab === "staff" && (
         <>
+          {/* PERSONNEL METRICS CARDS */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-1">
+              <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400">
+                Total Personnel
+              </p>
+              <p className="font-heading text-xl sm:text-2xl font-black text-white">{staff.length}</p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-1">
+              <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400">
+                With Login Access
+              </p>
+              <p className="font-heading text-xl sm:text-2xl font-black text-emerald-400">{totalLogins}</p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-1">
+              <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400">
+                Roles & Categories
+              </p>
+              <p className="font-heading text-xl sm:text-2xl font-black text-gold">{staffCategories.length}</p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-1">
+              <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400">
+                On Shift Right Now
+              </p>
+              <p className="font-heading text-xl sm:text-2xl font-black text-cyan-400">{activeNowCount}</p>
+            </div>
+          </div>
           {/* SEARCH AND FILTER BAR */}
       <div className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-3">
         <div className="flex flex-col sm:flex-row gap-2.5">
@@ -1121,6 +1198,28 @@ export default function Staff() {
       {/* SHIFT BLOCKS VIEW */}
       {viewTab === "shifts" && (
         <div className="space-y-4">
+          {/* SHIFT WORKSPACE METRICS */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-1">
+              <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400">
+                Total Shift Blocks
+              </p>
+              <p className="font-heading text-xl sm:text-2xl font-black text-white">{shiftBlocks.length}</p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-1">
+              <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400">
+                Active Shifts Now
+              </p>
+              <p className="font-heading text-xl sm:text-2xl font-black text-emerald-400">{activeNowCount}</p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-1 col-span-2 sm:col-span-1">
+              <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400">
+                Staff Members Assigned
+              </p>
+              <p className="font-heading text-xl sm:text-2xl font-black text-gold">{shifts.length}</p>
+            </div>
+          </div>
+
           {shiftBlocks.length === 0 ? (
             <div className="rounded-xl border border-white/10 bg-obsidian-900 p-8">
               <EmptyState
@@ -1258,7 +1357,42 @@ export default function Staff() {
 
                     {/* EXPANDED ASSIGNED STAFF LIST */}
                     {isExpanded && (
-                      <div className="border-t border-white/10 pt-3 space-y-2">
+                      <div className="border-t border-white/10 pt-3 space-y-3">
+                        {/* OPERATIONAL AREA IN-CHARGES */}
+                        <div className="rounded-lg bg-white/[0.03] border border-white/10 p-2.5 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[11px] font-heading font-extrabold uppercase tracking-wider text-slate-400">
+                              In-Charges
+                            </p>
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={() => openInchargesDialog(block)}
+                                data-testid={`manage-incharges-${block.id}`}
+                                className="text-[11px] font-bold text-gold hover:underline flex items-center gap-1"
+                              >
+                                <Shield className="h-3 w-3" /> Manage In-Charges
+                              </button>
+                            )}
+                          </div>
+                          {!block.incharges || block.incharges.length === 0 ? (
+                            <p className="text-[11px] text-slate-500 italic">No in-charges assigned yet.</p>
+                          ) : (
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              {block.incharges.map((g) => (
+                                <div key={g.operational_area_id} className="text-xs">
+                                  <p className="font-heading font-bold text-gold">{g.operational_area_name}</p>
+                                  {g.staff.map((s) => (
+                                    <p key={s.id} className="text-slate-300 font-body pl-2">
+                                      {s.full_name}
+                                    </p>
+                                  ))}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
                         <div className="flex items-center justify-between">
                           <p className="text-[11px] font-heading font-extrabold uppercase tracking-wider text-slate-400">
                             Assigned Staff ({block.staff_assignments?.length || 0})
@@ -1330,20 +1464,34 @@ export default function Staff() {
                                   )}
                                 </div>
 
-                                {/* Operational duties for this staff member */}
+                                {/* Operational duties for this staff member — stacked
+                                    WHEN / WHAT / WHERE / WARNING so it scans at a
+                                    glance instead of one dense punctuation-heavy line */}
                                 {assignment.duties && assignment.duties.length > 0 && (
-                                  <div className="space-y-1 border-t border-white/5 pt-1.5 font-mono text-[11px]">
-                                    {assignment.duties.map((d) => (
-                                      <div key={d.id} className="flex items-center justify-between text-slate-300">
-                                        <span className="flex items-center gap-1">
-                                          <span className="text-slate-500 font-sans">
-                                            {d.start_time && d.end_time ? `${formatShiftTime(d.start_time)}–${formatShiftTime(d.end_time)}${getShiftDuration(d.start_time, d.end_time) ? ` (${getShiftDuration(d.start_time, d.end_time)})` : ""}` : "All Day"}
+                                  <div className="space-y-1.5 border-t border-white/5 pt-1.5">
+                                    {assignment.duties.map((d) => {
+                                      const overflow = formatOverflowMinutes(d.outside_shift_minutes);
+                                      return (
+                                        <div key={d.id} className="flex items-start gap-2 text-[11px]">
+                                          <span className="shrink-0 font-mono text-slate-500 pt-0.5 w-[86px]">
+                                            {d.start_time && d.end_time ? `${formatShiftTime(d.start_time)}–${formatShiftTime(d.end_time)}` : "All Day"}
                                           </span>
-                                          <span className="text-white font-bold">{d.duty_type}</span>
-                                          <span className="text-emerald-400 font-sans">· 📍 {d.location_name || d.room_name || "Operational Venue"}</span>
-                                        </span>
-                                      </div>
-                                    ))}
+                                          <div className="min-w-0 flex-1 space-y-0.5">
+                                            <p className="text-white font-bold font-sans">{d.duty_type}</p>
+                                            <p className="text-emerald-400 font-sans flex items-center gap-1">
+                                              <MapPin className="h-2.5 w-2.5 shrink-0" />
+                                              {d.location_name || d.room_name || "Operational Venue"}
+                                            </p>
+                                            {d.warning && (
+                                              <p className="text-amber-400 font-sans flex items-center gap-1">
+                                                <AlertTriangle className="h-2.5 w-2.5 shrink-0" />
+                                                Outside shift{overflow ? ` · ${overflow}` : ""}
+                                              </p>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
                                   </div>
                                 )}
 
@@ -1672,6 +1820,65 @@ export default function Staff() {
         </div>
       </Dialog>
 
+      {/* MANAGE OPERATIONAL AREA IN-CHARGES DIALOG */}
+      <Dialog
+        open={openInchargesModal}
+        onClose={() => setOpenInchargesModal(false)}
+        title={`Manage In-Charges — ${managingInchargesBlock?.name || "Shift Block"}`}
+        testId="manage-incharges-dialog"
+      >
+        <div className="space-y-4">
+          {managingInchargesBlock && (
+            <div className="rounded-lg bg-white/5 p-3 border border-white/10 text-xs">
+              <span className="font-heading font-black text-white block text-sm">
+                {managingInchargesBlock.name}
+              </span>
+              <span className="text-slate-400 font-mono text-[11px]">
+                {formatShiftDate(managingInchargesBlock.start_time)} · {formatShiftTime(managingInchargesBlock.start_time)} – {formatShiftTime(managingInchargesBlock.end_time)}
+              </span>
+            </div>
+          )}
+
+          {eligibleInchargeStaff.length === 0 ? (
+            <p className="text-xs text-slate-400 italic">
+              No staff are assigned to this shift block yet — assign staff first, then choose their in-charges here.
+            </p>
+          ) : activeOperationalAreas.length === 0 ? (
+            <p className="text-xs text-slate-400 italic">
+              No Operational Areas exist yet. Add one from the Duties &amp; Venues page first.
+            </p>
+          ) : (
+            <div className="space-y-3.5 max-h-96 overflow-y-auto pr-1">
+              {activeOperationalAreas.map((a) => (
+                <div key={a.id} className="rounded-lg bg-obsidian-950 p-2.5 border border-white/5 space-y-1.5">
+                  <Label className="text-[11px] text-gold">{a.name}</Label>
+                  <MultiStaffSelector
+                    staff={eligibleInchargeStaff}
+                    selectedIds={inchargesForm[a.id] || []}
+                    onChange={(ids) => toggleInchargeStaff(a.id, ids)}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-white/10">
+            <Button variant="outline" size="sm" onClick={() => setOpenInchargesModal(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="gold"
+              size="sm"
+              onClick={saveIncharges}
+              disabled={savingIncharges || eligibleInchargeStaff.length === 0}
+              data-testid="save-incharges-btn"
+            >
+              {savingIncharges ? "Saving…" : "Save In-Charges"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
       {/* NEW LOGIN CREDENTIALS MODAL */}
       <Dialog
         open={Boolean(newLogin)}
@@ -1732,9 +1939,28 @@ export default function Staff() {
           </div>
 
           <div>
-            <Label>Duty Responsibility *</Label>
+            <Label>Operational Area *</Label>
+            <Select
+              value={contextDutyForm.operational_area_id}
+              onChange={(e) => setContextDutyForm((f) => ({ ...f, operational_area_id: e.target.value }))}
+              data-testid="context-duty-area-select"
+            >
+              <option value="">Select the team this duty reports under…</option>
+              {activeOperationalAreas.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </Select>
+            <p className="mt-1 text-[11px] text-slate-500 font-body">
+              WHO this duty reports under — its in-charge(s) for this shift. Separate from the specific duty below.
+            </p>
+          </div>
+
+          <div>
+            <Label>Specific Duty *</Label>
             <Input
-              placeholder="e.g. Ground Coordination, Match Control, Team Reception"
+              placeholder="e.g. Match Control, Court Support, Water Distribution"
               list="staff-duty-types"
               value={contextDutyForm.duty_type}
               onChange={(e) => setContextDutyForm((f) => ({ ...f, duty_type: e.target.value }))}

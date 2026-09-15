@@ -526,12 +526,14 @@ class KnowledgeItem(TimestampMixin, Base):
 
 
 class Task(TimestampMixin, Base):
-    """The shared staff task board (routers/tasks.py) — every logged-in account
-    (organizer or staff) sees the same board and can add to it; category is the
-    free-text "list" it sits in. assigned_staff_id is optional: an unassigned
-    task is just a general team to-do, an assigned one additionally shows up as
-    "yours" to that staff member — distinct from DutyAssignment, which is the
-    room/shift roster, not a to-do."""
+    """The organizer-wide task board (routers/tasks.py) — organizer/operator
+    accounts see and manage the whole board; category is the free-text "list"
+    it sits in. assigned_staff_id is optional: an unassigned task is just a
+    general team to-do, an assigned one additionally shows up as "yours" to
+    that staff member via routers/me.py's self-service endpoints (a
+    self-service staff account has no access to routers/tasks.py itself) —
+    distinct from DutyAssignment, which is the room/shift roster, not a
+    to-do."""
     __tablename__ = "tasks"
     id = Column(Integer, primary_key=True)
     title = Column(String(200), nullable=False)
@@ -619,6 +621,7 @@ class ShiftBlock(TimestampMixin, Base):
     notes = Column(Text)
 
     staff_assignments = relationship("StaffShift", back_populates="shift_block", cascade="all, delete-orphan")
+    incharges = relationship("ShiftOperationalIncharge", back_populates="shift_block", cascade="all, delete-orphan")
 
     @property
     def is_active(self) -> bool:
@@ -699,6 +702,39 @@ class EventLocation(TimestampMixin, Base):
     duties = relationship("DutyAssignment", back_populates="location")
 
 
+class OperationalArea(TimestampMixin, Base):
+    """A stable reporting/team classification for duties — e.g. "Ground /
+    Match Operations", "Food" — answering WHO A DUTY REPORTS UNDER, distinct
+    from DutyAssignment.duty_type (WHAT specific task, e.g. "Match Control"
+    or "Court Support"), StaffMember.category (WHO the person broadly is),
+    and EventLocation (WHERE). Several duty_types can share one area (e.g.
+    "Match Control" and "Ground Coordination" both under GROUND_MATCH);
+    duty_type itself was found unsafe as this key during the Staff
+    Operations in-charge audit — it's free text with documented legacy
+    aliases (Food/Fooding, Accommodation/Lodging, ...) and no server-side
+    validation, so several strings can mean the same real responsibility
+    while looking unrelated to a naive string-based grouping.
+
+    Deliberately a small flat lookup (like EventLocation/WalkieChannel) —
+    no hierarchy, no scheduling behavior. See ShiftOperationalIncharge for
+    the shift-wise "who leads this area" relationship built on top of it."""
+    __tablename__ = "operational_areas"
+    __table_args__ = (
+        UniqueConstraint("code", name="uq_operational_areas_code"),
+        UniqueConstraint("name", name="uq_operational_areas_name"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    code = Column(String(40), nullable=False)  # stable machine key, e.g. "GROUND_MATCH"
+    name = Column(String(120), nullable=False)  # display label, e.g. "Ground / Match Operations"
+    description = Column(Text)
+    is_active = Column(Boolean, nullable=False, default=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+
+    duties = relationship("DutyAssignment", back_populates="operational_area")
+    incharges = relationship("ShiftOperationalIncharge", back_populates="operational_area", cascade="all, delete-orphan")
+
+
 class DutyAssignment(TimestampMixin, Base):
     __tablename__ = "duty_assignments"
     id = Column(Integer, primary_key=True)
@@ -707,6 +743,12 @@ class DutyAssignment(TimestampMixin, Base):
     room_id = Column(Integer, ForeignKey("rooms.id", ondelete="CASCADE"), nullable=True)
     location_id = Column(Integer, ForeignKey("event_locations.id", ondelete="SET NULL"), nullable=True, index=True)
     duty_type = Column(String(80), nullable=False)  # free text; suggestions from DUTY_TYPES
+    # Nullable for backward compatibility: every duty that existed before this
+    # column was added keeps working unmodified, at NULL ("unclassified")
+    # until an organizer re-saves it or the migration's deterministic
+    # duty_type backfill matched it. New duties are expected (API-validated,
+    # not DB-enforced) to always set this — see routers/staff.py create_duty.
+    operational_area_id = Column(Integer, ForeignKey("operational_areas.id", ondelete="SET NULL"), nullable=True, index=True)
     start_time = Column(DateTime(timezone=True))
     end_time = Column(DateTime(timezone=True))
     notes = Column(Text)
@@ -715,6 +757,40 @@ class DutyAssignment(TimestampMixin, Base):
     shift = relationship("StaffShift", back_populates="duties")
     room = relationship("Room", back_populates="duty_assignments")
     location = relationship("EventLocation", back_populates="duties")
+    operational_area = relationship("OperationalArea", back_populates="duties")
+
+
+class ShiftOperationalIncharge(TimestampMixin, Base):
+    """WHO leads a given OperationalArea for one specific ShiftBlock — e.g.
+    "Rahul and Sameer are in-charge of Ground / Match Operations for the
+    Morning Shift." One area can have several in-charges; one StaffMember
+    can be in-charge of several areas, and across many ShiftBlocks, just by
+    having a row per (shift_block, area) pair — no separate "for the whole
+    event" concept is needed.
+
+    IMPORTANT: keyed to shift_block_id (WHEN), never to StaffShift.id.
+    DutyAssignment.shift_id points at a StaffShift row (WHO is on that
+    block), a different id space — resolving "who is this duty's in-charge"
+    always requires DutyAssignment.shift_id -> StaffShift.shift_block_id ->
+    this table's shift_block_id, never a direct id comparison.
+
+    V1 is intentionally just a reporting-visibility relationship: being
+    listed here is not a StaffMember.category and grants no extra
+    OrganizerUser permissions (see security.py) — an in-charge only gets
+    read-only team visibility (routers/me.py), nothing else."""
+    __tablename__ = "shift_operational_incharges"
+    __table_args__ = (
+        UniqueConstraint("shift_block_id", "operational_area_id", "staff_id", name="uq_shift_area_incharge"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    shift_block_id = Column(Integer, ForeignKey("shift_blocks.id", ondelete="CASCADE"), nullable=False, index=True)
+    operational_area_id = Column(Integer, ForeignKey("operational_areas.id", ondelete="CASCADE"), nullable=False, index=True)
+    staff_id = Column(Integer, ForeignKey("staff_members.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    shift_block = relationship("ShiftBlock", back_populates="incharges")
+    operational_area = relationship("OperationalArea", back_populates="incharges")
+    staff = relationship("StaffMember")
 
 
 class StaffLocation(TimestampMixin, Base):

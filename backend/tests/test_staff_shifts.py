@@ -105,6 +105,15 @@ def sample_room(db_session):
     return room
 
 
+@pytest.fixture
+def sample_area(db_session):
+    area = models.OperationalArea(code="GROUND_MATCH", name="Ground / Match Operations")
+    db_session.add(area)
+    db_session.commit()
+    db_session.refresh(area)
+    return area
+
+
 # --- A. Create ShiftBlock ---
 def test_a_create_shift_block(client):
     now = datetime.now(timezone.utc)
@@ -335,7 +344,7 @@ def test_j_cancelled_shift_never_active(client, sample_staff):
 
 
 # --- K. Duty linked to correct StaffShift ---
-def test_k_duty_linked_to_correct_staff_shift(client, sample_staff, sample_room):
+def test_k_duty_linked_to_correct_staff_shift(client, sample_staff, sample_room, sample_area):
     now = datetime.now(timezone.utc)
     block = client.post(
         "/api/staff/shift-blocks",
@@ -355,6 +364,7 @@ def test_k_duty_linked_to_correct_staff_shift(client, sample_staff, sample_room)
             "shift_id": staff_shift_id,
             "room_id": sample_room.id,
             "duty_type": "Reception",
+            "operational_area_id": sample_area.id,
         },
     ).json()
 
@@ -368,7 +378,7 @@ def test_k_duty_linked_to_correct_staff_shift(client, sample_staff, sample_room)
 
 
 # --- L. Reject Duty linked to another StaffMember's StaffShift ---
-def test_l_reject_duty_mismatched_staff_shift(client, db_session, sample_staff, sample_room):
+def test_l_reject_duty_mismatched_staff_shift(client, db_session, sample_staff, sample_room, sample_area):
     staff2 = models.StaffMember(full_name="Priya Patel")
     db_session.add(staff2)
     db_session.commit()
@@ -393,6 +403,7 @@ def test_l_reject_duty_mismatched_staff_shift(client, db_session, sample_staff, 
             "shift_id": priya_shift_id,
             "room_id": sample_room.id,
             "duty_type": "Security",
+            "operational_area_id": sample_area.id,
         },
     )
     assert r.status_code == 400
@@ -465,13 +476,14 @@ def test_n_reject_task_mismatched_staff_shift(client, db_session, sample_staff):
 
 
 # --- O. Legacy Duty without shift remains valid ---
-def test_o_legacy_duty_without_shift_valid(client, sample_staff, sample_room):
+def test_o_legacy_duty_without_shift_valid(client, sample_staff, sample_room, sample_area):
     r = client.post(
         "/api/staff/duties",
         json={
             "staff_id": sample_staff.id,
             "room_id": sample_room.id,
             "duty_type": "Medical",
+            "operational_area_id": sample_area.id,
         },
     )
     assert r.status_code == 201
@@ -497,7 +509,7 @@ def test_p_legacy_task_without_shift_valid(client, sample_staff):
 
 
 # --- Q. Time overlap does NOT automatically link Duty/Task ---
-def test_q_time_overlap_does_not_auto_link(client, sample_staff, sample_room):
+def test_q_time_overlap_does_not_auto_link(client, sample_staff, sample_room, sample_area):
     now = datetime.now(timezone.utc)
     shift_start = now.replace(hour=8, minute=0, second=0, microsecond=0)
     shift_end = now.replace(hour=16, minute=0, second=0, microsecond=0)
@@ -518,6 +530,7 @@ def test_q_time_overlap_does_not_auto_link(client, sample_staff, sample_room):
             "staff_id": sample_staff.id,
             "room_id": sample_room.id,
             "duty_type": "Security",
+            "operational_area_id": sample_area.id,
             "start_time": (shift_start + timedelta(hours=2)).isoformat(),
             "end_time": (shift_start + timedelta(hours=4)).isoformat(),
         },
@@ -541,7 +554,7 @@ def test_q_time_overlap_does_not_auto_link(client, sample_staff, sample_room):
 
 
 # --- R. Removing StaffShift with linked Duty/Task is rejected by bulk assignment synchronization ---
-def test_r_reject_sync_removal_with_linked_operational_work(client, db_session, sample_staff, sample_room):
+def test_r_reject_sync_removal_with_linked_operational_work(client, db_session, sample_staff, sample_room, sample_area):
     staff2 = models.StaffMember(full_name="Priya Patel")
     db_session.add(staff2)
     db_session.commit()
@@ -567,6 +580,7 @@ def test_r_reject_sync_removal_with_linked_operational_work(client, db_session, 
             "shift_id": rahul_shift_id,
             "room_id": sample_room.id,
             "duty_type": "Transport",
+            "operational_area_id": sample_area.id,
         },
     )
 
@@ -581,7 +595,7 @@ def test_r_reject_sync_removal_with_linked_operational_work(client, db_session, 
 
 
 # --- S. Deleting ShiftBlock safety & DB preservation ---
-def test_s_deleting_shift_block_preserves_duties_and_tasks(client, db_session, sample_staff, sample_room):
+def test_s_deleting_shift_block_preserves_duties_and_tasks(client, db_session, sample_staff, sample_room, sample_area):
     now = datetime.now(timezone.utc)
 
     # Rule A: Empty ShiftBlock -> deletion allowed
@@ -629,6 +643,7 @@ def test_s_deleting_shift_block_preserves_duties_and_tasks(client, db_session, s
             "shift_id": staff_shift_id,
             "room_id": sample_room.id,
             "duty_type": "Ground Support",
+            "operational_area_id": sample_area.id,
         },
     ).json()
 

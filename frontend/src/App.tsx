@@ -4,6 +4,7 @@ import { Capacitor } from "@capacitor/core";
 import { PublicLayout } from "@/components/public/PublicLayout";
 import { AdminLayout } from "@/components/admin/AdminLayout";
 import { ComingSoon } from "@/components/admin/ComingSoon";
+import { StaffOpsGuard } from "@/components/admin/StaffOpsGuard";
 import { Spinner } from "@/components/ui/feedback";
 import { ScrollToTop } from "@/components/ScrollToTop";
 
@@ -38,6 +39,7 @@ const AdminFaq = lazy(() => import("@/pages/admin/Faq"));
 const AdminGallery = lazy(() => import("@/pages/admin/Gallery"));
 const Staff = lazy(() => import("@/pages/admin/Staff"));
 const Duties = lazy(() => import("@/pages/admin/Duties"));
+const MyWork = lazy(() => import("@/pages/admin/MyWork"));
 const StaffLiveMap = lazy(() => import("@/pages/admin/StaffLiveMap"));
 const Matches = lazy(() => import("@/pages/admin/Matches"));
 const MatGroundAssignment = lazy(() => import("@/pages/admin/MatGroundAssignment"));
@@ -111,11 +113,33 @@ export default function App() {
 
         <Route element={<AdminLayout />}>
           <Route path="/admin" element={<Dashboard />} />
+          <Route path="/admin/my-work" element={<MyWork />} />
           <Route path="/admin/teams" element={<AdminTeams />} />
           <Route path="/admin/buildings" element={<BuildingsRooms />} />
-          <Route path="/admin/staff" element={<Staff />} />
-          <Route path="/admin/duties" element={<Duties />} />
-          <Route path="/admin/staff-map" element={<StaffLiveMap />} />
+          <Route
+            path="/admin/staff"
+            element={
+              <StaffOpsGuard>
+                <Staff />
+              </StaffOpsGuard>
+            }
+          />
+          <Route
+            path="/admin/duties"
+            element={
+              <StaffOpsGuard>
+                <Duties />
+              </StaffOpsGuard>
+            }
+          />
+          <Route
+            path="/admin/staff-map"
+            element={
+              <StaffOpsGuard>
+                <StaffLiveMap />
+              </StaffOpsGuard>
+            }
+          />
           <Route path="/admin/knowledge" element={<Knowledge />} />
           <Route path="/admin/procurement" element={<Procurement />} />
           <Route path="/admin/announcements" element={<AdminAnnouncements />} />
@@ -131,12 +155,26 @@ export default function App() {
           <Route path="/admin/matches" element={<Matches />} />
           <Route path="/admin/mat-ground" element={<MatGroundAssignment />} />
           <Route path="/admin/reports" element={<Reports />} />
-          <Route path="/admin/tasks" element={<Tasks />} />
+          <Route
+            path="/admin/tasks"
+            element={
+              <StaffOpsGuard>
+                <Tasks />
+              </StaffOpsGuard>
+            }
+          />
           <Route path="/admin/walkie" element={<WalkieTalkie />} />
           <Route path="/admin/documents" element={<ComingSoon title="Documents" />} />
           <Route path="/admin/contacts" element={<AdminContacts />} />
           <Route path="/admin/settings" element={<ComingSoon title="Settings" />} />
-          <Route path="/admin/accounts" element={<Accounts />} />
+          <Route
+            path="/admin/accounts"
+            element={
+              <StaffOpsGuard>
+                <Accounts />
+              </StaffOpsGuard>
+            }
+          />
         </Route>
       </Routes>
     </Suspense>

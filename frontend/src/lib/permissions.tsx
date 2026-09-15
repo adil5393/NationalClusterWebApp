@@ -10,6 +10,11 @@ export interface Me {
   is_admin?: boolean;
   permissions?: Record<string, PermissionLevel>;
   staff_member?: { id: number; full_name: string; category?: string | null } | null;
+  // True for an ordinary staff member's own login (see backend
+  // security.is_self_service_staff) — drives the My Work vs organizer
+  // Staff Operations split in AdminLayout/App routing. Computed server-side
+  // so the frontend never re-derives the admin/permission/staff-link rule.
+  is_self_service_staff?: boolean;
   // Matches this account can fully control (except delete/reset) independent of
   // the "matches" module permission — see backend security.require_match_access.
   assigned_match_ids?: number[];

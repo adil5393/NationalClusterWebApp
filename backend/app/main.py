@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import settings
-from .security import require_admin, require_auth, require_match_access, require_module
+from .security import require_admin, require_auth, require_match_access, require_module, require_staff_operator
 from .routers import (
     accommodation,
     announcements,
@@ -24,8 +24,10 @@ from .routers import (
     imports,
     knowledge,
     live_ws,
-    mats,
     matches,
+    mats,
+    me,
+    operational_areas,
     organizer_users,
     participants,
     payments,
@@ -125,6 +127,12 @@ app.include_router(walkie.router)
 # location), while GET "" stacks its own stricter admin-only gate.
 app.include_router(staff_locations.router, dependencies=[Depends(require_auth)])
 
+# routers/me.py — the "My Work" self-service surface (own shifts/duties/
+# tasks). Every route resolves its own identity off the session via
+# security.resolve_self_staff, so plain auth is enough here; no module gate
+# applies since this is intentionally available to every logged-in account.
+app.include_router(me.router, dependencies=[Depends(require_auth)])
+
 for router_module, module_key in (
     (teams, "teams"),
     (participants, "teams"),
@@ -142,8 +150,6 @@ for router_module, module_key in (
     (announcements, "announcements"),
     (faq, "faq"),
     (gallery, "gallery"),
-    (staff, "staff"),
-    (event_locations, "staff"),
     (pools, "matches"),
     (buckets, "matches"),
     (reports, "matches"),
@@ -151,6 +157,16 @@ for router_module, module_key in (
     (attendance, "attendance"),
 ):
     app.include_router(router_module.router, dependencies=[Depends(require_module(module_key))])
+
+# staff.py (Staff Directory, Shift Blocks, org-wide Duty Overview),
+# event_locations.py (the venue catalogue), and operational_areas.py (the
+# shift-wise reporting/team classification catalogue) are the organizer-wide
+# Staff Operations surface — gated separately from the loop above because a
+# self-service staff login (an ordinary staff member's own account) must
+# never reach it, even though it's auto-granted "staff":"view" for other
+# modules' sake. See security.require_staff_operator.
+for router_module in (staff, event_locations, operational_areas):
+    app.include_router(router_module.router, dependencies=[Depends(require_staff_operator)])
 
 # matches.py gets its own gate instead of the plain module check above — an
 # account assigned to a specific match (models.Match.assigned_users) can view
