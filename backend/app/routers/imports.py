@@ -308,6 +308,133 @@ async def import_team_details_from_sheet(payload: SheetSyncRequest = SheetSyncRe
     return _import_team_details_df(df, db)
 
 
+def _parse_form_timestamp(value) -> "datetime | None":
+    """Google Form's own response Timestamp column, e.g. "15/09/2026 17:29:42" —
+    day-first, unlike pandas' US-style default parse."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    if isinstance(value, datetime):
+        return value
+    ts = pd.to_datetime(str(value).strip(), dayfirst=True, errors="coerce")
+    return None if ts is None or pd.isna(ts) else ts.to_pydatetime()
+
+
+def _parse_form_date(value) -> "date | None":
+    """The arrival form's "Arriving On" column, e.g. "28/09/2026" — day-first
+    and slash-separated, unlike _parse_dob's dash-separated participant DOB
+    format, so that parser can't be reused here."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    ts = pd.to_datetime(str(value).strip(), dayfirst=True, errors="coerce")
+    return None if ts is None or pd.isna(ts) else ts.date()
+
+
+def _import_team_arrivals_df(df: pd.DataFrame, db: Session) -> dict:
+    """Upsert behind both the file-upload-shaped input and the live sheet sync
+    for the team arrival form (Form.xlsx in the repo root is a sample of its
+    shape): one row per submission with a Timestamp, the responder's email, a
+    School Code/Affiliation Number cell, and the school's planned Arriving
+    On/At/Location. Stores the self-reported travel plan on the matching
+    Team (arrival_date/time/location/reported_email/reported_at) — distinct
+    from Team.has_arrived, which stays the organizer's own on-site
+    confirmation and is never touched here.
+
+    A school can resubmit to correct its plan, so rows are kept in sheet
+    order and only applied when their Timestamp is the latest seen so far
+    for that code — an out-of-order or duplicate row can't clobber a newer
+    one already applied in this same sync."""
+    col_code = _find_col(df.columns, "school code", "affiliation number")
+    if not col_code:
+        raise HTTPException(400, "Missing a 'School Code/Affiliation Number' column")
+    col_timestamp = _find_col(df.columns, "timestamp")
+    col_email = _find_col(df.columns, "email")
+    col_date = _find_col(df.columns, "arriving on")
+    col_time = _find_col(df.columns, "arriving at")
+    col_location = _find_col(df.columns, "location")
+
+    all_teams = db.query(models.Team).all()
+    teams_by_code = {t.school_code: t for t in all_teams if t.school_code}
+    teams_by_affiliation = {t.affiliation_number: t for t in all_teams if t.affiliation_number}
+
+    rows_with_code = 0
+    synced_team_ids: set[int] = set()
+    unmatched_school_codes: list[dict] = []
+    errors: list[str] = []
+    latest_applied: dict[int, datetime] = {}  # team.id -> Timestamp applied so far, this sync only
+
+    for i, row in df.iterrows():
+        code = _val(row, col_code)
+        if not code:
+            errors.append(f"Row {i + 2}: missing School Code/Affiliation Number")
+            continue
+        rows_with_code += 1
+
+        team = teams_by_code.get(code) or teams_by_affiliation.get(code)
+        if team is None:
+            unmatched_school_codes.append({"school_code": code, "school_name": None})
+            continue
+        synced_team_ids.add(team.id)
+
+        ts = _parse_form_timestamp(_val(row, col_timestamp)) if col_timestamp else None
+        prior = latest_applied.get(team.id)
+        if ts is not None and prior is not None and ts <= prior:
+            continue  # an earlier resubmission for this school, already superseded within this sync
+
+        arrival_date = _parse_form_date(_val(row, col_date)) if col_date else None
+        team.arrival_date = arrival_date or team.arrival_date
+        if col_time:
+            team.arrival_time = _val(row, col_time) or team.arrival_time
+        if col_location:
+            team.arrival_location = _val(row, col_location) or team.arrival_location
+        if col_email:
+            team.arrival_reported_email = _val(row, col_email) or team.arrival_reported_email
+        if ts is not None:
+            team.arrival_reported_at = ts
+            latest_applied[team.id] = ts
+
+    db.commit()
+    return {
+        "entity": "team-arrivals",
+        "teams": {
+            # Every row with a School Code/Affiliation Number cell, including a
+            # school that resubmitted more than once — so the caller can show
+            # "N submissions found" matching what's actually in the sheet.
+            "in_sheet": rows_with_code,
+            # Unique teams actually updated — a school appearing twice (a
+            # correction) only counts once here.
+            "synced": len(synced_team_ids),
+        },
+        "unmatched_school_codes": unmatched_school_codes,
+        "errors": errors,
+    }
+
+
+class ArrivalSheetSyncRequest(BaseModel):
+    # Optional — omit to resync the org's configured sheet (settings.team_arrival_sheet_url);
+    # pass one only to sync a different, one-off sheet.
+    sheet_url: "str | None" = None
+
+
+@router.post("/team-arrivals/sheet")
+async def import_team_arrivals_from_sheet(payload: ArrivalSheetSyncRequest = ArrivalSheetSyncRequest(), db: Session = Depends(get_db)):
+    """Live-Google-Sheet sync of the team arrival form, matched by School
+    Code/Affiliation Number the same way import_team_details_from_sheet
+    matches the registration form. Defaults to the org's configured sheet
+    (settings.team_arrival_sheet_url, set once via the TEAM_ARRIVAL_SHEET_URL
+    env var) so the organizer portal's arrival "Resync" button needs no
+    input; pass sheet_url explicitly to sync a different, one-off sheet
+    instead."""
+    sheet_url = payload.sheet_url or settings.team_arrival_sheet_url
+    if not sheet_url:
+        raise HTTPException(400, "No Google Sheet is configured (TEAM_ARRIVAL_SHEET_URL) — pass sheet_url instead.")
+    df = _fetch_sheet_csv(sheet_url)
+    return _import_team_arrivals_df(df, db)
+
+
 REQUIRED_STUDENT_SHEET_COLUMNS = {"schcode", "SchoolName", "registrationNo", "studentname", "gender", "dob"}
 
 

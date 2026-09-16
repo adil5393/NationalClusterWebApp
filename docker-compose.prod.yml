@@ -30,6 +30,7 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       SESSION_SECRET: ${SESSION_SECRET}
       TEAM_DETAILS_SHEET_URL: ${TEAM_DETAILS_SHEET_URL:-}
+      TEAM_ARRIVAL_SHEET_URL: ${TEAM_ARRIVAL_SHEET_URL:-}
       # Flip to true once HTTPS (certbot/letsencrypt, below) is actually issued and
       # serving — a secure cookie silently never gets set over plain HTTP.
       SESSION_HTTPS_ONLY: ${SESSION_HTTPS_ONLY:-false}

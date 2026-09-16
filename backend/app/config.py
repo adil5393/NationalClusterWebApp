@@ -27,6 +27,11 @@ class Settings:
     # portal's "Resync" button doesn't need the link pasted in on every use. Still
     # overridable per-request (see routers/imports.py) for a one-off different sheet.
     team_details_sheet_url: str = os.environ.get("TEAM_DETAILS_SHEET_URL", "")
+    # The team arrival Google Form's live response sheet — same "Anyone with the
+    # link – Viewer" sharing requirement as team_details_sheet_url above. Lets the
+    # organizer portal's arrival "Resync" button pull the latest travel plans with
+    # no link to paste in (see routers/imports.py import_team_arrivals_from_sheet).
+    team_arrival_sheet_url: str = os.environ.get("TEAM_ARRIVAL_SHEET_URL", "")
 
     @property
     def cors_origins_list(self):

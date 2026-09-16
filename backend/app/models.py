@@ -84,6 +84,17 @@ class Team(TimestampMixin, Base):
     # purely informational (organizer confirmed: no effect on match/pool
     # eligibility), unlike is_active/TeamInactiveAgeGroup below.
     has_arrived = Column(Boolean, nullable=False, default=False)
+    # Self-reported travel plan from the team arrival Google Form (see
+    # routers/imports.py import_team_arrivals_from_sheet) — separate from the
+    # organizer-confirmed has_arrived toggle above; this is what the school
+    # told the organizer to expect, not a confirmation anyone has checked.
+    arrival_date = Column(Date)
+    arrival_time = Column(String(20))
+    arrival_location = Column(String(200))
+    arrival_reported_email = Column(String(200))
+    # The form response's own Timestamp column — lets a resync keep only the
+    # latest submission per school when someone corrects an earlier entry.
+    arrival_reported_at = Column(DateTime)
 
     participants = relationship("Participant", back_populates="team", cascade="all, delete-orphan")
     coaches = relationship("Coach", back_populates="team", cascade="all, delete-orphan")

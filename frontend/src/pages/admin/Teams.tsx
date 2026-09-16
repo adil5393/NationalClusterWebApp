@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Pencil, Trash2, QrCode, Upload, Trophy, X, Shield, Users, Search, ImageIcon, IdCard, Receipt, Printer, FileArchive } from "lucide-react";
+import { Plus, Pencil, Trash2, QrCode, Upload, Trophy, X, Shield, Users, Search, ImageIcon, IdCard, Receipt, Printer, FileArchive, Bus } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { QRDialog } from "@/components/admin/QRDialog";
 import { ImportDialog } from "@/components/admin/ImportDialog";
 import { AttendanceImportDialog } from "@/components/admin/AttendanceImportDialog";
 import { TeamDetailsImportDialog } from "@/components/admin/TeamDetailsImportDialog";
+import { TeamArrivalImportDialog } from "@/components/admin/TeamArrivalImportDialog";
 import { ReceiptDialog } from "@/components/admin/ReceiptDialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +61,9 @@ interface Team {
   all_photos_uploaded?: boolean;
   is_active?: boolean;
   has_arrived?: boolean;
+  arrival_date?: string | null;
+  arrival_time?: string | null;
+  arrival_location?: string | null;
   inactive_age_groups?: string[];
   last_year_awards?: LastYearAward[];
   photos?: { id: number; url: string }[];
@@ -197,8 +201,11 @@ function ArrivedCell({
   onToggle: (team: Team) => void;
 }) {
   const arrived = team.has_arrived === true;
+  const plan = [team.arrival_date, team.arrival_time, team.arrival_location].filter(Boolean).join(" · ");
+  const planTitle = plan ? `Planned arrival: ${plan}` : "";
   const badge = (
     <span
+      title={!canEdit ? planTitle : undefined}
       className={cn(
         "inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-heading font-bold tracking-wide transition-colors whitespace-nowrap",
         arrived
@@ -215,7 +222,7 @@ function ArrivedCell({
       type="button"
       onClick={() => onToggle(team)}
       data-testid={`arrived-toggle-${team.id}`}
-      title={arrived ? "Mark not arrived" : "Mark arrived"}
+      title={[arrived ? "Mark not arrived" : "Mark arrived", planTitle].filter(Boolean).join(" — ")}
       className="hover:opacity-80 transition-opacity shrink-0"
     >
       {badge}
@@ -479,6 +486,7 @@ export default function AdminTeams() {
   const [importOpen, setImportOpen] = useState(false);
   const [attendanceImportOpen, setAttendanceImportOpen] = useState(false);
   const [teamDetailsImportOpen, setTeamDetailsImportOpen] = useState(false);
+  const [teamArrivalImportOpen, setTeamArrivalImportOpen] = useState(false);
   const [form, setForm] = useState<Partial<Team>>(empty);
   const [search, setSearch] = useState("");
 
@@ -658,6 +666,15 @@ export default function AdminTeams() {
               className="text-xs font-semibold"
             >
               <Upload className="h-3.5 w-3.5 text-gold" /> Registration Form
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setTeamArrivalImportOpen(true)}
+              data-testid="sync-team-arrivals-btn"
+              className="text-xs font-semibold"
+            >
+              <Bus className="h-3.5 w-3.5 text-gold" /> Sync Arrivals
             </Button>
             <Button
               variant="outline"
@@ -1236,6 +1253,7 @@ export default function AdminTeams() {
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} type="teams" onDone={load} />
       <AttendanceImportDialog open={attendanceImportOpen} onClose={() => setAttendanceImportOpen(false)} onDone={load} />
       <TeamDetailsImportDialog open={teamDetailsImportOpen} onClose={() => setTeamDetailsImportOpen(false)} onDone={load} />
+      <TeamArrivalImportDialog open={teamArrivalImportOpen} onClose={() => setTeamArrivalImportOpen(false)} onDone={load} />
       {awardsTeam && (
         <AwardsDialog
           team={awardsTeam}

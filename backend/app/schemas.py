@@ -139,6 +139,14 @@ class TeamRead(ORMModel, TeamBase):
     all_photos_uploaded: bool = False
     is_active: bool = True
     has_arrived: bool = False
+    # Self-reported travel plan from the arrival Google Form sync — read-only
+    # here (see TeamUpdate, which never accepts these), distinct from the
+    # organizer-confirmed has_arrived above.
+    arrival_date: Optional[date] = None
+    arrival_time: Optional[str] = None
+    arrival_location: Optional[str] = None
+    arrival_reported_email: Optional[str] = None
+    arrival_reported_at: Optional[datetime] = None
     # Age groups this team is specifically marked inactive for (see
     # models.TeamInactiveAgeGroup) — on top of, not instead of, is_active.
     inactive_age_groups: List[str] = []

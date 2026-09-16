@@ -474,7 +474,7 @@ def export_arrival_xlsx(db: Session = Depends(get_db)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Arrival Status"
-    max_cols = 5
+    max_cols = 8
 
     next_row = style_header_banner(
         ws,
@@ -517,6 +517,9 @@ def export_arrival_xlsx(db: Session = Depends(get_db)):
         ("SCHOOL CODE", 14, ALIGN_HEADER_CENTER),
         ("SCHOOL / TEAM", 30, ALIGN_HEADER_LEFT),
         ("ARRIVED", 12, ALIGN_HEADER_CENTER),
+        ("PLANNED DATE", 14, ALIGN_HEADER_CENTER),
+        ("PLANNED TIME", 14, ALIGN_HEADER_CENTER),
+        ("PLANNED LOCATION", 24, ALIGN_HEADER_LEFT),
         ("PENDING PROCESSES", 34, ALIGN_HEADER_LEFT),
         ("R/T/B (REG./TOTAL/BILLED)", 20, ALIGN_HEADER_CENTER),
     ]
@@ -555,6 +558,9 @@ def export_arrival_xlsx(db: Session = Depends(get_db)):
             (t.school_code or "—", ALIGN_CENTER, FONT_TD),
             (t.name, ALIGN_LEFT, FONT_TD_BOLD),
             ("ARRIVED" if t.has_arrived else "NOT ARRIVED", ALIGN_CENTER, FONT_TD_BOLD),
+            (t.arrival_date.strftime("%d-%b-%Y") if t.arrival_date else "—", ALIGN_CENTER, FONT_TD),
+            (t.arrival_time or "—", ALIGN_CENTER, FONT_TD),
+            (t.arrival_location or "—", ALIGN_LEFT, FONT_TD),
             (pending_label, ALIGN_LEFT, FONT_TD_BOLD if pending_label not in ("All Clear", "—") else FONT_TD),
             (f"{registered}/{total_members}/{billed}", ALIGN_CENTER, FONT_TD),
         ]
