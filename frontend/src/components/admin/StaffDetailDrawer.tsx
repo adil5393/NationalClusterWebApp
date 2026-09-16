@@ -11,11 +11,7 @@ import {
   Trash2,
   Clock,
   Building,
-  Plus,
-  Square,
-  Check,
   User,
-  ShieldAlert,
   MapPin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -67,10 +63,15 @@ export interface StaffDutyItem {
   floor_name?: string;
   building_name?: string;
   duty_type: string;
+  operational_area_id?: number | null;
+  operational_area_name?: string | null;
   start_time?: string;
   end_time?: string;
   notes?: string;
   warning?: string | null;
+  outside_shift_minutes?: number | null;
+  location_source?: string | null;
+  location_source_id?: number | null;
 }
 
 export interface StaffTaskItem {
@@ -89,8 +90,8 @@ export interface StaffTaskItem {
 interface StaffDetailDrawerProps {
   staff: StaffDetailMember | null;
   shifts?: StaffShiftItem[];
-  duties: StaffDutyItem[];
-  tasks: StaffTaskItem[];
+  duties?: StaffDutyItem[];
+  tasks?: StaffTaskItem[];
   open: boolean;
   onClose: () => void;
   canEdit: boolean;
@@ -106,27 +107,35 @@ interface StaffDetailDrawerProps {
 export function StaffDetailDrawer({
   staff,
   shifts = [],
-  duties,
-  tasks,
+  duties = [],
+  tasks = [],
   open,
   onClose,
   canEdit,
   onEditStaff,
   onDeleteStaff,
   onCreateCredential,
-  onDeleteDuty,
-  onDeleteShift,
-  onToggleTask,
   creatingCredential = false,
 }: StaffDetailDrawerProps) {
-  const [activeTab, setActiveTab] = useState<"overview" | "shifts" | "duties" | "tasks" | "login">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "shifts" | "login">("overview");
 
   if (!open || !staff) return null;
 
   const staffShifts = shifts.filter((s) => s.staff_id === staff.id);
   const staffDuties = duties.filter((d) => d.staff_id === staff.id);
   const staffTasks = tasks.filter((t) => t.assigned_staff_id === staff.id);
-  const pendingTasks = staffTasks.filter((t) => t.status !== "completed");
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const formatTime = (iso?: string | null) => {
+    if (!iso) return "";
+    try {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return "";
+      return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    } catch {
+      return "";
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden" data-testid="staff-detail-drawer">
@@ -190,7 +199,7 @@ export function StaffDetailDrawer({
               </button>
             </div>
 
-            {/* TAB NAVIGATION */}
+            {/* TAB NAVIGATION: Simplified to 3 focused tabs */}
             <div className="mt-4 flex gap-1 border-t border-white/10 pt-3">
               <button
                 type="button"
@@ -199,10 +208,10 @@ export function StaffDetailDrawer({
                   "flex-1 rounded-md py-1.5 text-xs font-heading font-bold transition-colors",
                   activeTab === "overview"
                     ? "bg-gold text-obsidian font-black shadow-sm"
-                    : "text-slate-400 hover:bg-white/5 hover:text-white",
+                    : "text-slate-400 hover:bg-white/5 hover:text-white"
                 )}
               >
-                Overview
+                Profile Overview
               </button>
               <button
                 type="button"
@@ -211,42 +220,19 @@ export function StaffDetailDrawer({
                   "flex-1 rounded-md py-1.5 text-xs font-heading font-bold transition-colors flex items-center justify-center gap-1",
                   activeTab === "shifts"
                     ? "bg-gold text-obsidian font-black shadow-sm"
-                    : "text-slate-400 hover:bg-white/5 hover:text-white",
+                    : "text-slate-400 hover:bg-white/5 hover:text-white"
                 )}
               >
-                <span>Shifts</span>
-                <span className={cn("rounded-full px-1.5 py-0.2 text-[10px] font-mono", activeTab === "shifts" ? "bg-obsidian/20 text-obsidian font-black" : "bg-white/10 text-slate-300")}>
+                <span>Working Shifts</span>
+                <span
+                  className={cn(
+                    "rounded-full px-1.5 py-0.2 text-[10px] font-mono",
+                    activeTab === "shifts"
+                      ? "bg-obsidian/20 text-obsidian font-black"
+                      : "bg-white/10 text-slate-300"
+                  )}
+                >
                   {staffShifts.length}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab("duties")}
-                className={cn(
-                  "flex-1 rounded-md py-1.5 text-xs font-heading font-bold transition-colors flex items-center justify-center gap-1",
-                  activeTab === "duties"
-                    ? "bg-gold text-obsidian font-black shadow-sm"
-                    : "text-slate-400 hover:bg-white/5 hover:text-white",
-                )}
-              >
-                <span>Duties</span>
-                <span className={cn("rounded-full px-1.5 py-0.2 text-[10px] font-mono", activeTab === "duties" ? "bg-obsidian/20 text-obsidian font-black" : "bg-white/10 text-slate-300")}>
-                  {staffDuties.length}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab("tasks")}
-                className={cn(
-                  "flex-1 rounded-md py-1.5 text-xs font-heading font-bold transition-colors flex items-center justify-center gap-1",
-                  activeTab === "tasks"
-                    ? "bg-gold text-obsidian font-black shadow-sm"
-                    : "text-slate-400 hover:bg-white/5 hover:text-white",
-                )}
-              >
-                <span>Tasks</span>
-                <span className={cn("rounded-full px-1.5 py-0.2 text-[10px] font-mono", activeTab === "tasks" ? "bg-obsidian/20 text-obsidian font-black" : "bg-white/10 text-slate-300")}>
-                  {staffTasks.length}
                 </span>
               </button>
               <button
@@ -256,82 +242,81 @@ export function StaffDetailDrawer({
                   "flex-1 rounded-md py-1.5 text-xs font-heading font-bold transition-colors flex items-center justify-center gap-1",
                   activeTab === "login"
                     ? "bg-gold text-obsidian font-black shadow-sm"
-                    : "text-slate-400 hover:bg-white/5 hover:text-white",
+                    : "text-slate-400 hover:bg-white/5 hover:text-white"
                 )}
               >
                 <KeyRound className="h-3 w-3" />
-                <span>Login</span>
+                <span>Portal Account</span>
               </button>
             </div>
           </div>
 
           {/* TAB CONTENT BODY */}
           <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
-            {/* OVERVIEW TAB */}
+            {/* 1. OVERVIEW TAB ("Who is this person?") */}
             {activeTab === "overview" && (
               <div className="space-y-4">
-                {/* METRICS ROW */}
-                <div className="grid grid-cols-4 gap-2 text-center">
-                  <div className="rounded-lg border border-white/10 bg-obsidian-900 p-2">
-                    <p className="text-[10px] font-heading font-extrabold uppercase text-slate-400">Shifts</p>
-                    <p className="font-heading text-base font-black text-white mt-0.5">{staffShifts.length}</p>
-                  </div>
-                  <div className="rounded-lg border border-white/10 bg-obsidian-900 p-2">
-                    <p className="text-[10px] font-heading font-extrabold uppercase text-slate-400">Duties</p>
-                    <p className="font-heading text-base font-black text-white mt-0.5">{staffDuties.length}</p>
-                  </div>
-                  <div className="rounded-lg border border-white/10 bg-obsidian-900 p-2">
-                    <p className="text-[10px] font-heading font-extrabold uppercase text-slate-400">Tasks</p>
-                    <p className="font-heading text-base font-black text-gold mt-0.5">{pendingTasks.length}</p>
-                  </div>
-                  <div className="rounded-lg border border-white/10 bg-obsidian-900 p-2">
-                    <p className="text-[10px] font-heading font-extrabold uppercase text-slate-400">Login</p>
-                    <p className="font-heading text-[11px] font-black text-emerald-400 mt-1 truncate">
-                      {staff.login_username ? "ACTIVE" : "NONE"}
-                    </p>
+                {/* PERSONNEL DETAILS CARD */}
+                <div className="rounded-lg border border-white/10 bg-obsidian-900 p-3.5 space-y-3">
+                  <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400">
+                    Personnel Information
+                  </p>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <span className="text-slate-500 font-mono text-[10px] block">Full Name</span>
+                      <span className="font-heading font-bold text-white">{staff.full_name}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 font-mono text-[10px] block">Role / Category</span>
+                      <span className="text-gold font-bold">{staff.category || "General"}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 font-mono text-[10px] block">Phone</span>
+                      <span className="font-mono text-slate-200">{staff.phone || "—"}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 font-mono text-[10px] block">Email</span>
+                      <span className="text-slate-200 truncate block">{staff.email || "—"}</span>
+                    </div>
                   </div>
                 </div>
 
-                {/* NOTES */}
+                {/* OPERATIONAL NOTES */}
                 <div className="rounded-lg border border-white/10 bg-obsidian-900 p-3.5 space-y-1">
                   <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400">
                     Operational Notes
                   </p>
                   <p className="text-xs text-slate-200 font-body leading-relaxed">
-                    {staff.notes || "No additional notes provided for this staff member."}
+                    {staff.notes || "No additional notes recorded for this staff member."}
                   </p>
                 </div>
 
-                {/* QUICK SUMMARY OF DUTIES */}
+                {/* READ-ONLY CURRENT ASSIGNMENTS SUMMARY */}
                 <div className="rounded-lg border border-white/10 bg-obsidian-900 p-3.5 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                      <HardHat className="h-3 w-3 text-gold" /> Active Duty Allotments
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("duties")}
-                      className="text-[11px] font-bold text-gold hover:underline"
-                    >
-                      View All ({staffDuties.length})
-                    </button>
-                  </div>
+                  <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <HardHat className="h-3 w-3 text-gold" /> Current Duties ({staffDuties.length})
+                  </p>
                   {staffDuties.length === 0 ? (
-                    <p className="text-xs text-slate-500 py-1">No duties allotted yet.</p>
+                    <p className="text-xs text-slate-500 italic py-1">No active duty allotments.</p>
                   ) : (
                     <div className="space-y-1.5">
-                      {staffDuties.slice(0, 3).map((d) => (
-                        <div key={d.id} className="rounded bg-white/5 p-2 text-xs flex items-center justify-between">
+                      {staffDuties.map((d) => (
+                        <div
+                          key={d.id}
+                          className="rounded bg-white/5 p-2 text-xs flex items-center justify-between"
+                        >
                           <div>
-                            <span className="font-heading font-bold text-white">{d.duty_type}</span>
-                            <span className="text-slate-400 block text-[11px]">
-                              {d.location_name ? `📍 ${d.location_name}` : d.room_name || "Assigned Area"}
-                              {d.building_name ? ` · ${d.building_name}` : ""}
+                            <span className="font-heading font-bold text-white block">
+                              {d.duty_type}
+                            </span>
+                            <span className="text-slate-400 text-[11px] font-mono flex items-center gap-1">
+                              <MapPin className="h-2.5 w-2.5 text-emerald-400" />
+                              {d.location_name || d.room_name || "Operational Venue"}
                             </span>
                           </div>
-                          {d.start_time && (
-                            <span className="text-[10px] font-mono text-slate-400">
-                              {formatDate(d.start_time)}
+                          {d.shift_name && (
+                            <span className="text-[10px] font-mono text-gold bg-gold/10 px-2 py-0.5 rounded">
+                              {d.shift_name}
                             </span>
                           )}
                         </div>
@@ -340,381 +325,93 @@ export function StaffDetailDrawer({
                   )}
                 </div>
 
-                {/* QUICK SUMMARY OF TASKS */}
+                {/* READ-ONLY TASKS SUMMARY */}
                 <div className="rounded-lg border border-white/10 bg-obsidian-900 p-3.5 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                      <CheckSquare className="h-3 w-3 text-gold" /> Assigned Tasks
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("tasks")}
-                      className="text-[11px] font-bold text-gold hover:underline"
-                    >
-                      View All ({staffTasks.length})
-                    </button>
-                  </div>
+                  <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <CheckSquare className="h-3 w-3 text-cyan-400" /> Action Tasks ({staffTasks.length})
+                  </p>
                   {staffTasks.length === 0 ? (
-                    <p className="text-xs text-slate-500 py-1">No tasks assigned to this person.</p>
+                    <p className="text-xs text-slate-500 italic py-1">No action tasks assigned.</p>
                   ) : (
                     <div className="space-y-1.5">
-                      {staffTasks.slice(0, 3).map((t) => (
-                        <div key={t.id} className="rounded bg-white/5 p-2 text-xs flex items-center justify-between">
-                          <span className={cn("font-medium", t.status === "completed" ? "line-through text-slate-500" : "text-white")}>
+                      {staffTasks.map((t) => (
+                        <div
+                          key={t.id}
+                          className="rounded bg-white/5 p-2 text-xs flex items-center justify-between"
+                        >
+                          <span
+                            className={cn(
+                              "font-medium truncate",
+                              t.status === "completed" ? "line-through text-slate-500" : "text-white"
+                            )}
+                          >
                             {t.title}
                           </span>
-                          <Badge tone={t.status === "completed" ? "green" : "neutral"} size="sm">
-                            {t.status}
-                          </Badge>
+                          <span className="text-[10px] font-mono uppercase text-slate-400">
+                            [{t.status}]
+                          </span>
                         </div>
                       ))}
-                    </div>
-                  )}
-                </div>
-                {/* QUICK SUMMARY OF SHIFTS */}
-                <div className="rounded-lg border border-white/10 bg-obsidian-900 p-3.5 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                      <Clock className="h-3 w-3 text-gold" /> Scheduled Shifts
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("shifts")}
-                      className="text-[11px] font-bold text-gold hover:underline"
-                    >
-                      View All ({staffShifts.length})
-                    </button>
-                  </div>
-                  {staffShifts.length === 0 ? (
-                    <p className="text-xs text-slate-500 py-1">No shifts scheduled for this person.</p>
-                  ) : (
-                    <div className="space-y-1.5">
-                      {staffShifts.slice(0, 3).map((s) => {
-                        const sDate = new Date(s.start_time);
-                        const eDate = new Date(s.end_time);
-                        const timeStr = `${sDate.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })} – ${eDate.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })}`;
-                        const isNow = s.is_active;
-                        return (
-                          <div key={s.id} className="rounded bg-white/5 p-2 text-xs flex items-center justify-between">
-                            <div>
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-heading font-bold text-white">{formatDate(s.start_time)}</span>
-                                <span className="text-slate-300 font-mono text-[11px]">({timeStr})</span>
-                              </div>
-                              {s.notes && <span className="text-slate-400 block text-[11px] italic">"{s.notes}"</span>}
-                            </div>
-                            <span className={cn(
-                              "text-[10px] font-heading font-extrabold px-1.5 py-0.5 rounded",
-                              isNow ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" :
-                              s.derived_status === "COMPLETED" ? "bg-white/10 text-slate-400" :
-                              s.derived_status === "CANCELLED" ? "bg-red-500/20 text-red-400" :
-                              "bg-gold/20 text-gold border border-gold/30"
-                            )}>
-                              {isNow ? "ON SHIFT" : s.derived_status}
-                            </span>
-                          </div>
-                        );
-                      })}
                     </div>
                   )}
                 </div>
               </div>
             )}
 
-            {/* SHIFTS TAB */}
+            {/* 2. SHIFTS TAB (Read-only context on when this person works) */}
             {activeTab === "shifts" && (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {staffShifts.length === 0 ? (
                   <div className="rounded-lg border border-dashed border-white/15 bg-white/[0.02] p-8 text-center space-y-2">
                     <Clock className="h-8 w-8 text-slate-500 mx-auto" />
                     <p className="font-heading text-sm font-bold text-white">No Shifts Scheduled</p>
                     <p className="text-xs text-slate-400 font-body">
-                      Create shifts from the Staff page to define when {staff.full_name} is working for the tournament.
+                      This staff member has not been added to any shift blocks yet.
                     </p>
                   </div>
                 ) : (
-                  (() => {
-                    const now = new Date();
-                    const todayStr = now.toISOString().slice(0, 10);
-                    const todayShifts = staffShifts.filter((s) => s.start_time.slice(0, 10) === todayStr || s.is_active);
-                    const upcomingShifts = staffShifts.filter((s) => s.start_time.slice(0, 10) > todayStr && !s.is_active);
-                    const pastShifts = staffShifts.filter((s) => s.start_time.slice(0, 10) < todayStr && !s.is_active);
-
-                    const renderShiftCard = (s: StaffShiftItem) => {
-                      const pad = (n: number) => String(n).padStart(2, "0");
-                      const formatTime = (iso?: string | null) => {
-                        if (!iso) return "";
-                        const d = new Date(iso);
-                        if (Number.isNaN(d.getTime())) return "";
-                        return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-                      };
-                      const timeStr = `${formatTime(s.start_time)} – ${formatTime(s.end_time)}`;
-                      const linkedDuties = staffDuties.filter((d) => d.shift_id === s.id);
-                      const linkedTasks = staffTasks.filter((t) => t.shift_id === s.id);
-
-                      return (
-                        <div
-                          key={s.id}
-                          className="rounded-lg border border-white/10 bg-obsidian-900 p-3.5 space-y-2.5"
-                          data-testid={`drawer-shift-${s.id}`}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="font-heading font-bold text-white text-sm">
-                                  {s.shift_name || formatDate(s.start_time)}
-                                </span>
-                                {s.shift_name && (
-                                  <span className="text-xs text-slate-400 font-mono">
-                                    · {formatDate(s.start_time)}
-                                  </span>
-                                )}
-                                <span className={cn(
-                                  "text-[10px] font-heading font-extrabold px-2 py-0.5 rounded uppercase tracking-wider",
-                                  s.is_active ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40" :
-                                  s.derived_status === "COMPLETED" ? "bg-white/10 text-slate-400" :
-                                  s.derived_status === "CANCELLED" ? "bg-red-500/20 text-red-400 border border-red-500/30" :
-                                  "bg-gold/15 text-gold border border-gold/30"
-                                )}>
-                                  {s.is_active ? "ON SHIFT NOW" : s.derived_status}
-                                </span>
-                              </div>
-                              <p className="text-xs text-slate-300 font-mono mt-0.5 flex items-center gap-1">
-                                <Clock className="h-3 w-3 text-gold" />
-                                {timeStr}
-                              </p>
-                            </div>
-
-                            {canEdit && onDeleteShift && (
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                onClick={() => onDeleteShift(s.id)}
-                                title="Delete Shift"
-                                data-testid={`delete-shift-${s.id}`}
-                              >
-                                <Trash2 className="h-3.5 w-3.5 text-red-400" />
-                              </Button>
-                            )}
-                          </div>
-
-                          {s.notes && (
-                            <p className="text-xs text-slate-300 font-body bg-white/5 rounded p-2 italic">
-                              "{s.notes}"
-                            </p>
-                          )}
-
-                          {/* SHIFT LINKED RESPONSIBILITIES (DUTIES & TASKS) */}
-                          <div className="border-t border-white/5 pt-2 space-y-2">
-                            <div>
-                              <p className="text-[10px] font-heading font-bold uppercase text-slate-400 mb-1">
-                                Duties during this shift ({linkedDuties.length}):
-                              </p>
-                              {linkedDuties.length === 0 ? (
-                                <p className="text-[11px] text-slate-500 italic">None specifically allotted to this shift.</p>
-                              ) : (
-                                <div className="space-y-1">
-                                  {linkedDuties.map((d) => (
-                                    <div key={d.id} className="text-xs text-white flex items-center justify-between gap-1.5 bg-black/20 rounded px-2 py-1">
-                                      <div className="flex items-center gap-1.5 min-w-0 truncate">
-                                        <HardHat className="h-3 w-3 text-gold shrink-0" />
-                                        <span className="font-semibold">{d.duty_type}</span>
-                                        <span className="text-slate-400 text-[11px] truncate">
-                                          @ {d.location_name ? `📍 ${d.location_name}` : d.room_name || "Assigned Area"}
-                                        </span>
-                                      </div>
-                                      {d.start_time && d.end_time && (
-                                        <span className="text-[10px] font-mono text-slate-400 shrink-0">
-                                          {formatTime(d.start_time)}–{formatTime(d.end_time)}
-                                        </span>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-
-                            <div>
-                              <p className="text-[10px] font-heading font-bold uppercase text-slate-400 mb-1">
-                                Tasks assigned to this shift ({linkedTasks.length}):
-                              </p>
-                              {linkedTasks.length === 0 ? (
-                                <p className="text-[11px] text-slate-500 italic">None specifically linked to this shift.</p>
-                              ) : (
-                                <div className="space-y-1">
-                                  {linkedTasks.map((t) => (
-                                    <div key={t.id} className="text-xs text-white flex items-center gap-1.5 bg-black/20 rounded px-2 py-1">
-                                      <CheckSquare className="h-3 w-3 text-cyan-400 shrink-0" />
-                                      <span className={cn(t.status === "completed" ? "line-through text-slate-500" : "")}>{t.title}</span>
-                                      <span className="text-[10px] text-slate-400 ml-auto uppercase font-mono">[{t.status}]</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    };
-
-                    return (
-                      <div className="space-y-4">
-                        {todayShifts.length > 0 && (
-                          <div className="space-y-2">
-                            <h4 className="text-xs font-heading font-black tracking-wider uppercase text-gold flex items-center gap-1.5">
-                              <Clock className="h-3.5 w-3.5" /> Today / Active
-                            </h4>
-                            <div className="space-y-2">
-                              {todayShifts.map(renderShiftCard)}
-                            </div>
-                          </div>
-                        )}
-
-                        {upcomingShifts.length > 0 && (
-                          <div className="space-y-2">
-                            <h4 className="text-xs font-heading font-black tracking-wider uppercase text-slate-300">
-                              Upcoming Shifts
-                            </h4>
-                            <div className="space-y-2">
-                              {upcomingShifts.map(renderShiftCard)}
-                            </div>
-                          </div>
-                        )}
-
-                        {pastShifts.length > 0 && (
-                          <div className="space-y-2">
-                            <h4 className="text-xs font-heading font-black tracking-wider uppercase text-slate-500">
-                              Past Shifts
-                            </h4>
-                            <div className="space-y-2">
-                              {pastShifts.map(renderShiftCard)}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()
-                )}
-              </div>
-            )}
-
-            {/* DUTIES TAB */}
-            {activeTab === "duties" && (
-              <div className="space-y-3">
-                {staffDuties.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-white/15 bg-white/[0.02] p-8 text-center space-y-2">
-                    <HardHat className="h-8 w-8 text-slate-500 mx-auto" />
-                    <p className="font-heading text-sm font-bold text-white">No Duty Assignments</p>
-                    <p className="text-xs text-slate-400 font-body">
-                      Assign operational duties to this staff member from their scheduled Shift Block in Staff Operations.
-                    </p>
-                  </div>
-                ) : (
-                  staffDuties.map((d) => (
-                    <div
-                      key={d.id}
-                      className="rounded-lg border border-white/10 bg-obsidian-900 p-3.5 space-y-2"
-                      data-testid={`drawer-duty-${d.id}`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-heading font-bold text-white text-sm">
-                              {d.duty_type}
-                            </span>
-                            <Badge tone="gold" size="sm">
-                              {d.location_name ? `📍 ${d.location_name}` : d.room_name || "Assigned Area"}
-                            </Badge>
-                          </div>
-                          {d.shift_name && (
-                            <p className="text-[11px] font-mono text-gold mt-0.5">
-                              Shift: {d.shift_name}
-                            </p>
-                          )}
-                          {(d.building_name || d.floor_name) && (
-                            <p className="text-xs text-slate-400 font-body mt-0.5 flex items-center gap-1">
-                              <Building className="h-3 w-3 text-slate-500" />
-                              {d.building_name} {d.floor_name ? `· ${d.floor_name}` : ""}
-                            </p>
-                          )}
-                        </div>
-                        {canEdit && onDeleteDuty && (
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => onDeleteDuty(d.id)}
-                            title="Remove Duty"
-                          >
-                            <Trash2 className="h-3.5 w-3.5 text-red-400" />
-                          </Button>
-                        )}
-                      </div>
-
-                      <div className="border-t border-white/5 pt-2 text-[11px] font-mono text-slate-400 flex items-center gap-1">
-                        <Clock className="h-3 w-3 text-slate-500" />
-                        {d.start_time ? formatDate(d.start_time) : "No start time"}
-                        {d.end_time ? ` → ${formatDate(d.end_time)}` : ""}
-                      </div>
-
-                      {d.notes && (
-                        <p className="text-xs text-slate-300 font-body border-t border-white/5 pt-1.5 italic">
-                          "{d.notes}"
-                        </p>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-
-            {/* TASKS TAB */}
-            {activeTab === "tasks" && (
-              <div className="space-y-3">
-                {staffTasks.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-white/15 bg-white/[0.02] p-8 text-center space-y-2">
-                    <CheckSquare className="h-8 w-8 text-slate-500 mx-auto" />
-                    <p className="font-heading text-sm font-bold text-white">No Tasks Assigned</p>
-                    <p className="text-xs text-slate-400 font-body">
-                      Assign operational tasks to {staff.full_name} from the Tasks page.
-                    </p>
-                  </div>
-                ) : (
-                  staffTasks.map((t) => {
-                    const done = t.status === "completed";
+                  staffShifts.map((s) => {
+                    const timeStr = `${formatTime(s.start_time)} – ${formatTime(s.end_time)}`;
                     return (
                       <div
-                        key={t.id}
-                        className="flex items-start gap-2.5 rounded-lg border border-white/10 bg-obsidian-900 p-3.5"
-                        data-testid={`drawer-task-${t.id}`}
+                        key={s.id}
+                        className="rounded-lg border border-white/10 bg-obsidian-900 p-3.5 space-y-2"
+                        data-testid={`drawer-shift-${s.id}`}
                       >
-                        {onToggleTask && (
-                          <button
-                            type="button"
-                            onClick={() => onToggleTask(t)}
-                            className="mt-0.5 shrink-0 text-gold hover:text-gold-400"
-                            title={done ? "Mark pending" : "Mark done"}
-                          >
-                            {done ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4 text-slate-500" />}
-                          </button>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <p className={cn("text-xs font-body font-bold", done ? "text-slate-500 line-through" : "text-white")}>
-                            {t.title}
-                          </p>
-                          {t.description && (
-                            <p className="text-[11px] text-slate-400 font-body mt-0.5">{t.description}</p>
-                          )}
-                          <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                            <span className="rounded bg-white/10 px-1.5 py-0.2 text-[10px] font-medium text-slate-300">
-                              {t.category}
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <span className="font-heading font-bold text-white text-sm block">
+                              {s.shift_name || "Shift"}
                             </span>
-                            {t.priority && (
-                              <Badge tone={t.priority === "high" ? "coral" : "neutral"} size="sm">
-                                {t.priority.toUpperCase()}
-                              </Badge>
-                            )}
+                            <span className="text-xs text-slate-300 font-mono mt-0.5 flex items-center gap-1">
+                              <Calendar className="h-3 w-3 text-slate-400" />
+                              {formatDate(s.start_time)}
+                            </span>
+                            <span className="text-xs text-gold font-mono flex items-center gap-1 mt-0.5">
+                              <Clock className="h-3 w-3" />
+                              {timeStr}
+                            </span>
                           </div>
+
+                          <span
+                            className={cn(
+                              "text-[10px] font-heading font-extrabold px-2 py-0.5 rounded uppercase tracking-wider",
+                              s.is_active
+                                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                                : s.derived_status === "COMPLETED"
+                                ? "bg-white/10 text-slate-400"
+                                : "bg-gold/15 text-gold border border-gold/30"
+                            )}
+                          >
+                            {s.is_active ? "● ON SHIFT NOW" : s.derived_status}
+                          </span>
                         </div>
+
+                        {s.notes && (
+                          <p className="text-xs text-slate-400 font-body bg-white/5 rounded p-2 italic">
+                            "{s.notes}"
+                          </p>
+                        )}
                       </div>
                     );
                   })
@@ -722,23 +419,27 @@ export function StaffDetailDrawer({
               </div>
             )}
 
-            {/* LOGIN TAB */}
+            {/* 3. LOGIN TAB (Mobile portal access) */}
             {activeTab === "login" && (
               <div className="space-y-4">
                 {staff.login_username ? (
                   <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4 space-y-3">
                     <div className="flex items-center gap-2">
                       <KeyRound className="h-4 w-4 text-emerald-400" />
-                      <h3 className="font-heading text-sm font-bold text-white">Organizer Portal Account Active</h3>
+                      <h3 className="font-heading text-sm font-bold text-white">
+                        Organizer Portal Account Active
+                      </h3>
                     </div>
                     <div className="rounded bg-obsidian-950 p-3 border border-white/10">
-                      <p className="text-[10px] font-heading font-bold uppercase text-slate-500">Username</p>
+                      <p className="text-[10px] font-heading font-bold uppercase text-slate-500">
+                        Username
+                      </p>
                       <p className="font-mono text-sm font-bold text-emerald-400 mt-0.5">
                         {staff.login_username}
                       </p>
                     </div>
                     <p className="text-xs text-slate-400 font-body">
-                      This staff member can sign into the Organizer Portal on web or the Android app. Permissions and password resets can be managed in the Accounts module.
+                      This staff member can sign into the Organizer Portal on web or the mobile app to view their roster.
                     </p>
                   </div>
                 ) : (
@@ -747,9 +448,11 @@ export function StaffDetailDrawer({
                       <KeyRound className="h-5 w-5" />
                     </div>
                     <div>
-                      <h3 className="font-heading text-sm font-bold text-white">No Login Credential Yet</h3>
+                      <h3 className="font-heading text-sm font-bold text-white">
+                        No Login Credential Yet
+                      </h3>
                       <p className="text-xs text-slate-400 font-body mt-1">
-                        Create a one-click Organizer Portal login so {staff.full_name} can view duty rosters and log live operations on their mobile phone.
+                        Provision an Organizer Portal credential so {staff.full_name} can log in from their mobile device.
                       </p>
                     </div>
                     {canEdit && (
@@ -761,7 +464,7 @@ export function StaffDetailDrawer({
                         className="w-full text-xs font-bold"
                         data-testid="drawer-create-credential-btn"
                       >
-                        <KeyRound className="h-3.5 w-3.5" />
+                        <KeyRound className="h-3.5 w-3.5 mr-1" />
                         {creatingCredential ? "Provisioning Login…" : "Create Portal Credential"}
                       </Button>
                     )}
@@ -781,7 +484,7 @@ export function StaffDetailDrawer({
                 className="flex-1 text-xs"
                 data-testid="drawer-edit-staff-btn"
               >
-                <Pencil className="h-3.5 w-3.5" /> Edit Staff Info
+                <Pencil className="h-3.5 w-3.5 mr-1" /> Edit Staff Info
               </Button>
               <Button
                 variant="danger"
@@ -790,7 +493,7 @@ export function StaffDetailDrawer({
                 className="text-xs"
                 data-testid="drawer-delete-staff-btn"
               >
-                <Trash2 className="h-3.5 w-3.5" /> Delete
+                <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
               </Button>
             </div>
           )}

@@ -80,7 +80,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: "People",
     items: [
-      { to: "/admin/staff", label: "Staff Directory", icon: HardHat, moduleKey: "staff" },
+      { to: "/admin/staff", label: "Staff Operations", icon: HardHat, moduleKey: "staff" },
       { to: "/admin/volunteers", label: "Volunteers", icon: HeartHandshake, moduleKey: "volunteers" },
       { to: "/admin/duties", label: "Staff Duties", icon: ClipboardList, moduleKey: "staff" },
       { to: "/admin/accounts", label: "Accounts & Access", icon: UserCog, moduleKey: "accounts" },
