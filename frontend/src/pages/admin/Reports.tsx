@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Download, FileSpreadsheet, Trash2, Layers, RefreshCw, CheckSquare, Bus, ShieldCheck, UserCog, Wallet, BedDouble } from "lucide-react";
+import { AlertTriangle, Download, FileSpreadsheet, Trash2, Layers, RefreshCw, CheckSquare, Bus, ShieldCheck, UserCog, Wallet, BedDouble, Eye, Trophy } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Table, THead, TH, TR, TD, TBody } from "@/components/ui/table";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { useModuleAccess, useMe } from "@/lib/permissions";
-import { LiveReportsPanel } from "@/components/admin/LiveReportsPanel";
+import { ReportViewerDialog, ReportSection } from "@/components/admin/ReportViewerDialog";
 import { StaffOperationsReportsPanel } from "@/components/admin/StaffOperationsReportsPanel";
 import { formatDate } from "@/lib/meta";
 import { cn } from "@/lib/utils";
@@ -53,6 +53,7 @@ function ReportDownloadCard({
   href,
   testId,
   fileLabel = ".xlsx",
+  onView,
 }: {
   icon: React.ElementType;
   title: string;
@@ -60,24 +61,48 @@ function ReportDownloadCard({
   href: string;
   testId: string;
   fileLabel?: string;
+  onView?: () => void;
 }) {
   return (
-    <a
-      href={href}
+    <div
       data-testid={testId}
-      className="flex items-start gap-3 rounded-xl border border-white/10 bg-obsidian-950 p-4 shadow-sm hover:border-gold/40 hover:bg-white/[0.02] transition-colors"
+      className="flex flex-col justify-between rounded-xl border border-white/10 bg-obsidian-950 p-4 shadow-sm hover:border-gold/30 transition-all space-y-3"
     >
-      <div className="shrink-0 rounded-lg bg-gold/10 p-2">
-        <Icon className="h-5 w-5 text-gold" />
+      <div className="flex items-start gap-3">
+        <div className="shrink-0 rounded-lg bg-gold/10 p-2">
+          <Icon className="h-5 w-5 text-gold" />
+        </div>
+        <div className="min-w-0">
+          <p className="font-heading font-bold text-white text-sm">{title}</p>
+          <p className="mt-0.5 text-xs text-slate-400 font-body">{description}</p>
+        </div>
       </div>
-      <div className="min-w-0">
-        <p className="font-heading font-bold text-white text-sm">{title}</p>
-        <p className="mt-0.5 text-xs text-slate-400 font-body">{description}</p>
-        <span className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-heading font-bold text-gold">
-          <Download className="h-3 w-3" /> Download {fileLabel}
-        </span>
+
+      <div className="flex items-center gap-2 pt-2 border-t border-white/5">
+        {onView && (
+          <Button
+            type="button"
+            variant="gold"
+            size="sm"
+            onClick={onView}
+            data-testid={`view-${testId}`}
+            className="h-7 text-xs font-bold flex-1"
+          >
+            <Eye className="h-3.5 w-3.5 mr-1" /> View
+          </Button>
+        )}
+        <a
+          href={href}
+          data-testid={`download-${testId}`}
+          className={cn(
+            "inline-flex items-center justify-center gap-1 rounded-md border border-white/15 bg-white/5 px-2.5 py-1 text-xs font-heading font-bold text-slate-200 hover:bg-white/10 hover:text-white transition-colors h-7 shrink-0",
+            !onView && "w-full"
+          )}
+        >
+          <Download className="h-3 w-3 text-gold" /> {fileLabel}
+        </a>
       </div>
-    </a>
+    </div>
   );
 }
 
@@ -97,6 +122,17 @@ export default function Reports() {
   const [clearPaymentsOpen, setClearPaymentsOpen] = useState(false);
   const [clearPaymentsPassword, setClearPaymentsPassword] = useState("");
   const [clearPaymentsBusy, setClearPaymentsBusy] = useState(false);
+
+  // Live Report Viewer Modal
+  const [viewingSection, setViewingSection] = useState<ReportSection | null>(null);
+  const [viewingDownloadHref, setViewingDownloadHref] = useState<string | undefined>(undefined);
+  const [viewingFileLabel, setViewingFileLabel] = useState<string>("Download .xlsx");
+
+  const openViewReport = (section: ReportSection, href?: string, label: string = "Download .xlsx") => {
+    setViewingSection(section);
+    setViewingDownloadHref(href);
+    setViewingFileLabel(label);
+  };
 
   const loadBase = () => {
     setLoading(true);
@@ -185,15 +221,13 @@ export default function Reports() {
         </p>
       </div>
 
-      <LiveReportsPanel />
-
       {/* OPERATIONAL REPORTS — event-wide, not scoped to one tournament */}
-      {(attendanceAccess.canView || teamsAccess.canView || staffAccess.canView || accommodationAccess.canView || me?.is_admin) && (
+      {(attendanceAccess.canView || teamsAccess.canView || staffAccess.canView || accommodationAccess.canView || canEdit || me?.is_admin) && (
         <div className="space-y-3">
           <h2 className="font-heading text-xs font-bold uppercase tracking-wider text-slate-400">
             Operational Reports
           </h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {attendanceAccess.canView && (
               <ReportDownloadCard
                 icon={CheckSquare}
@@ -201,6 +235,7 @@ export default function Reports() {
                 description="Present/absent status for every registered participant."
                 href={`${BACKEND}/api/export/attendance.xlsx`}
                 testId="download-attendance-report-btn"
+                onView={() => openViewReport("attendance", `${BACKEND}/api/export/attendance.xlsx`, "Download Attendance .xlsx")}
               />
             )}
             {teamsAccess.canView && (
@@ -210,6 +245,7 @@ export default function Reports() {
                 description="Which school delegations have arrived at the venue."
                 href={`${BACKEND}/api/export/arrival.xlsx`}
                 testId="download-arrival-report-btn"
+                onView={() => openViewReport("arrival", `${BACKEND}/api/export/arrival.xlsx`, "Download Arrival .xlsx")}
               />
             )}
             {teamsAccess.canView && (
@@ -219,6 +255,7 @@ export default function Reports() {
                 description="Per-team registration-fee billing, refunds & net collected."
                 href={`${BACKEND}/api/export/payments.xlsx`}
                 testId="download-payments-report-btn"
+                onView={() => openViewReport("billing", `${BACKEND}/api/export/payments.xlsx`, "Download Payments .xlsx")}
               />
             )}
             {staffAccess.canView && (
@@ -228,6 +265,7 @@ export default function Reports() {
                 description="Staff duty assignments across every building & room."
                 href={`${BACKEND}/api/export/duties.xlsx`}
                 testId="download-duty-report-btn"
+                onView={() => openViewReport("duty", `${BACKEND}/api/export/duties.xlsx`, "Download Duties .xlsx")}
               />
             )}
             {accommodationAccess.canView && (
@@ -237,6 +275,17 @@ export default function Reports() {
                 description="Building, floor, room & bed allocation for every occupant."
                 href={`${BACKEND}/api/export/rooms.xlsx`}
                 testId="download-accommodation-report-btn"
+                onView={() => openViewReport("accommodation", `${BACKEND}/api/export/rooms.xlsx`, "Download Rooms .xlsx")}
+              />
+            )}
+            {(canEdit || me?.is_admin) && (
+              <ReportDownloadCard
+                icon={Trophy}
+                title="Match Progress"
+                description="Overview of scheduled, live, and completed matches."
+                href={selectedId ? `${BACKEND}/api/reports/tournaments/${selectedId}/full.xlsx` : `${BACKEND}/api/export/live-summary`}
+                testId="download-matches-report-btn"
+                onView={() => openViewReport("matches", selectedId ? `${BACKEND}/api/reports/tournaments/${selectedId}/full.xlsx` : undefined, "Download Match Workbook")}
               />
             )}
             {me?.is_admin && (
@@ -246,6 +295,7 @@ export default function Reports() {
                 description="Organizer Portal accounts, roles & module permissions."
                 href={`${BACKEND}/api/export/organizer-users.xlsx`}
                 testId="download-user-report-btn"
+                onView={() => openViewReport("accounts", `${BACKEND}/api/export/organizer-users.xlsx`, "Download Users .xlsx")}
               />
             )}
           </div>
@@ -531,6 +581,15 @@ export default function Reports() {
           </div>
         </div>
       </Dialog>
+
+      {/* REPORT VIEWER MODAL / DIALOG WITH BACK NAVIGATION */}
+      <ReportViewerDialog
+        open={viewingSection !== null}
+        onClose={() => setViewingSection(null)}
+        section={viewingSection}
+        downloadHref={viewingDownloadHref}
+        fileLabel={viewingFileLabel}
+      />
     </div>
   );
 }

@@ -41,6 +41,7 @@ const Staff = lazy(() => import("@/pages/admin/Staff"));
 const Volunteers = lazy(() => import("@/pages/admin/Volunteers"));
 const Duties = lazy(() => import("@/pages/admin/Duties"));
 const MyWork = lazy(() => import("@/pages/admin/MyWork"));
+const MyIdCard = lazy(() => import("@/pages/admin/MyIdCard"));
 const StaffLiveMap = lazy(() => import("@/pages/admin/StaffLiveMap"));
 const Matches = lazy(() => import("@/pages/admin/Matches"));
 const MatGroundAssignment = lazy(() => import("@/pages/admin/MatGroundAssignment"));
@@ -115,6 +116,7 @@ export default function App() {
         <Route element={<AdminLayout />}>
           <Route path="/admin" element={<Dashboard />} />
           <Route path="/admin/my-work" element={<MyWork />} />
+          <Route path="/admin/my-id-card" element={<MyIdCard />} />
           <Route path="/admin/teams" element={<AdminTeams />} />
           <Route path="/admin/buildings" element={<BuildingsRooms />} />
           <Route

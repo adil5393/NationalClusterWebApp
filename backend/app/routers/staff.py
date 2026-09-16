@@ -1,29 +1,13 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
-from ..auth_utils import hash_password
+from ..auth_utils import hash_password, provision_login_credentials
 from ..database import get_db
 from .event_locations import _room_display_name, resolve_event_location_for_source, resolve_location_display
 
 router = APIRouter(prefix="/api/staff", tags=["staff"])
-
-
-def _provision_login(db: Session, full_name: str) -> tuple[str, str]:
-    """Username is their first name in caps (suffixed with a number if that's
-    already taken by someone else), password is "2026" + their first name;
-    both are handed back once by the caller since the password only exists
-    as a bcrypt hash after this."""
-    first = (full_name or "").strip().split()[0] if (full_name or "").strip() else "STAFF"
-    base_username = first.upper()
-    username = base_username
-    suffix = 2
-    while db.query(models.OrganizerUser).filter(func.lower(models.OrganizerUser.username) == username.lower()).first():
-        username = f"{base_username}{suffix}"
-        suffix += 1
-    return username, f"2026{first}"
 
 
 @router.get("/meta")
@@ -57,7 +41,7 @@ def create_staff_credential(staff_id: int, db: Session = Depends(get_db)):
     if staff.organizer_users:
         raise HTTPException(409, f"{staff.full_name} already has a login: {staff.organizer_users[0].username}")
 
-    username, password = _provision_login(db, staff.full_name)
+    username, password = provision_login_credentials(db, staff.full_name, fallback_label="STAFF")
     login = models.OrganizerUser(
         username=username,
         full_name=staff.full_name,

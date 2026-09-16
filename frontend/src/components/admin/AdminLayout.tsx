@@ -38,6 +38,7 @@ import {
   MapPinned,
   ClipboardList,
   HeartHandshake,
+  IdCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -74,6 +75,27 @@ const STAFF_OPS_ONLY_PATHS = new Set([
 const MY_WORK_GROUP: NavGroup = {
   title: "My Work",
   items: [{ to: "/admin/my-work", label: "My Work", icon: ClipboardList, end: true }],
+};
+
+// A volunteer's own login gets zero organizer module access (see backend
+// schemas.VOLUNTEER_BASE_PERMISSIONS) — this is the base sidebar for that
+// account, replacing NAV_GROUPS altogether rather than just hiding a few
+// paths the way STAFF_OPS_ONLY_PATHS does for self-service staff. The one
+// exception is Matches & Fixtures (see VOLUNTEER_MATCHES_GROUP below), which
+// a volunteer can still reach if it's individually assigned to a match.
+const MY_ID_CARD_GROUP: NavGroup = {
+  title: "My Profile",
+  items: [{ to: "/admin/my-id-card", label: "My ID Card", icon: IdCard, end: true }],
+};
+
+// Mirrors the independent "assigned to a match" access path staff already
+// get (see backend security.require_match_access, permissions.tsx
+// useModuleAccess) — isItemVisible's own "/admin/matches" + assigned_match_ids
+// check still gates whether this actually renders, same as it does for
+// NAV_GROUPS' own Matches & Fixtures entry.
+const VOLUNTEER_MATCHES_GROUP: NavGroup = {
+  title: "Assigned Matches",
+  items: [{ to: "/admin/matches", label: "Matches & Fixtures", icon: Radio, moduleKey: "matches" }],
 };
 
 const NAV_GROUPS: NavGroup[] = [
@@ -179,6 +201,24 @@ export function AdminLayout() {
   useEffect(() => {
     if (me?.is_self_service_staff && location.pathname === "/admin") {
       navigate("/admin/my-work", { replace: true });
+    }
+  }, [me, location.pathname, navigate]);
+
+  // A self-service volunteer account has no organizer module access at all
+  // (see backend schemas.VOLUNTEER_BASE_PERMISSIONS), so it has no legitimate
+  // page to land on besides its own ID card — EXCEPT Matches & Fixtures,
+  // which a volunteer can still reach independent of module permissions if
+  // it's been assigned to referee/manage a match (assigned_match_ids; see
+  // backend security.require_match_access). That's the same independent
+  // access path an assigned staff account already gets, so this must not
+  // block it.
+  useEffect(() => {
+    if (!me?.is_self_service_volunteer) return;
+    const canViewMatches = (me.assigned_match_ids?.length ?? 0) > 0;
+    const allowed =
+      location.pathname === "/admin/my-id-card" || (canViewMatches && location.pathname === "/admin/matches");
+    if (!allowed) {
+      navigate("/admin/my-id-card", { replace: true });
     }
   }, [me, location.pathname, navigate]);
 
@@ -338,7 +378,12 @@ export function AdminLayout() {
 
         {/* NAVIGATION GROUPS */}
         <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-5" aria-label="Operations Navigation">
-          {(me?.is_self_service_staff ? [MY_WORK_GROUP, ...NAV_GROUPS] : NAV_GROUPS).map((group) => {
+          {(me?.is_self_service_volunteer
+            ? [MY_ID_CARD_GROUP, VOLUNTEER_MATCHES_GROUP]
+            : me?.is_self_service_staff
+              ? [MY_WORK_GROUP, ...NAV_GROUPS]
+              : NAV_GROUPS
+          ).map((group) => {
             const visibleItems = group.items.filter((item) => isItemVisible(item.moduleKey, item.to));
             if (visibleItems.length === 0) return null;
 

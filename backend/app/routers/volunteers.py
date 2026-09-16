@@ -21,6 +21,7 @@ from openpyxl.styles import Font
 from sqlalchemy.orm import Session
 
 from .. import id_card, models, schemas
+from ..auth_utils import hash_password, provision_login_credentials
 from ..database import get_db
 from ..image_utils import optimize_image
 
@@ -71,6 +72,33 @@ def delete_volunteer(volunteer_id: int, db: Session = Depends(get_db)):
             path.unlink()
     db.delete(v)
     db.commit()
+
+
+@router.post("/{volunteer_id}/credential", response_model=schemas.VolunteerCredentialResult, status_code=201)
+def create_volunteer_credential(volunteer_id: int, db: Session = Depends(get_db)):
+    """Provisions a self-service Organizer Portal login for one volunteer —
+    the volunteer counterpart to routers/staff.py's create_staff_credential.
+    Grants schemas.VOLUNTEER_BASE_PERMISSIONS (no organizer module access);
+    the account can only reach its own profile/ID card via /me/volunteer."""
+    v = db.get(models.Volunteer, volunteer_id)
+    if not v:
+        raise HTTPException(404, "Volunteer not found")
+    if v.organizer_users:
+        raise HTTPException(409, f"{v.full_name} already has a login: {v.organizer_users[0].username}")
+
+    username, password = provision_login_credentials(db, v.full_name, fallback_label="VOLUNTEER")
+    login = models.OrganizerUser(
+        username=username,
+        full_name=v.full_name,
+        password_hash=hash_password(password),
+        is_active=True,
+        is_admin=False,
+        permissions=schemas.VOLUNTEER_BASE_PERMISSIONS,
+        volunteers=[v],
+    )
+    db.add(login)
+    db.commit()
+    return {"login_username": username, "login_password": password}
 
 
 # --- Photo (admin-side upload, like gallery.py) ---------------------------

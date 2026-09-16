@@ -10,7 +10,7 @@ from .. import models
 from ..auth_utils import verify_password
 from ..config import settings
 from ..database import get_db
-from ..security import is_self_service_staff
+from ..security import is_self_service_staff, is_self_service_volunteer
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -24,6 +24,7 @@ def _user_payload(user: "models.OrganizerUser | None"):
     if not user:
         return {"authenticated": False, "admin_password_gate_disabled": settings.disable_admin_password_gate}
     staff = user.staff_members[0] if user.staff_members else None
+    volunteer = user.volunteers[0] if user.volunteers else None
     return {
         "authenticated": True,
         "id": user.id,
@@ -32,11 +33,15 @@ def _user_payload(user: "models.OrganizerUser | None"):
         "is_admin": user.is_admin,
         "permissions": user.permissions or {},
         "staff_member": {"id": staff.id, "full_name": staff.full_name, "category": staff.category} if staff else None,
+        "volunteer": {"id": volunteer.id, "full_name": volunteer.full_name} if volunteer else None,
         # Drives the frontend's My Work vs organizer Staff Operations split
         # (see routers/me.py, security.is_self_service_staff) — computed here
         # so the frontend never has to re-derive the admin/permission/
         # staff-link rule itself.
         "is_self_service_staff": is_self_service_staff(user),
+        # Same idea for a volunteer's own login — see security.is_self_service_volunteer
+        # and the /me/volunteer self-service endpoints in routers/me.py.
+        "is_self_service_volunteer": is_self_service_volunteer(user),
         # Matches this account can fully control (except delete/reset) independent
         # of the "matches" module permission — see security.require_match_access.
         # The frontend uses this to both grant Matches page visibility to an

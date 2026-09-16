@@ -326,6 +326,13 @@ class Volunteer(TimestampMixin, Base):
     def photo_url(self) -> "str | None":
         return f"/api/assets/volunteers/{self.photo_filename}" if self.photo_filename else None
 
+    @property
+    def login_username(self) -> "str | None":
+        """None until an organizer creates one on demand (see routers/volunteers.py
+        POST /volunteers/{id}/credential) — `organizer_users` is the backref
+        from OrganizerUser.volunteers, mirroring StaffMember.login_username."""
+        return self.organizer_users[0].username if self.organizer_users else None
+
 
 class Building(TimestampMixin, Base):
     __tablename__ = "buildings"
@@ -915,6 +922,14 @@ organizer_user_staff = Table(
 )
 
 
+organizer_user_volunteer = Table(
+    "organizer_user_volunteer",
+    Base.metadata,
+    Column("organizer_user_id", Integer, ForeignKey("organizer_users.id", ondelete="CASCADE"), primary_key=True),
+    Column("volunteer_id", Integer, ForeignKey("volunteers.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
 class OrganizerUser(TimestampMixin, Base):
     """An individual Organizer Portal login — replaced the old single shared
     ADMIN_PASSWORD. Deactivating (rather than deleting) revokes access while
@@ -935,6 +950,10 @@ class OrganizerUser(TimestampMixin, Base):
     # meant for actual event staff, and one account (e.g. a shared shift
     # tablet) can stand in for more than one person.
     staff_members = relationship("StaffMember", secondary=organizer_user_staff, backref="organizer_users")
+    # Which volunteer(s) this login belongs to — mirrors staff_members above,
+    # but for the volunteer self-service login (see routers/volunteers.py
+    # create_volunteer_credential, routers/me.py's /me/volunteer endpoints).
+    volunteers = relationship("Volunteer", secondary=organizer_user_volunteer, backref="organizer_users")
     # Matches this account is assigned to referee/manage — an independent access
     # path from `permissions`: an assigned account can view every match and fully
     # control (except delete/reset — see security.require_match_access) its own

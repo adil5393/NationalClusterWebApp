@@ -12,6 +12,7 @@ import {
   Camera,
   Printer,
   FileArchive,
+  KeyRound,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
@@ -33,6 +34,7 @@ interface Volunteer {
   email?: string;
   notes?: string;
   photo_url?: string | null;
+  login_username?: string | null;
 }
 
 const empty: Partial<Volunteer> = { full_name: "" };
@@ -46,6 +48,8 @@ export default function Volunteers() {
   const [importOpen, setImportOpen] = useState(false);
   const [downloadAllOpen, setDownloadAllOpen] = useState(false);
   const [form, setForm] = useState<Partial<Volunteer>>(empty);
+  const [creatingCredentialId, setCreatingCredentialId] = useState<number | null>(null);
+  const [newLogin, setNewLogin] = useState<{ full_name: string; username: string; password: string } | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -116,6 +120,20 @@ export default function Volunteers() {
       toast.success("Photo removed");
     } catch {
       toast.error("Could not remove photo");
+    }
+  };
+
+  const createCredential = async (v: Volunteer) => {
+    setCreatingCredentialId(v.id);
+    try {
+      const r = await api.post<{ login_username: string; login_password: string }>(`/volunteers/${v.id}/credential`);
+      setNewLogin({ full_name: v.full_name, username: r.data.login_username, password: r.data.login_password });
+      toast.success(`Login created for ${v.full_name}`);
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not create credential");
+    } finally {
+      setCreatingCredentialId(null);
     }
   };
 
@@ -214,6 +232,7 @@ export default function Volunteers() {
               <TH>Gender</TH>
               <TH>Phone</TH>
               <TH>Email</TH>
+              <TH>Account</TH>
               <TH className="text-right">Actions</TH>
             </TR>
           </THead>
@@ -239,8 +258,30 @@ export default function Volunteers() {
                 <TD className="text-slate-300 font-body text-xs">{v.gender || "—"}</TD>
                 <TD className="font-mono text-xs text-slate-400">{v.phone || "—"}</TD>
                 <TD className="font-mono text-xs text-slate-400">{v.email || "—"}</TD>
+                <TD>
+                  {v.login_username ? (
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 shadow-emerald-400/50 shadow-xs" />
+                      <span className="font-mono text-xs text-emerald-400 font-bold">{v.login_username}</span>
+                    </div>
+                  ) : (
+                    <span className="text-[11px] font-mono text-slate-500">No login</span>
+                  )}
+                </TD>
                 <TD className="text-right">
                   <div className="flex items-center justify-end gap-1">
+                    {canEdit && !v.login_username && (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => createCredential(v)}
+                        disabled={creatingCredentialId === v.id}
+                        data-testid={`create-credential-${v.id}`}
+                        title="Create Portal Login"
+                      >
+                        <KeyRound className="h-3.5 w-3.5 text-gold" />
+                      </Button>
+                    )}
                     {canEdit && (
                       <label
                         className="inline-flex items-center justify-center gap-2 rounded-md font-body tracking-wide transition-colors h-8 w-8 p-0 cursor-pointer text-slate-300 hover:bg-white/10 hover:text-white"
@@ -395,6 +436,42 @@ export default function Volunteers() {
       </Dialog>
 
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} type="volunteers" onDone={load} />
+
+      {/* NEW LOGIN CREDENTIALS DISPLAY DIALOG */}
+      <Dialog
+        open={Boolean(newLogin)}
+        onClose={() => setNewLogin(null)}
+        title="Volunteer Portal Login Provisioned"
+        testId="new-volunteer-login-dialog"
+      >
+        {newLogin && (
+          <div className="space-y-4">
+            <p className="text-xs text-slate-300 font-body leading-relaxed">
+              Portal credentials for <strong>{newLogin.full_name}</strong> have been generated. Share these with
+              the volunteer now — the temporary password cannot be retrieved once closed.
+            </p>
+            <div className="space-y-2.5 rounded-lg border border-gold/30 bg-gold/5 p-4">
+              <div>
+                <Label>Username</Label>
+                <p className="font-mono text-sm font-bold text-white" data-testid="new-volunteer-login-username">
+                  {newLogin.username}
+                </p>
+              </div>
+              <div>
+                <Label>Password</Label>
+                <p className="font-mono text-sm font-bold text-white" data-testid="new-volunteer-login-password">
+                  {newLogin.password}
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end pt-2 border-t border-white/10">
+              <Button variant="gold" size="sm" onClick={() => setNewLogin(null)} data-testid="close-new-volunteer-login">
+                Dismiss &amp; Copy
+              </Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
 
       {/* DOWNLOAD ALL ID CARDS DIALOG */}
       <Dialog

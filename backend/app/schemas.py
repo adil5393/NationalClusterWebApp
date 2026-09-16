@@ -638,6 +638,17 @@ class VolunteerUpdate(BaseModel):
 class VolunteerRead(ORMModel, VolunteerBase):
     id: int
     photo_url: Optional[str] = None
+    # None until an organizer clicks "Create Credential" for this person (see
+    # POST /volunteers/{id}/credential) — mirrors StaffRead.login_username.
+    login_username: Optional[str] = None
+
+
+class VolunteerCredentialResult(BaseModel):
+    """POST /volunteers/{id}/credential's response. Shown once, since after
+    this the password only exists as a bcrypt hash — mirrors
+    StaffCredentialResult."""
+    login_username: str
+    login_password: str
 
 
 # --- Transport ---
@@ -935,6 +946,23 @@ PERMISSION_LEVELS = ["view", "edit"]  # a module key missing from `permissions` 
 # not Procurement (vendor pricing) or Knowledge Base (internal decisions/notes),
 # which stay admin/explicitly-granted only.
 STAFF_BASE_PERMISSIONS = {k: "view" for k in ORGANIZER_MODULES if k not in ("procurement", "knowledge")}
+
+# Auto-provisioned volunteer logins (routers/volunteers.py create_volunteer_credential)
+# get view access to just "teams" and "venues" — not the broad
+# every-operational-module grant STAFF_BASE_PERMISSIONS gives staff. Those two
+# are needed because a volunteer can be assigned to referee/manage a match
+# (models.Match.assigned_users, independent of the "matches" permission
+# itself — see security.require_match_access) exactly like a staff account
+# can, and the Matches & Fixtures page's own data loading (team names, venue
+# names) 403s without them. Deliberately NOT "staff" — STAFF_BASE_PERMISSIONS
+# includes it safely only because security.require_staff_operator's
+# is_self_service_staff check keys off an actual StaffMember link (which a
+# volunteer never has), so granting a volunteer "staff":"view" would let it
+# straight into the organizer-wide Staff Directory. Also not "volunteers"
+# (would expose the full volunteer roster/contacts to a volunteer) or any
+# other module — a volunteer's self-service surface (routers/me.py's
+# /me/volunteer endpoints) is its own profile and ID card, nothing more.
+VOLUNTEER_BASE_PERMISSIONS: dict[str, str] = {"teams": "view", "venues": "view"}
 
 
 class OrganizerUserCreate(BaseModel):

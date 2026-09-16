@@ -16,13 +16,14 @@ Reuses staff.py's existing `_shift_dict` / `_duty_dict` row-shaping so the
 same fields already used by the organizer UI show up here."""
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
-from .. import models
+from .. import id_card, models
 from ..database import get_db
-from ..security import require_auth, resolve_self_staff
+from ..security import require_auth, resolve_self_staff, resolve_self_volunteer
 from .staff import _duty_dict, _shift_dict
+from .volunteers import _photo_path
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -36,6 +37,15 @@ def _self_staff(
     if not staff:
         raise HTTPException(404, "No staff profile is linked to this account")
     return staff
+
+
+def _self_volunteer(
+    current: models.OrganizerUser = Depends(require_auth),
+) -> models.Volunteer:
+    volunteer = resolve_self_volunteer(current)
+    if not volunteer:
+        raise HTTPException(404, "No volunteer profile is linked to this account")
+    return volunteer
 
 
 def _my_shifts(staff: models.StaffMember) -> list[dict]:
@@ -246,3 +256,33 @@ def my_incharge_team(
             }
         )
     return sorted(by_staff.values(), key=lambda s: s["full_name"] or "")
+
+
+# ---------- Volunteer self-service ----------
+# A volunteer's own login gets no organizer module access at all (see
+# schemas.VOLUNTEER_BASE_PERMISSIONS) — this is the entire self-service
+# surface for that account: their own profile and their own ID card,
+# resolved from the session's OrganizerUser<->Volunteer link
+# (security.resolve_self_volunteer), never a client-supplied volunteer id.
+@router.get("/volunteer")
+def my_volunteer_profile(volunteer: models.Volunteer = Depends(_self_volunteer)):
+    return {
+        "id": volunteer.id,
+        "full_name": volunteer.full_name,
+        "student_class": volunteer.student_class,
+        "gender": volunteer.gender,
+        "phone": volunteer.phone,
+        "email": volunteer.email,
+        "photo_url": volunteer.photo_url,
+    }
+
+
+@router.get("/volunteer/idcard.pdf")
+def my_volunteer_idcard(volunteer: models.Volunteer = Depends(_self_volunteer)):
+    card = id_card.render_volunteer_id_card_page(volunteer, _photo_path(volunteer))
+    pdf = id_card.build_pdf([card])
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="volunteer-idcard-{volunteer.id}.pdf"'},
+    )

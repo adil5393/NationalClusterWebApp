@@ -95,6 +95,33 @@ def resolve_self_staff(user: "models.OrganizerUser") -> "models.StaffMember | No
     return user.staff_members[0]
 
 
+def is_self_service_volunteer(user: "models.OrganizerUser") -> bool:
+    """True for a volunteer's own login — mirrors is_self_service_staff.
+    Auto-provisioned volunteer logins (routers/volunteers.py
+    create_volunteer_credential) get schemas.VOLUNTEER_BASE_PERMISSIONS
+    (empty), so unlike is_self_service_staff there's no module-permission
+    escape hatch to check — being linked to a Volunteer at all (and not
+    being an admin) is enough."""
+    if user.is_admin:
+        return False
+    return bool(user.volunteers)
+
+
+def resolve_self_volunteer(user: "models.OrganizerUser") -> "models.Volunteer | None":
+    """The one Volunteer this session's self-service data belongs to —
+    mirrors resolve_self_staff. Identity always comes from the authenticated
+    account's existing OrganizerUser<->Volunteer link, never a client-
+    supplied volunteer id."""
+    if not user.volunteers:
+        return None
+    if len(user.volunteers) > 1:
+        raise HTTPException(
+            409,
+            "This account is linked to multiple volunteer profiles, so self-service data is ambiguous. Ask an admin to link a single volunteer profile to this login.",
+        )
+    return user.volunteers[0]
+
+
 def require_staff_operator(request: Request, db: Session = Depends(get_db)) -> "models.OrganizerUser":
     """Gate for the organizer-wide Staff Operations surface (staff.py,
     event_locations.py) — like require_module("staff"), but a self-service
