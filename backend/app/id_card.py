@@ -215,7 +215,7 @@ def build_pdf_sheets(
 
 
 # Inset a few px inside the orange border so the photo never overlaps it.
-PHOTO_BOX = (364, 466, 660, 776)
+PHOTO_BOX = (367, 486, 663, 798)
 
 FONT_BOLD_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 VALUE_COLOR = (15, 23, 42)
@@ -223,6 +223,10 @@ VALUE_MAX_SIZE = 32
 VALUE_MIN_SIZE = 16
 VALUE_X = 425
 VALUE_MAX_WIDTH = 535
+# Measured px from a field's text baseline down to its own printed
+# underline (consistent across every field on this template — see the
+# FIELD_LINES values vs. the underline rows they were measured against).
+UNDERLINE_OFFSET = 12
 
 # (field key, [baseline y, ...]) — value text is drawn just above each
 # printed underline, left-aligned starting at VALUE_X. School Name gets two
@@ -230,13 +234,13 @@ VALUE_MAX_WIDTH = 535
 # wrapping — a school's full name rarely fits in one line at a readable
 # size), everything else is a single line.
 FIELD_LINES = [
-    ("name", [939]),
-    ("father_name", [987]),
-    ("dob", [1037]),
-    ("uid", [1088]),
-    ("class_", [1139]),
-    ("category", [1188]),
-    ("school", [1235, 1280]),
+    ("name", [959]),
+    ("father_name", [1007]),
+    ("dob", [1056]),
+    ("uid", [1105]),
+    ("class_", [1155]),
+    ("category", [1202]),
+    ("school", [1243, 1275]),
 ]
 
 
@@ -285,8 +289,8 @@ def _wrap_to_lines(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTyp
     return lines
 
 
-def _fit_font_multiline(draw: ImageDraw.ImageDraw, text: str, max_width: int, max_lines: int) -> tuple[ImageFont.FreeTypeFont, list[str]]:
-    size = VALUE_MAX_SIZE
+def _fit_font_multiline(draw: ImageDraw.ImageDraw, text: str, max_width: int, max_lines: int, max_size: int = VALUE_MAX_SIZE) -> tuple[ImageFont.FreeTypeFont, list[str]]:
+    size = max_size
     while size > VALUE_MIN_SIZE:
         font = ImageFont.truetype(FONT_BOLD_PATH, size)
         if draw.textlength(text, font=font) <= max_width:
@@ -306,7 +310,23 @@ def _draw_value(draw: ImageDraw.ImageDraw, baseline_ys: list[int], text: "str | 
         font = _fit_font(draw, text, VALUE_MAX_WIDTH)
         draw.text((VALUE_X, baseline_ys[0]), text, font=font, fill=VALUE_COLOR, anchor="ls")
         return
-    font, lines = _fit_font_multiline(draw, text, VALUE_MAX_WIDTH, len(baseline_ys))
+    # Cap the font size so a wrapped line's ascender never reaches up past
+    # the printed underline of the line above it. Baseline-to-baseline
+    # spacing alone isn't the right budget for that: the line above's own
+    # underline already eats UNDERLINE_OFFSET px of that gap, and a font's
+    # actual ascent (queried from the font itself, not assumed) is what can
+    # collide with it — templates don't all give multi-line fields the same
+    # breathing room (e.g. school name's two lines sit closer together on
+    # some template revisions than others), so this is derived from the
+    # measured baselines rather than hardcoded.
+    clearance = min(b - a for a, b in zip(baseline_ys, baseline_ys[1:])) - UNDERLINE_OFFSET
+    max_size = VALUE_MAX_SIZE
+    while max_size > VALUE_MIN_SIZE:
+        ascent, _descent = ImageFont.truetype(FONT_BOLD_PATH, max_size).getmetrics()
+        if ascent <= clearance:
+            break
+        max_size -= 2
+    font, lines = _fit_font_multiline(draw, text, VALUE_MAX_WIDTH, len(baseline_ys), max_size=max_size)
     for baseline_y, line in zip(baseline_ys, lines):
         draw.text((VALUE_X, baseline_y), line, font=font, fill=VALUE_COLOR, anchor="ls")
 
