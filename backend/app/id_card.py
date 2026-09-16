@@ -303,12 +303,18 @@ def _fit_font_multiline(draw: ImageDraw.ImageDraw, text: str, max_width: int, ma
     return font, _wrap_to_lines(draw, text, font, max_width, max_lines)
 
 
-def _draw_value(draw: ImageDraw.ImageDraw, baseline_ys: list[int], text: "str | None") -> None:
+def _draw_value(
+    draw: ImageDraw.ImageDraw,
+    baseline_ys: list[int],
+    text: "str | None",
+    x: int = VALUE_X,
+    max_width: int = VALUE_MAX_WIDTH,
+) -> None:
     if not text:
         return
     if len(baseline_ys) == 1:
-        font = _fit_font(draw, text, VALUE_MAX_WIDTH)
-        draw.text((VALUE_X, baseline_ys[0]), text, font=font, fill=VALUE_COLOR, anchor="ls")
+        font = _fit_font(draw, text, max_width)
+        draw.text((x, baseline_ys[0]), text, font=font, fill=VALUE_COLOR, anchor="ls")
         return
     # Cap the font size so a wrapped line's ascender never reaches up past
     # the printed underline of the line above it. Baseline-to-baseline
@@ -326,20 +332,20 @@ def _draw_value(draw: ImageDraw.ImageDraw, baseline_ys: list[int], text: "str | 
         if ascent <= clearance:
             break
         max_size -= 2
-    font, lines = _fit_font_multiline(draw, text, VALUE_MAX_WIDTH, len(baseline_ys), max_size=max_size)
+    font, lines = _fit_font_multiline(draw, text, max_width, len(baseline_ys), max_size=max_size)
     for baseline_y, line in zip(baseline_ys, lines):
-        draw.text((VALUE_X, baseline_y), line, font=font, fill=VALUE_COLOR, anchor="ls")
+        draw.text((x, baseline_y), line, font=font, fill=VALUE_COLOR, anchor="ls")
 
 
-def _paste_photo(card: Image.Image, photo_path: "Path | None") -> None:
+def _paste_photo(card: Image.Image, photo_path: "Path | None", box: tuple[int, int, int, int] = PHOTO_BOX) -> None:
     if not photo_path or not photo_path.exists():
         return  # template's own placeholder silhouette shows through
     try:
         photo = Image.open(photo_path).convert("RGB")
     except Exception:  # noqa: BLE001
         return
-    box_w = PHOTO_BOX[2] - PHOTO_BOX[0]
-    box_h = PHOTO_BOX[3] - PHOTO_BOX[1]
+    box_w = box[2] - box[0]
+    box_h = box[3] - box[1]
     # Center-crop to the box's aspect ratio first (object-fit: cover), then
     # resize — avoids stretching a non-square photo.
     src_w, src_h = photo.size
@@ -354,7 +360,7 @@ def _paste_photo(card: Image.Image, photo_path: "Path | None") -> None:
         y0 = (src_h - new_h) // 2
         photo = photo.crop((0, y0, src_w, y0 + new_h))
     photo = photo.resize((box_w, box_h), Image.LANCZOS)
-    card.paste(photo, (PHOTO_BOX[0], PHOTO_BOX[1]))
+    card.paste(photo, (box[0], box[1]))
 
 
 def render_id_card(participant, team, photo_path: "Path | None" = None) -> Image.Image:
@@ -387,6 +393,44 @@ def render_id_card_page(participant, team, photo_path: "Path | None" = None, dpi
     """A single card filling its own full 7x10cm page — what the
     per-participant download uses."""
     return render_id_card(participant, team, photo_path).resize(_print_size_px(dpi), Image.LANCZOS)
+
+
+# --- Volunteer ID cards ------------------------------------------------
+# A separate, much simpler template (backend/assets/templates/
+# volunteer_id_card_template.png) — same TEMPLATE_SIZE/physical card size as
+# the participant card (so it reuses every sheet/PDF helper above
+# unchanged), but only a photo + Name + Class, no team/school affiliation.
+# Box/line coordinates measured the same way as PHOTO_BOX/FIELD_LINES above
+# — re-measure if this template is ever redesigned.
+VOLUNTEER_TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "assets" / "templates" / "volunteer_id_card_template.png"
+VOLUNTEER_PHOTO_BOX = (366, 486, 662, 800)
+VOLUNTEER_VALUE_X = 407
+VOLUNTEER_VALUE_MAX_WIDTH = 550
+VOLUNTEER_FIELD_LINES = [
+    ("full_name", [1047]),
+    ("student_class", [1177]),
+]
+
+
+def render_volunteer_id_card(volunteer, photo_path: "Path | None" = None) -> Image.Image:
+    """Composites one volunteer's card at the template's native resolution
+    — mirrors render_id_card above but against the volunteer template/
+    coordinates and a smaller field set (no team, no CBSE UID, ...)."""
+    card = Image.open(VOLUNTEER_TEMPLATE_PATH).convert("RGB").resize(TEMPLATE_SIZE)
+    _paste_photo(card, photo_path, box=VOLUNTEER_PHOTO_BOX)
+
+    draw = ImageDraw.Draw(card)
+    values = {"full_name": volunteer.full_name, "student_class": volunteer.student_class}
+    for key, baseline_ys in VOLUNTEER_FIELD_LINES:
+        _draw_value(draw, baseline_ys, values.get(key), x=VOLUNTEER_VALUE_X, max_width=VOLUNTEER_VALUE_MAX_WIDTH)
+
+    return card
+
+
+def render_volunteer_id_card_page(volunteer, photo_path: "Path | None" = None, dpi: int = PRINT_DPI) -> Image.Image:
+    """A single volunteer card filling its own full 7x10cm page — what the
+    per-volunteer download uses."""
+    return render_volunteer_id_card(volunteer, photo_path).resize(_print_size_px(dpi), Image.LANCZOS)
 
 
 def build_pdf(cards: list[Image.Image], dpi: int = PRINT_DPI) -> bytes:

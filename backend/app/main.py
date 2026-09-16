@@ -45,6 +45,7 @@ from .routers import (
     teams,
     transport,
     venues,
+    volunteers,
     walkie,
 )
 
@@ -156,6 +157,7 @@ for router_module, module_key in (
     (reports, "matches"),
     (mats, "matches"),
     (attendance, "attendance"),
+    (volunteers, "volunteers"),
 ):
     app.include_router(router_module.router, dependencies=[Depends(require_module(module_key))])
 

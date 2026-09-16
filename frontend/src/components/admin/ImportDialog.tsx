@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { UploadCloud, FileSpreadsheet, CheckCircle2, AlertCircle } from "lucide-react";
+import { UploadCloud, FileSpreadsheet, Download, CheckCircle2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api, BASE_URL } from "@/lib/api";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
@@ -14,6 +14,12 @@ interface Result {
 const COLUMNS: Record<string, string> = {
   teams: "name (required), school, region, country, member_count",
   participants: "team (required, must match a team name), full_name (required), role, gender, age",
+  volunteers: "full_name (required), student_class, gender, phone, email, notes",
+};
+
+// Only types with a generated example spreadsheet get a "Download Template" link.
+const TEMPLATE_URLS: Partial<Record<string, string>> = {
+  volunteers: "/volunteers/template.xlsx",
 };
 
 export function ImportDialog({
@@ -24,7 +30,7 @@ export function ImportDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  type: "teams" | "participants";
+  type: "teams" | "participants" | "volunteers";
   onDone: () => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
@@ -38,7 +44,11 @@ export function ImportDialog({
     const fd = new FormData();
     fd.append("file", file);
     try {
-      const r = await api.post(`/import/${type}`, fd, { headers: { "Content-Type": undefined } as any });
+      // volunteers.py owns its own import endpoint (/api/volunteers/import)
+      // rather than living in imports.py alongside teams/participants, so
+      // it needs its own URL shape here instead of the shared /import/{type}.
+      const url = type === "volunteers" ? "/volunteers/import" : `/import/${type}`;
+      const r = await api.post(url, fd, { headers: { "Content-Type": undefined } as any });
       setResult(r.data);
       toast.success(`Imported ${r.data.created} ${type}`);
       onDone();
@@ -62,6 +72,15 @@ export function ImportDialog({
           <p className="text-slate-400 text-[11px]">
             Accepts <code className="text-white">.csv</code> or <code className="text-white">.xlsx</code>. The first row must match the expected column names.
           </p>
+          {TEMPLATE_URLS[type] && (
+            <a
+              href={`${BASE_URL}/api${TEMPLATE_URLS[type]}`}
+              className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-gold hover:text-gold/80 transition-colors"
+              data-testid="import-download-template"
+            >
+              <Download className="h-3 w-3" /> Download Example Template (.xlsx)
+            </a>
+          )}
         </div>
 
         <label className="flex h-28 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-white/15 bg-obsidian-950 p-4 text-xs text-slate-400 hover:border-gold hover:text-white transition-all">

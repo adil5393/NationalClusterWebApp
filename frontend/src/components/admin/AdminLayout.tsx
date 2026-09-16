@@ -37,6 +37,7 @@ import {
   Mic,
   MapPinned,
   ClipboardList,
+  HeartHandshake,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -80,6 +81,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "People",
     items: [
       { to: "/admin/staff", label: "Staff Directory", icon: HardHat, moduleKey: "staff" },
+      { to: "/admin/volunteers", label: "Volunteers", icon: HeartHandshake, moduleKey: "volunteers" },
       { to: "/admin/duties", label: "Staff Duties", icon: ClipboardList, moduleKey: "staff" },
       { to: "/admin/accounts", label: "Accounts & Access", icon: UserCog, moduleKey: "accounts" },
       { to: "/admin/staff-map", label: "Staff Live Map", icon: MapPinned, moduleKey: "staff_map" },

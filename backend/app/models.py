@@ -306,6 +306,27 @@ class Coach(TimestampMixin, Base):
     team = relationship("Team", back_populates="coaches")
 
 
+class Volunteer(TimestampMixin, Base):
+    """The host school's own event volunteers — a flat roster independent of
+    any participating Team (unlike Participant/Coach, which always belong to
+    one). Gets its own simpler ID card (see id_card.py's
+    render_volunteer_id_card) showing only name + class, matching
+    backend/assets/templates/volunteer_id_card_template.png."""
+    __tablename__ = "volunteers"
+    id = Column(Integer, primary_key=True)
+    full_name = Column(String(200), nullable=False)
+    student_class = Column(String(40))
+    gender = Column(String(20))
+    phone = Column(String(60))
+    email = Column(String(200))
+    notes = Column(Text)
+    photo_filename = Column(String(120))
+
+    @property
+    def photo_url(self) -> "str | None":
+        return f"/api/assets/volunteers/{self.photo_filename}" if self.photo_filename else None
+
+
 class Building(TimestampMixin, Base):
     __tablename__ = "buildings"
     id = Column(Integer, primary_key=True)

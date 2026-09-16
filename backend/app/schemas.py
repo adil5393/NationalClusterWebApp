@@ -612,6 +612,34 @@ class CoachRead(ORMModel, CoachBase):
     checked_in_at: Optional[datetime] = None
 
 
+# --- Volunteers ---
+class VolunteerBase(BaseModel):
+    full_name: str
+    student_class: Optional[str] = None
+    gender: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class VolunteerCreate(VolunteerBase):
+    pass
+
+
+class VolunteerUpdate(BaseModel):
+    full_name: Optional[str] = None
+    student_class: Optional[str] = None
+    gender: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class VolunteerRead(ORMModel, VolunteerBase):
+    id: int
+    photo_url: Optional[str] = None
+
+
 # --- Transport ---
 class DriverBase(BaseModel):
     name: str
@@ -898,6 +926,7 @@ ORGANIZER_MODULES = {
     "knowledge": "Knowledge Base",
     "matches": "Matches & Fixtures",
     "attendance": "Attendance",
+    "volunteers": "Volunteers",
 }
 PERMISSION_LEVELS = ["view", "edit"]  # a module key missing from `permissions` means no access
 
