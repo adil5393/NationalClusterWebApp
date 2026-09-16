@@ -1062,14 +1062,18 @@ export default function AdminTeams() {
                               className={cn(
                                 "inline-flex items-center justify-center rounded h-7 w-7 p-0 transition-colors shrink-0",
                                 t.all_photos_uploaded
-                                  ? "text-red-500 hover:bg-red-500/10 hover:text-red-400"
-                                  : "text-slate-400 hover:bg-white/10 hover:text-white",
+                                  ? "text-emerald-500 hover:bg-emerald-500/10 hover:text-emerald-400"
+                                  : (t.participants_with_photo_count ?? 0) >= 1
+                                    ? "text-red-500 hover:bg-red-500/10 hover:text-red-400"
+                                    : "text-slate-400 hover:bg-white/10 hover:text-white",
                               )}
                               data-testid={`download-team-idcards-${t.id}`}
                               title={
                                 t.all_photos_uploaded
                                   ? `Download Team ID Cards (PDF) — all ${t.participant_count} participant photos uploaded`
-                                  : `Download Team ID Cards (PDF) — ${t.participants_with_photo_count ?? 0}/${t.participant_count ?? 0} participant photos uploaded`
+                                  : (t.participants_with_photo_count ?? 0) >= 1
+                                    ? `Download Team ID Cards (PDF) — ${t.participants_with_photo_count ?? 0}/${t.participant_count ?? 0} participant photos uploaded`
+                                    : `Download Team ID Cards (PDF) — 0/${t.participant_count ?? 0} participant photos uploaded`
                               }
                             >
                               <IdCard className="h-3.5 w-3.5" />
