@@ -2,6 +2,7 @@
 import csv
 import io
 import itertools
+import zipfile
 
 import openpyxl
 from fastapi import APIRouter, Depends, HTTPException
@@ -1159,31 +1160,78 @@ def _pdf_response(content: bytes, filename: str) -> StreamingResponse:
     )
 
 
+def _zip_response(files: list[tuple[str, bytes]], filename: str) -> StreamingResponse:
+    """Bundles multiple standalone files (e.g. one PDF per ID card) into a
+    single ZIP download — for the individual-cards exports, where each card
+    needs to stay its own file so a print operator can pick/place them one
+    at a time in layout software, rather than a flattened multi-card sheet."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, content in files:
+            zf.writestr(name, content)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 def _photo_path(participant: models.Participant):
     if not participant.photo_filename:
         return None
     return ASSETS_PARTICIPANTS_DIR / participant.photo_filename
 
 
-def _team_sheets(
-    participants: list[models.Participant],
-    team: models.Team,
-    layout: "id_card.SheetLayout",
-    dpi: int,
-) -> list:
-    """Renders one team's cards and lays them into sheets, starting a fresh
-    sheet at every age-group boundary — a sheet must never mix age groups,
-    even if that leaves the previous group's last sheet partially empty.
-    `participants` is sorted by id_card.sort_key first (age group, then
-    name), so same-age-group participants are already contiguous and a
-    plain itertools.groupby is enough to split on that boundary."""
+def _idcard_filename(participant: models.Participant) -> str:
+    """One card's file name inside an individual-cards ZIP — registration_no
+    when available (stable/unique, matches the single-participant download's
+    naming), falling back to the DB id, plus the athlete's name for a
+    human-readable listing in the layout tool's file picker."""
+    slug = "".join(c if c.isalnum() or c in " -_" else "_" for c in participant.full_name).strip() or "participant"
+    return f"{participant.registration_no or participant.id}_{slug}.pdf"
+
+
+def _individual_card_files(participants: list[models.Participant], team_by_id: dict[int, models.Team]) -> list[tuple[str, bytes]]:
+    """Renders each participant's card as its own standalone one-page PDF
+    (same render_id_card_page + build_pdf pairing the single-participant
+    download already uses — full physical card size, no sheet grid), for
+    bundling into an individual-cards ZIP."""
+    files: list[tuple[str, bytes]] = []
+    seen_names: dict[str, int] = {}
+    for p in sorted(participants, key=id_card.sort_key):
+        team = team_by_id[p.team_id]
+        card = id_card.render_id_card_page(p, team, _photo_path(p))
+        pdf = id_card.build_pdf([card])
+        name = _idcard_filename(p)
+        # Guard against a name collision (e.g. two participants sharing a
+        # blank registration_no) silently overwriting one card in the zip.
+        if name in seen_names:
+            seen_names[name] += 1
+            stem, _, ext = name.rpartition(".")
+            name = f"{stem}_{seen_names[name]}.{ext}"
+        else:
+            seen_names[name] = 0
+        files.append((name, pdf))
+    return files
+
+
+def _team_card_groups(participants: list[models.Participant], team: models.Team) -> list:
+    """Renders one team's cards, grouped by age group in print order — each
+    group must start its own fresh sheet page (see id_card.build_pdf_sheets),
+    a sheet never mixing age groups even if that leaves the previous group's
+    last sheet partially empty. `participants` is sorted by id_card.sort_key
+    first (age group, then name), so same-age-group participants are already
+    contiguous and a plain itertools.groupby is enough to split on that
+    boundary. Returns a list of card-image lists (one per age group), the
+    `card_groups` shape build_pdf_sheets expects — resizing each card to the
+    sheet's cell size happens there, at whatever layout/dpi is requested, not
+    here, since this rendering step is layout-independent."""
     ordered = sorted(participants, key=id_card.sort_key)
-    sheets: list = []
+    groups: list = []
     for _age_group, group_iter in itertools.groupby(ordered, key=lambda p: p.age_group):
         group = list(group_iter)
-        cards = [id_card.render_id_card(p, team, _photo_path(p)) for p in group]
-        sheets.extend(id_card.build_team_sheets(cards, layout=layout, dpi=dpi))
-    return sheets
+        groups.append([id_card.render_id_card(p, team, _photo_path(p)) for p in group])
+    return groups
 
 
 @router.get("/idcards/participant/{participant_id}.pdf", dependencies=[Depends(require_module("teams"))])
@@ -1203,8 +1251,8 @@ def export_idcard_team(team_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Team not found")
     if not team.participants:
         raise HTTPException(404, "This team has no participants to generate cards for")
-    sheets = _team_sheets(team.participants, team, id_card.A4_SHEET, id_card.PRINT_DPI)
-    pdf = id_card.build_pdf(sheets)
+    groups = _team_card_groups(team.participants, team)
+    pdf = id_card.build_pdf_sheets(groups, layout=id_card.A4_SHEET, dpi=id_card.PRINT_DPI)
     return _pdf_response(pdf, f"idcards-{team.school_code or team.id}.pdf")
 
 
@@ -1218,9 +1266,24 @@ def export_idcard_team_12x18(team_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Team not found")
     if not team.participants:
         raise HTTPException(404, "This team has no participants to generate cards for")
-    sheets = _team_sheets(team.participants, team, id_card.SHEET_12X18, id_card.PRINT_DPI)
-    pdf = id_card.build_pdf(sheets)
+    groups = _team_card_groups(team.participants, team)
+    pdf = id_card.build_pdf_sheets(groups, layout=id_card.SHEET_12X18, dpi=id_card.PRINT_DPI)
     return _pdf_response(pdf, f"idcards-{team.school_code or team.id}-12x18.pdf")
+
+
+@router.get("/idcards/team/{team_id}/individual.zip", dependencies=[Depends(require_module("teams"))])
+def export_idcard_team_individual(team_id: int, db: Session = Depends(get_db)):
+    """Same per-team card set as /idcards/team/{id}.pdf, but as a ZIP of one
+    standalone PDF per card instead of a flattened sheet — for print/design
+    software (CorelDRAW, Illustrator, InDesign, ...) where cards are picked
+    and placed individually onto a custom layout rather than printed as-is."""
+    team = db.get(models.Team, team_id)
+    if not team:
+        raise HTTPException(404, "Team not found")
+    if not team.participants:
+        raise HTTPException(404, "This team has no participants to generate cards for")
+    files = _individual_card_files(team.participants, {team.id: team})
+    return _zip_response(files, f"idcards-{team.school_code or team.id}-individual.zip")
 
 
 @router.get("/idcards/all.pdf", dependencies=[Depends(require_module("teams"))])
@@ -1237,14 +1300,14 @@ def export_idcard_all(db: Session = Depends(get_db)):
     # not what you'd feed a badge printer for 1000+ cards at once (use the
     # per-team download for that); see id_card.BULK_PRINT_DPI.
     dpi = id_card.BULK_PRINT_DPI
-    sheets: list = []
+    groups: list = []
     current_team_id = None
     current_team_group: list = []
 
     def _flush():
         if not current_team_group:
             return
-        sheets.extend(_team_sheets(current_team_group, teams[current_team_id], id_card.A4_SHEET, dpi))
+        groups.extend(_team_card_groups(current_team_group, teams[current_team_id]))
 
     for p in participants:
         if p.team_id != current_team_id:
@@ -1253,8 +1316,24 @@ def export_idcard_all(db: Session = Depends(get_db)):
             current_team_group = []
         current_team_group.append(p)
     _flush()
-    pdf = id_card.build_pdf(sheets, dpi=dpi)
+    pdf = id_card.build_pdf_sheets(groups, layout=id_card.A4_SHEET, dpi=dpi)
     return _pdf_response(pdf, "idcards-all-teams.pdf")
+
+
+@router.get("/idcards/all/individual.zip", dependencies=[Depends(require_module("teams"))])
+def export_idcard_all_individual(db: Session = Depends(get_db)):
+    """Same roster as /idcards/all.pdf, but as a ZIP of one standalone PDF
+    per card instead of flattened sheets — see export_idcard_team_individual.
+    Every card is rendered at full id_card.PRINT_DPI (unlike the sheet
+    version's reduced BULK_PRINT_DPI): each card is now its own small file
+    rather than being pasted into one giant multi-page PDF, so there's no
+    longer a single-file size ceiling forcing a DPI compromise."""
+    teams = {t.id: t for t in db.query(models.Team).all()}
+    participants = db.query(models.Participant).order_by(models.Participant.team_id).all()
+    if not participants:
+        raise HTTPException(404, "No participants to generate cards for")
+    files = _individual_card_files(participants, teams)
+    return _zip_response(files, "idcards-all-teams-individual.zip")
 
 
 @router.get("/payments.xlsx", dependencies=[Depends(require_module("teams"))])

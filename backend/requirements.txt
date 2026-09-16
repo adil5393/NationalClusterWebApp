@@ -33,3 +33,4 @@ itsdangerous>=2.1.2
 websockets>=12.0
 Pillow>=10.3.0
 opencv-python-headless==4.10.0.84
+reportlab>=4.1.0

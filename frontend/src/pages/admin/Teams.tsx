@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Pencil, Trash2, QrCode, Upload, Trophy, X, Shield, Users, Search, ImageIcon, IdCard, Receipt, Printer } from "lucide-react";
+import { Plus, Pencil, Trash2, QrCode, Upload, Trophy, X, Shield, Users, Search, ImageIcon, IdCard, Receipt, Printer, FileArchive } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -1258,7 +1258,7 @@ export default function AdminTeams() {
       >
         <div className="space-y-3">
           <p className="text-xs text-slate-400 font-body">
-            Choose which sheet size to print on. Both include every participant's card, sorted by age group.
+            Choose how to download every participant's card, sorted by age group.
           </p>
           <a
             href={idCardTeam ? `${BASE_URL}/api/export/idcards/team/${idCardTeam.id}.pdf` : "#"}
@@ -1282,6 +1282,18 @@ export default function AdminTeams() {
             <div className="min-w-0">
               <p className="text-sm font-heading font-bold text-white">12x18in Sheet</p>
               <p className="text-xs text-slate-400">16 cards per page — for print-shop stock</p>
+            </div>
+          </a>
+          <a
+            href={idCardTeam ? `${BASE_URL}/api/export/idcards/team/${idCardTeam.id}/individual.zip` : "#"}
+            onClick={() => setIdCardTeam(null)}
+            className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-3.5 hover:border-gold/40 hover:bg-white/[0.06] transition-colors"
+            data-testid="idcard-download-individual"
+          >
+            <FileArchive className="h-5 w-5 text-gold shrink-0" />
+            <div className="min-w-0">
+              <p className="text-sm font-heading font-bold text-white">Individual Cards (ZIP)</p>
+              <p className="text-xs text-slate-400">One PDF per card — for picking &amp; arranging in design/print layout software</p>
             </div>
           </a>
         </div>

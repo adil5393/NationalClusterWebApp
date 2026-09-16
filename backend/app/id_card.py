@@ -1,13 +1,24 @@
 """Renders the fixed CBSE National Kabaddi ID-card graphic
 (backend/assets/templates/id_card_template.png) for one participant, and
-combines any number of rendered cards into a single multi-page PDF.
+combines any number of rendered cards into a multi-page PDF.
 
-There's no PDF library in this project (no reportlab/fpdf/weasyprint) and no
-precedent for compositing text onto a fixed background image server-side —
-Pillow (already a dependency for participant/gallery photo optimization, see
-image_utils.py) can do both: draw text/paste a photo onto the template with
-ImageDraw, and save a list of rendered pages straight to a multi-page PDF via
-Image.save(..., format="PDF", save_all=True). No new dependency needed.
+Rendering one card (photo + text composited onto the fixed background) is
+Pillow only — already a dependency for participant/gallery photo
+optimization, see image_utils.py — via ImageDraw, exactly as before.
+
+Turning many cards into a *sheet* PDF (build_pdf_sheets) uses ReportLab
+instead of Pillow's own "save a list of page-images as a multi-page PDF"
+trick (Image.save(..., format="PDF", save_all=True), still used by build_pdf
+below for the single-card-per-page case). The difference matters for a
+multi-card sheet: saving one big Pillow-composited sheet bitmap via
+Image.save embeds that whole page as ONE flattened raster, whereas
+ReportLab's canvas.drawImage places each already-rendered card as its own
+independent image object on a PDF page it constructs at the exact physical
+sheet size — so opening the PDF in layout/print software (CorelDRAW,
+Illustrator, InDesign, ...) shows N separately selectable card images per
+page, not one solid picture of the whole sheet. Each card's *pixel content*
+is still 100% Pillow-rendered raster, same as always; only how multiple
+cards get placed onto one PDF page changed.
 
 All of the box/line coordinates below were measured directly off the
 1024x1536 template PNG (scanning for the photo box's orange border and the
@@ -21,6 +32,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
+from reportlab.lib.units import cm as _PT_PER_CM
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfgen.canvas import Canvas
 
 _AGE_GROUP_NUM_RE = re.compile(r"(\d+)")
 
@@ -153,6 +167,51 @@ def build_team_sheets(
         render_sheet(cards[i : i + layout.cards_per_sheet], layout=layout, dpi=dpi)
         for i in range(0, len(cards), layout.cards_per_sheet)
     ]
+
+
+def build_pdf_sheets(
+    card_groups: list[list[Image.Image]], layout: SheetLayout = A4_SHEET, dpi: int = PRINT_DPI
+) -> bytes:
+    """The non-flattening counterpart to build_team_sheets + build_pdf: same
+    grid math as render_sheet (identical card size, margins and gutters,
+    computed here in points via SheetLayout's *_cm fields rather than pixel
+    math, so the PDF's physical dimensions are never accidentally derived
+    from a bitmap's pixel size) and the same per-card downscale to the
+    PRINT_DPI-equivalent resolution — but each card is drawn onto a real
+    ReportLab PDF page as its own independently embedded image object at
+    the correct grid position, instead of being pasted onto one shared
+    Pillow sheet bitmap first.
+
+    `card_groups` is a list of card-image lists (e.g. one inner list per
+    team, or per age group within a team) — each group always starts a
+    fresh sheet page, exactly like build_team_sheets chunking a single
+    team's cards, so a sheet never mixes cards from two different groups
+    even if that leaves a group's last sheet partially empty. Pass a single
+    group (`[cards]`) for the common one-group case."""
+    if not any(card_groups):
+        raise ValueError("build_pdf_sheets requires at least one card")
+
+    page_w_pt = layout.width_cm * _PT_PER_CM
+    page_h_pt = layout.height_cm * _PT_PER_CM
+    card_w_pt = layout.card_width_cm * _PT_PER_CM
+    card_h_pt = layout.card_height_cm * _PT_PER_CM
+    margin_x_pt = layout.margin_x_cm * _PT_PER_CM
+    margin_y_pt = layout.margin_y_cm * _PT_PER_CM
+    card_px_size = _sheet_card_size_px(layout, dpi)
+
+    buf = io.BytesIO()
+    pdf = Canvas(buf, pagesize=(page_w_pt, page_h_pt))
+    for group in card_groups:
+        for start in range(0, len(group), layout.cards_per_sheet):
+            for i, card in enumerate(group[start : start + layout.cards_per_sheet]):
+                row, col = divmod(i, layout.cols)
+                x = margin_x_pt + col * (card_w_pt + margin_x_pt)
+                y = page_h_pt - margin_y_pt - row * (card_h_pt + margin_y_pt) - card_h_pt
+                resized = card.resize(card_px_size, Image.LANCZOS)
+                pdf.drawImage(ImageReader(resized), x, y, width=card_w_pt, height=card_h_pt)
+            pdf.showPage()
+    pdf.save()
+    return buf.getvalue()
 
 
 # Inset a few px inside the orange border so the photo never overlaps it.
