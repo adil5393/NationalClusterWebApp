@@ -20,6 +20,7 @@ interface Room {
   id: number;
   name: string;
   capacity: number;
+  present: number;
   beds: Bed[];
   loose: LooseOccupant[];
 }
@@ -67,6 +68,9 @@ export default function RoomMap() {
           </h1>
           <p className="mt-1 text-xs sm:text-sm text-slate-400 font-body">
             Bed-level diagram and loose group allocation visualizer across all hostel blocks.
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500 font-mono">
+            Badge shows Capacity / Allotted / Present
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -139,6 +143,7 @@ export default function RoomMap() {
                               <BedDouble className="h-4 w-4 text-gold" /> {r.name}
                             </span>
                             <span
+                              title={`Capacity ${r.capacity} / Allotted ${filled} / Present ${r.present}`}
                               className={cn(
                                 "text-xs font-mono font-bold px-2 py-0.5 rounded",
                                 isOver
@@ -148,7 +153,7 @@ export default function RoomMap() {
                                   : "bg-white/5 text-emerald-400",
                               )}
                             >
-                              {filled} / {r.capacity}
+                              {r.capacity}/{filled}/{r.present}
                             </span>
                           </div>
 

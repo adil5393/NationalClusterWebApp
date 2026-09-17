@@ -32,6 +32,12 @@ class Settings:
     # organizer portal's arrival "Resync" button pull the latest travel plans with
     # no link to paste in (see routers/imports.py import_team_arrivals_from_sheet).
     team_arrival_sheet_url: str = os.environ.get("TEAM_ARRIVAL_SHEET_URL", "")
+    # The staff roster's live Google Sheet (ID, Full Name, Phone, Category
+    # columns, ID matching staff_members.id) — same "Anyone with the link –
+    # Viewer" requirement. Lets the Staff Operations page's "Resync" button
+    # keep contact numbers current with no link to paste in (see
+    # routers/imports.py import_staff_details_from_sheet).
+    staff_details_sheet_url: str = os.environ.get("STAFF_DETAILS_SHEET_URL", "")
 
     @property
     def cors_origins_list(self):

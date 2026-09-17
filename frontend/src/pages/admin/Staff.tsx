@@ -7,6 +7,7 @@ import {
   Shield,
   Plus,
   KeyRound,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -39,6 +40,7 @@ import {
   NewLoginDialog,
 } from "./staff/StaffModals";
 import { StaffDetailDrawer } from "@/components/admin/StaffDetailDrawer";
+import { StaffDetailsImportDialog } from "@/components/admin/StaffDetailsImportDialog";
 
 export type { ShiftBlockItem };
 
@@ -74,6 +76,7 @@ export default function Staff() {
   // Modals state
   const [openMemberModal, setOpenMemberModal] = useState(false);
   const [editingMember, setEditingMember] = useState<StaffMember | null>(null);
+  const [openStaffDetailsImport, setOpenStaffDetailsImport] = useState(false);
 
   const [openShiftModal, setOpenShiftModal] = useState(false);
   const [editingShiftBlock, setEditingShiftBlock] = useState<ShiftBlockItem | null>(null);
@@ -312,18 +315,29 @@ export default function Staff() {
         {canEdit && !activeShiftBlock && (
           <div className="flex items-center gap-2 flex-wrap">
             {activeTab === "directory" && (
-              <Button
-                variant="gold"
-                size="sm"
-                onClick={() => {
-                  setEditingMember(null);
-                  setOpenMemberModal(true);
-                }}
-                data-testid="add-staff-header-btn"
-                className="text-xs font-black shrink-0"
-              >
-                <Plus className="h-3.5 w-3.5 mr-1" /> Add Staff Member
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setOpenStaffDetailsImport(true)}
+                  data-testid="sync-staff-details-header-btn"
+                  className="text-xs font-semibold shrink-0"
+                >
+                  <RefreshCw className="h-3.5 w-3.5 mr-1" /> Sync Contacts
+                </Button>
+                <Button
+                  variant="gold"
+                  size="sm"
+                  onClick={() => {
+                    setEditingMember(null);
+                    setOpenMemberModal(true);
+                  }}
+                  data-testid="add-staff-header-btn"
+                  className="text-xs font-black shrink-0"
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1" /> Add Staff Member
+                </Button>
+              </>
             )}
             {activeTab === "shifts" && (
               <Button
@@ -628,6 +642,13 @@ export default function Staff() {
         staffMember={editingMember}
         staffCategories={staffCategories}
         onSuccess={load}
+      />
+
+      {/* 1b. Sync Staff Contact Details (Excel / Google Sheet) */}
+      <StaffDetailsImportDialog
+        open={openStaffDetailsImport}
+        onClose={() => setOpenStaffDetailsImport(false)}
+        onDone={() => load()}
       />
 
       {/* 2. Schedule / Edit Shift Block Modal */}

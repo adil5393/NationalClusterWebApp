@@ -35,12 +35,39 @@ def _room_headcount(db: Session, room_id: int) -> int:
     return total
 
 
+def _team_present_count(db: Session, team_id: int) -> int:
+    """How many of a team's roster (athletes only) have been checked in present."""
+    return (
+        db.query(func.count(models.Participant.id))
+        .filter_by(team_id=team_id)
+        .filter(models.Participant.is_present.is_(True))
+        .scalar()
+        or 0
+    )
+
+
+def _room_present_count(db: Session, room_id: int) -> int:
+    """Real present headcount for a room, mirroring _room_headcount but restricted
+    to Participant.is_present — coaches/managers are never assignable to rooms so
+    are already excluded, same as the allotted count."""
+    total = 0
+    for a in db.query(models.AccommodationAssignment).filter_by(room_id=room_id).all():
+        if a.participant_id:
+            p = db.get(models.Participant, a.participant_id)
+            if p and p.is_present:
+                total += 1
+        elif a.team_id:
+            total += _team_present_count(db, a.team_id)
+    return total
+
+
 @router.get("/rooms")
 def rooms(db: Session = Depends(get_db)):
     out = []
     for r in db.query(models.Room).all():
         floor, building = _room_context(r)
         occupied = _room_headcount(db, r.id)
+        present = _room_present_count(db, r.id)
         out.append({
             "id": r.id,
             "name": r.name,
@@ -49,6 +76,7 @@ def rooms(db: Session = Depends(get_db)):
             "label": f"{(building.code or building.name) if building else '?'} · {floor.name if floor else '?'} · {r.name}",
             "capacity": r.capacity or 0,
             "occupied": occupied,
+            "present": present,
         })
     return out
 
@@ -229,7 +257,14 @@ def room_map(db: Session = Depends(get_db)):
                         loose.append({"name": p.full_name if p else "Participant", "count": 1})
                     elif a.team_id and a.team:
                         loose.append({"name": f"{a.team.name} (whole team)", "count": _team_size(db, a.team_id)})
-                rooms.append({"id": r.id, "name": r.name, "capacity": r.capacity or 0, "beds": beds, "loose": loose})
+                rooms.append({
+                    "id": r.id,
+                    "name": r.name,
+                    "capacity": r.capacity or 0,
+                    "present": _room_present_count(db, r.id),
+                    "beds": beds,
+                    "loose": loose,
+                })
             floors.append({"id": f.id, "name": f.name, "rooms": rooms})
         out.append({"id": b.id, "name": b.name, "code": b.code, "floors": floors})
     return out

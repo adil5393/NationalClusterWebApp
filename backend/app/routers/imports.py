@@ -308,6 +308,110 @@ async def import_team_details_from_sheet(payload: SheetSyncRequest = SheetSyncRe
     return _import_team_details_df(df, db)
 
 
+def _import_staff_details_df(df: pd.DataFrame, db: Session) -> dict:
+    """Shared upsert logic behind both /staff-details (uploaded file) and
+    /staff-details/sheet (live Google Sheet).
+
+    Matches purely by full_name (trimmed, case-insensitive) — deliberately
+    NOT by an ID column, even though the sheet's export happens to carry
+    one. An id is only meaningful *within the database it was exported
+    from*: two independently-seeded databases (e.g. this organizer's
+    production database and a separate dev/staging copy that already has
+    the same people entered by hand) will assign the same person different
+    ids, and — worse — different, unrelated people can end up sharing an id
+    number by pure coincidence across the two. Matching on id would then
+    silently overwrite the wrong person's name/category with someone else's
+    (this happened once during development: an id collision between two
+    databases renamed an unrelated existing record). Name is the only join
+    key that's actually meaningful across separately-provisioned databases,
+    so that's the only thing this ever matches on.
+
+    A row whose name isn't found here is inserted as a new StaffMember
+    (Postgres assigns its own id — the sheet's id is never used to force
+    one). Every existing match only ever has its phone/category updated in
+    place, so re-running this after the sheet gets more phone numbers
+    filled in is always safe."""
+    col_name = _find_col(df.columns, "full name", "name")
+    col_phone = _find_col(df.columns, "phone")
+    col_category = _find_col(df.columns, "category")
+    if not col_name:
+        raise HTTPException(400, "Missing a 'Full Name' column")
+
+    existing_by_name = {s.full_name.strip().lower(): s for s in db.query(models.StaffMember).all()}
+    created = updated = unchanged = 0
+    errors: list[str] = []
+
+    for i, row in df.iterrows():
+        name = _val(row, col_name)
+        if not name:
+            errors.append(f"Row {i + 2}: missing Full Name")
+            continue
+        phone = _val(row, col_phone) if col_phone else None
+        category = _val(row, col_category) if col_category else None
+
+        staff = existing_by_name.get(name.strip().lower())
+        if staff is None:
+            staff = models.StaffMember(full_name=name, phone=phone, category=category)
+            db.add(staff)
+            existing_by_name[name.strip().lower()] = staff
+            created += 1
+            continue
+
+        changed = False
+        if phone and staff.phone != phone:
+            staff.phone = phone
+            changed = True
+        if category and staff.category != category:
+            staff.category = category
+            changed = True
+        if changed:
+            updated += 1
+        else:
+            unchanged += 1
+
+    db.commit()
+
+    return {
+        "entity": "staff-details",
+        "staff": {
+            "in_sheet": created + updated + unchanged,
+            "created": created,
+            "updated": updated,
+            "unchanged": unchanged,
+        },
+        "errors": errors,
+    }
+
+
+@router.post("/staff-details")
+async def import_staff_details(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Uploaded-file counterpart to import_staff_details_from_sheet below —
+    same ID-keyed upsert, just sourced from an .xlsx/.csv instead of a live
+    Google Sheet. See that function's docstring for the full behavior."""
+    content = await file.read()
+    try:
+        df = pd.read_excel(io.BytesIO(content)) if (file.filename or "").lower().endswith((".xlsx", ".xls")) else pd.read_csv(io.BytesIO(content))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, f"Could not parse file: {e}")
+    return _import_staff_details_df(df, db)
+
+
+@router.post("/staff-details/sheet")
+async def import_staff_details_from_sheet(payload: SheetSyncRequest = SheetSyncRequest(), db: Session = Depends(get_db)):
+    """Keeps the Staff Operations roster's contact numbers (and full_name/
+    category) current from a live Google Sheet — ID, Full Name, Phone,
+    Category columns, ID matching staff_members.id (see
+    _import_staff_details_df). Defaults to the org's configured sheet
+    (settings.staff_details_sheet_url, set once via STAFF_DETAILS_SHEET_URL)
+    so the Staff page's "Resync" button needs no input; pass sheet_url
+    explicitly to sync a different, one-off sheet instead."""
+    sheet_url = payload.sheet_url or settings.staff_details_sheet_url
+    if not sheet_url:
+        raise HTTPException(400, "No Google Sheet is configured (STAFF_DETAILS_SHEET_URL) — pass sheet_url instead.")
+    df = _fetch_sheet_csv(sheet_url)
+    return _import_staff_details_df(df, db)
+
+
 def _parse_form_timestamp(value) -> "datetime | None":
     """Google Form's own response Timestamp column, e.g. "15/09/2026 17:29:42" —
     day-first, unlike pandas' US-style default parse."""

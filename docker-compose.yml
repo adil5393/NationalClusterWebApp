@@ -27,6 +27,7 @@ services:
       SESSION_HTTPS_ONLY: ${SESSION_HTTPS_ONLY:-false}
       TEAM_DETAILS_SHEET_URL: ${TEAM_DETAILS_SHEET_URL:-}
       TEAM_ARRIVAL_SHEET_URL: ${TEAM_ARRIVAL_SHEET_URL:-}
+      STAFF_DETAILS_SHEET_URL: ${STAFF_DETAILS_SHEET_URL:-}
       # Dev convenience only — skips Teams tab's "type an admin password to
       # turn this off" gate. Defaults on here since this file is local dev
       # only; docker-compose.prod.yml never sets this var, so production

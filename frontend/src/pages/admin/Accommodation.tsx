@@ -15,6 +15,7 @@ interface RoomOpt {
   label: string;
   capacity: number;
   occupied: number;
+  present: number;
 }
 interface Assignment {
   id: number;
@@ -382,7 +383,7 @@ export default function Accommodation() {
           )}
 
           <div>
-            <Label>Hostel Room *</Label>
+            <Label>Hostel Room * <span className="text-slate-500 font-normal">(Capacity/Allotted/Present)</span></Label>
             <Select
               value={form.room_id}
               onChange={(e) => {
@@ -395,7 +396,7 @@ export default function Accommodation() {
               <option value="">Select room…</option>
               {rooms.map((r) => (
                 <option key={r.id} value={r.id}>
-                  {r.label} ({r.occupied}/{r.capacity})
+                  {r.label} ({r.capacity}/{r.occupied}/{r.present})
                   {r.capacity > 0 && r.occupied >= r.capacity ? " ⚠ FULL" : ""}
                 </option>
               ))}
