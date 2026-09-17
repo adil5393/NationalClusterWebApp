@@ -7,6 +7,7 @@ import { formatDate } from "@/lib/meta";
 import { Dialog } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { ActionCapturedMat } from "@/components/public/ActionCapturedMat";
 
 // Every match has two sides — team A is always red, team B is always blue,
 // regardless of which actual team ends up in that slot as the bracket fills
@@ -1968,6 +1969,9 @@ export default function Live() {
           <TournamentFlow tournamentId={selectedTournament.id} onSelectMatch={setRosterMatchId} />
         )}
       </section>
+
+      {/* ACTION CAPTURED ON THE MAT */}
+      <ActionCapturedMat />
 
       {rosterMatchId && <MatchRosterDialog matchId={rosterMatchId} onClose={() => setRosterMatchId(null)} />}
     </div>
