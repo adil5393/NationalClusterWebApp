@@ -28,7 +28,7 @@ import { Table, THead, TH, TR, TD, TBody } from "@/components/ui/table";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
-import { formatDate } from "@/lib/meta";
+import { formatDate, toDateTimeLocal } from "@/lib/meta";
 import { cn } from "@/lib/utils";
 import { useModuleAccess } from "@/lib/permissions";
 import { StaffSelector, StaffOption } from "@/components/admin/StaffSelector";
@@ -332,7 +332,7 @@ export default function Duties() {
     }));
   };
 
-  // When shift selection changes, optionally auto-populate start/end times
+  // When shift selection changes, auto-populate start/end times from shift
   const handleShiftSelect = (shiftIdStr: string) => {
     if (!shiftIdStr) {
       setDutyForm((prev) => ({ ...prev, shift_id: "" }));
@@ -340,22 +340,11 @@ export default function Duties() {
     }
     const shift = shifts.find((s) => s.id === Number(shiftIdStr));
     if (shift) {
-      // convert ISO to datetime-local format (YYYY-MM-DDTHH:MM)
-      const toLocalIso = (isoStr: string) => {
-        try {
-          const d = new Date(isoStr);
-          if (Number.isNaN(d.getTime())) return "";
-          return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-        } catch {
-          return "";
-        }
-      };
-
       setDutyForm((prev) => ({
         ...prev,
         shift_id: shiftIdStr,
-        start_time: toLocalIso(shift.start_time),
-        end_time: toLocalIso(shift.end_time),
+        start_time: toDateTimeLocal(shift.start_time),
+        end_time: toDateTimeLocal(shift.end_time),
       }));
     } else {
       setDutyForm((prev) => ({ ...prev, shift_id: shiftIdStr }));

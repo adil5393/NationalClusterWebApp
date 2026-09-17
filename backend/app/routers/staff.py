@@ -139,7 +139,18 @@ def _duty_location_fields(a: models.DutyAssignment) -> dict:
 
 
 def _duty_dict(a: models.DutyAssignment):
-    floor, building = _room_context(a.room) if a.room else (None, None)
+    room = a.room
+    building = None
+    floor = None
+    if room:
+        floor, building = _room_context(room)
+    elif a.location:
+        if a.location.room:
+            room = a.location.room
+            floor, building = _room_context(room)
+        elif a.location.building:
+            building = a.location.building
+
     area = a.operational_area
     res = {
         "id": a.id,
@@ -148,8 +159,8 @@ def _duty_dict(a: models.DutyAssignment):
         "shift_name": a.shift.shift_name if a.shift else None,
         "staff_name": a.staff.full_name if a.staff else None,
         "category": a.staff.category if a.staff else None,
-        "room_id": a.room_id,
-        "room_name": a.room.name if a.room else None,
+        "room_id": room.id if room else a.room_id,
+        "room_name": room.name if room else None,
         "floor_id": floor.id if floor else None,
         "floor_name": floor.name if floor else None,
         "building_id": building.id if building else None,

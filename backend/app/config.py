@@ -39,3 +39,21 @@ class Settings:
 
 
 settings = Settings()
+
+from datetime import datetime, timedelta, timezone
+
+try:
+    import zoneinfo
+    EVENT_TZ = zoneinfo.ZoneInfo("Asia/Kolkata")
+except Exception:
+    EVENT_TZ = timezone(timedelta(hours=5, minutes=30))
+
+
+def to_event_tz(dt: datetime | None) -> datetime | None:
+    """Convert any datetime (UTC or naive UTC) to the tournament's local timezone (Asia/Kolkata)."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(EVENT_TZ)
+

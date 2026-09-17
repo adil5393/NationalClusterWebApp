@@ -44,18 +44,24 @@ export function StaffSelector({
     [staff, selectedId],
   );
 
+  const sortedStaff = useMemo(() => {
+    return [...staff].sort((a, b) =>
+      (a.full_name || "").localeCompare(b.full_name || "", undefined, { sensitivity: "base" })
+    );
+  }, [staff]);
+
   const filteredStaff = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return staff;
-    return staff.filter(
+    if (!q) return sortedStaff;
+    return sortedStaff.filter(
       (s) =>
         s.full_name.toLowerCase().includes(q) ||
         (s.category && s.category.toLowerCase().includes(q)) ||
         (s.phone && s.phone.toLowerCase().includes(q)),
     );
-  }, [staff, search]);
+  }, [sortedStaff, search]);
 
-  // Group by category
+  // Group by category, sorting members within each category alphabetically
   const groupedStaff = useMemo(() => {
     const map = new Map<string, StaffOption[]>();
     for (const s of filteredStaff) {
@@ -63,7 +69,12 @@ export function StaffSelector({
       if (!map.has(cat)) map.set(cat, []);
       map.get(cat)!.push(s);
     }
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+    return Array.from(map.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([cat, members]) => [
+        cat,
+        members.sort((a, b) => (a.full_name || "").localeCompare(b.full_name || "", undefined, { sensitivity: "base" })),
+      ] as [string, StaffOption[]]);
   }, [filteredStaff]);
 
   // Close on outside click
@@ -260,16 +271,22 @@ export function MultiStaffSelector({
 }: MultiStaffSelectorProps) {
   const [search, setSearch] = useState("");
 
+  const sortedStaff = useMemo(() => {
+    return [...staff].sort((a, b) =>
+      (a.full_name || "").localeCompare(b.full_name || "", undefined, { sensitivity: "base" })
+    );
+  }, [staff]);
+
   const filteredStaff = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return staff;
-    return staff.filter(
+    if (!q) return sortedStaff;
+    return sortedStaff.filter(
       (s) =>
         s.full_name.toLowerCase().includes(q) ||
         (s.category && s.category.toLowerCase().includes(q)) ||
         (s.phone && s.phone.toLowerCase().includes(q)),
     );
-  }, [staff, search]);
+  }, [sortedStaff, search]);
 
   const toggle = (id: number) => {
     if (selectedIds.includes(id)) {

@@ -27,7 +27,8 @@ from sqlalchemy.orm import Session, joinedload
 
 from .. import models, schemas
 from ..database import get_db
-from .event_locations import resolve_location_display
+from ..config import to_event_tz
+from .event_locations import resolve_duty_location_hierarchy, resolve_location_display
 from ..excel_styler import (
     ALIGN_CENTER,
     ALIGN_HEADER_CENTER,
@@ -124,15 +125,18 @@ def _duty_location_name(duty: models.DutyAssignment) -> str:
 def _format_time_span(start: datetime | None, end: datetime | None) -> str:
     if not start and not end:
         return "Not Scheduled"
-    st_str = start.strftime("%H:%M") if start else "—"
-    end_str = end.strftime("%H:%M") if end else "—"
+    start_tz = to_event_tz(start)
+    end_tz = to_event_tz(end)
+    st_str = start_tz.strftime("%H:%M") if start_tz else "—"
+    end_str = end_tz.strftime("%H:%M") if end_tz else "—"
     return f"{st_str} - {end_str}"
 
 
 def _format_date(dt: datetime | None) -> str:
     if not dt:
         return "—"
-    return dt.strftime("%Y-%m-%d")
+    dt_tz = to_event_tz(dt)
+    return dt_tz.strftime("%Y-%m-%d")
 
 
 def _get_incharges_map(db: Session) -> Dict[Tuple[int, int], List[models.StaffMember]]:
@@ -1085,8 +1089,10 @@ def _query_duty_assignments(
             joinedload(models.DutyAssignment.staff),
             joinedload(models.DutyAssignment.shift).joinedload(models.StaffShift.shift_block),
             joinedload(models.DutyAssignment.operational_area),
-            joinedload(models.DutyAssignment.location),
-            joinedload(models.DutyAssignment.room),
+            joinedload(models.DutyAssignment.location).joinedload(models.EventLocation.room).joinedload(models.Room.floor).joinedload(models.Floor.building),
+            joinedload(models.DutyAssignment.location).joinedload(models.EventLocation.building),
+            joinedload(models.DutyAssignment.location).joinedload(models.EventLocation.mat),
+            joinedload(models.DutyAssignment.room).joinedload(models.Room.floor).joinedload(models.Floor.building),
         )
     )
 
@@ -1132,7 +1138,9 @@ def _query_duty_assignments(
             rmins = mins % 60
             duration_str = f"{hrs}h {rmins}m" if hrs > 0 else f"{rmins}m"
 
-        loc_display = _duty_location_name(d)
+        loc_name, bldg_name, room_name = resolve_duty_location_hierarchy(d)
+        st_tz = to_event_tz(d.start_time)
+        et_tz = to_event_tz(d.end_time)
 
         rows.append({
             "id": d.id,
@@ -1147,9 +1155,13 @@ def _query_duty_assignments(
             "operational_area": area.name if area else "Unclassified",
             "specific_duty": d.duty_type,
             "location_id": d.location_id,
-            "location": loc_display,
-            "start_time": d.start_time.isoformat() if d.start_time else None,
-            "end_time": d.end_time.isoformat() if d.end_time else None,
+            "location": loc_name,
+            "building": bldg_name,
+            "room": room_name,
+            "start_time": st_tz.isoformat() if st_tz else None,
+            "end_time": et_tz.isoformat() if et_tz else None,
+            "start_time_display": st_tz.strftime("%H:%M") if st_tz else "—",
+            "end_time_display": et_tz.strftime("%H:%M") if et_tz else "—",
             "duty_time_span": _format_time_span(d.start_time, d.end_time),
             "duration": duration_str,
             "incharges": inc_names,
@@ -1206,7 +1218,7 @@ def export_duty_assignments_xlsx(
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Duty Assignments"
-    max_cols = 13
+    max_cols = 15
 
     next_row = style_header_banner(
         ws,
@@ -1238,7 +1250,9 @@ def export_duty_assignments_xlsx(
         ("SHIFT BLOCK", 20, ALIGN_HEADER_LEFT),
         ("OPERATIONAL AREA", 20, ALIGN_HEADER_LEFT),
         ("SPECIFIC DUTY", 20, ALIGN_HEADER_LEFT),
-        ("LOCATION", 18, ALIGN_HEADER_LEFT),
+        ("LOCATION", 20, ALIGN_HEADER_LEFT),
+        ("BUILDING", 18, ALIGN_HEADER_LEFT),
+        ("ROOM", 14, ALIGN_HEADER_CENTER),
         ("START", 14, ALIGN_HEADER_CENTER),
         ("END", 14, ALIGN_HEADER_CENTER),
         ("DURATION", 12, ALIGN_HEADER_CENTER),
@@ -1270,8 +1284,10 @@ def export_duty_assignments_xlsx(
             (r["operational_area"], ALIGN_LEFT, FONT_TD_BOLD),
             (r["specific_duty"], ALIGN_LEFT, FONT_TD),
             (r["location"], ALIGN_LEFT, FONT_TD),
-            (r["start_time"][11:16] if r["start_time"] else "—", ALIGN_CENTER, FONT_TD),
-            (r["end_time"][11:16] if r["end_time"] else "—", ALIGN_CENTER, FONT_TD),
+            (r["building"], ALIGN_LEFT, FONT_TD),
+            (r["room"], ALIGN_CENTER, FONT_TD),
+            (r["start_time_display"], ALIGN_CENTER, FONT_TD),
+            (r["end_time_display"], ALIGN_CENTER, FONT_TD),
             (r["duration"], ALIGN_CENTER, FONT_TD),
             (r["incharges"], ALIGN_LEFT, FONT_TD),
             ("YES" if r["outside_shift"] else "NO", ALIGN_CENTER, FONT_TD_BOLD),

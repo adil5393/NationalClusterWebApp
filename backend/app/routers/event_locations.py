@@ -74,6 +74,53 @@ def resolve_location_display(loc: "models.EventLocation") -> dict:
     }
 
 
+def resolve_duty_location_hierarchy(duty: "models.DutyAssignment") -> tuple[str, str, str]:
+    """
+    Returns (location_name, building_name, room_name) for any duty assignment.
+    Handles:
+    - duty.location linked to Room -> (location_name, building_name, room_name)
+    - duty.location linked to Building -> (building_name, building_name, "—")
+    - duty.location linked to Mat -> (mat_name, "—", "—")
+    - duty.location standalone -> (location_name, "—", "—")
+    - duty.room direct (legacy) -> (location_name, building_name, room_name)
+    - no location assigned -> ("Not Assigned", "—", "—")
+    """
+    if duty.location:
+        loc = duty.location
+        if loc.room_id:
+            r = loc.room
+            if r:
+                floor = r.floor
+                b = floor.building if floor else None
+                b_name = b.name if b else "—"
+                r_name = r.name
+                loc_name = f"{b_name} · {r_name}" if b else r_name
+                return loc_name, b_name, r_name
+            return loc.name, "—", "—"
+        if loc.building_id:
+            b = loc.building
+            b_name = b.name if b else loc.name
+            return b_name, b_name, "—"
+        if loc.mat_id:
+            m = loc.mat
+            m_name = m.name if m else loc.name
+            return m_name, "—", "—"
+        disp = resolve_location_display(loc)
+        return disp.get("name") or loc.name or "Not Assigned", "—", "—"
+
+    if duty.room:
+        r = duty.room
+        floor = r.floor
+        b = floor.building if floor else None
+        b_name = b.name if b else "—"
+        r_name = r.name
+        loc_name = f"{b_name} · {r_name}" if b else r_name
+        return loc_name, b_name, r_name
+
+    return "Not Assigned", "—", "—"
+
+
+
 def resolve_event_location_for_source(db: Session, source: str, source_id: int) -> "models.EventLocation":
     """Resolves a normalized location selection (location_source +
     location_source_id — see GET .../available) to the EventLocation row

@@ -81,3 +81,21 @@ export function groupStaffByCategory<T extends { category?: string | null }>(ite
   }
   return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
 }
+
+/** Formats an ISO datetime string into YYYY-MM-DDTHH:MM for HTML datetime-local inputs */
+export const toDateTimeLocal = (dateStr?: string | null): string => {
+  if (!dateStr) return "";
+  try {
+    const d = new Date(dateStr);
+    if (Number.isNaN(d.getTime())) {
+      if (typeof dateStr === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(dateStr)) {
+        return dateStr.slice(0, 16);
+      }
+      return "";
+    }
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  } catch {
+    return "";
+  }
+};

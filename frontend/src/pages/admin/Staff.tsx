@@ -102,8 +102,8 @@ export default function Staff() {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Load all central roster and operational data
-  const load = () => {
-    setLoading(true);
+  const load = (showSpinner = false) => {
+    if (showSpinner) setLoading(true);
     Promise.all([
       api.get<StaffMember[]>("/staff"),
       api.get<ShiftBlockItem[]>("/staff/shift-blocks"),
@@ -129,10 +129,14 @@ export default function Staff() {
         console.error("Failed to load staff operations data:", err);
         toast.error(err?.response?.data?.detail ?? "Failed to load staff operations");
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (showSpinner) setLoading(false);
+      });
   };
 
-  useEffect(load, []);
+  useEffect(() => {
+    load(true);
+  }, []);
 
   // Update URL on tab change
   const setTab = (newTab: "directory" | "shifts" | "assignments" | "incharges") => {
@@ -141,6 +145,7 @@ export default function Staff() {
       p.set("tab", newTab);
       if (newTab !== "shifts") {
         p.delete("shiftId");
+        p.delete("subtab");
         setActiveShiftWorkspaceId(null);
       }
       return p;
@@ -165,6 +170,7 @@ export default function Staff() {
       const p = new URLSearchParams(prev);
       p.set("tab", "shifts");
       p.delete("shiftId");
+      p.delete("subtab");
       return p;
     });
   };

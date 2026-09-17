@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { Dialog } from "@/components/ui/dialog";
 import { StaffSelector, MultiStaffSelector, StaffOption } from "@/components/admin/StaffSelector";
+import { toDateTimeLocal } from "@/lib/meta";
 import {
   StaffMember,
   ShiftBlockItem,
@@ -446,6 +447,12 @@ export function ManageShiftStaffModal({
     }
   };
 
+  const sortedAllStaff = useMemo(() => {
+    return [...allStaff].sort((a, b) =>
+      (a.full_name || "").localeCompare(b.full_name || "", undefined, { sensitivity: "base" })
+    );
+  }, [allStaff]);
+
   return (
     <Dialog
       open={open}
@@ -496,7 +503,7 @@ export function ManageShiftStaffModal({
         <div>
           <Label>Personnel Roster (Select / Deselect Staff)</Label>
           <MultiStaffSelector
-            staff={allStaff}
+            staff={sortedAllStaff}
             selectedIds={selectedIds}
             onChange={setSelectedIds}
           />
@@ -589,10 +596,34 @@ export function DutyAssignmentModal({
   // Available shifts for selected staff
   const staffEligibleShifts = useMemo(() => {
     if (!selectedStaffId) return allShiftBlocks;
-    return allShiftBlocks.filter((b) =>
+    const eligible = allShiftBlocks.filter((b) =>
       (b.staff_assignments || []).some((a) => a.staff_id === selectedStaffId)
     );
-  }, [allShiftBlocks, selectedStaffId]);
+    if (selectedShiftId && !eligible.some((b) => b.id === selectedShiftId)) {
+      const current = allShiftBlocks.find((b) => b.id === selectedShiftId);
+      if (current) eligible.unshift(current);
+    }
+    return eligible;
+  }, [allShiftBlocks, selectedStaffId, selectedShiftId]);
+
+  // Sorted staff options for this duty assignment modal
+  const sortedStaffOptions = useMemo(() => {
+    if (selectedShiftId) {
+      const block = allShiftBlocks.find((b) => b.id === selectedShiftId);
+      if (block && (block.staff_assignments || []).length > 0) {
+        const shiftStaffIds = new Set((block.staff_assignments || []).map((a) => a.staff_id));
+        const onShift = allStaff.filter((s) => shiftStaffIds.has(s.id));
+        if (onShift.length > 0) {
+          return onShift.sort((a, b) =>
+            (a.full_name || "").localeCompare(b.full_name || "", undefined, { sensitivity: "base" })
+          );
+        }
+      }
+    }
+    return [...allStaff].sort((a, b) =>
+      (a.full_name || "").localeCompare(b.full_name || "", undefined, { sensitivity: "base" })
+    );
+  }, [allStaff, selectedShiftId, allShiftBlocks]);
 
   useEffect(() => {
     if (dutyToEdit) {
@@ -611,8 +642,8 @@ export function DutyAssignmentModal({
         key = `room:${dutyToEdit.room_id}`;
       }
       setLocationKey(key);
-      setStartTime(dutyToEdit.start_time ? dutyToEdit.start_time.slice(0, 16) : "");
-      setEndTime(dutyToEdit.end_time ? dutyToEdit.end_time.slice(0, 16) : "");
+      setStartTime(toDateTimeLocal(dutyToEdit.start_time));
+      setEndTime(toDateTimeLocal(dutyToEdit.end_time));
       setNotes(dutyToEdit.notes || "");
     } else {
       setSelectedStaffId(staffId ?? null);
@@ -623,13 +654,14 @@ export function DutyAssignmentModal({
       setNotes("");
 
       // If shiftId is provided, prefill start/end time from shift block
-      if (shiftId) {
+      const targetShiftId = shiftId;
+      if (targetShiftId) {
         const found = allShiftBlocks.find((b) =>
-          b.id === shiftId || (b.staff_assignments || []).some((a) => a.id === shiftId)
+          b.id === targetShiftId || (b.staff_assignments || []).some((a) => a.id === targetShiftId)
         );
         if (found) {
-          setStartTime(found.start_time ? found.start_time.slice(0, 16) : "");
-          setEndTime(found.end_time ? found.end_time.slice(0, 16) : "");
+          setStartTime(toDateTimeLocal(found.start_time));
+          setEndTime(toDateTimeLocal(found.end_time));
         } else {
           setStartTime("");
           setEndTime("");
@@ -728,7 +760,7 @@ export function DutyAssignmentModal({
           <div>
             <Label>Staff Member *</Label>
             <StaffSelector
-              staff={allStaff}
+              staff={sortedStaffOptions}
               value={selectedStaffId}
               onChange={setSelectedStaffId}
             />
@@ -753,8 +785,8 @@ export function DutyAssignmentModal({
               if (val) {
                 const found = allShiftBlocks.find((b) => b.id === val);
                 if (found) {
-                  setStartTime(found.start_time ? found.start_time.slice(0, 16) : "");
-                  setEndTime(found.end_time ? found.end_time.slice(0, 16) : "");
+                  setStartTime(toDateTimeLocal(found.start_time));
+                  setEndTime(toDateTimeLocal(found.end_time));
                 }
               }
             }}
@@ -920,6 +952,12 @@ export function TaskAssignmentModal({
   const [description, setDescription] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const sortedStaff = useMemo(() => {
+    return [...allStaff].sort((a, b) =>
+      (a.full_name || "").localeCompare(b.full_name || "", undefined, { sensitivity: "base" })
+    );
+  }, [allStaff]);
+
   useEffect(() => {
     if (taskToEdit) {
       setSelectedStaffId(taskToEdit.assigned_staff_id ?? null);
@@ -927,7 +965,7 @@ export function TaskAssignmentModal({
       setTitle(taskToEdit.title || "");
       setCategory(taskToEdit.category || "Operations");
       setPriority(taskToEdit.priority || "medium");
-      setDueDate(taskToEdit.due_date ? taskToEdit.due_date.slice(0, 16) : "");
+      setDueDate(toDateTimeLocal(taskToEdit.due_date));
       setDescription(taskToEdit.description || "");
     } else {
       setSelectedStaffId(staffId ?? null);
@@ -938,7 +976,7 @@ export function TaskAssignmentModal({
       setDescription("");
       if (shiftId) {
         const found = allShiftBlocks.find((b) => b.id === shiftId);
-        setDueDate(found?.end_time ? found.end_time.slice(0, 16) : "");
+        setDueDate(toDateTimeLocal(found?.end_time));
       } else {
         setDueDate("");
       }
@@ -998,7 +1036,7 @@ export function TaskAssignmentModal({
           <div>
             <Label>Assigned Personnel (Optional)</Label>
             <StaffSelector
-              staff={allStaff}
+              staff={sortedStaff}
               value={selectedStaffId}
               onChange={setSelectedStaffId}
             />
@@ -1110,14 +1148,17 @@ export function ShiftInchargesModal({
     return operationalAreas.filter((a) => a.is_active);
   }, [operationalAreas]);
 
-  // Only staff already on this ShiftBlock's own roster are eligible
+  // Only staff already on this ShiftBlock's own roster are eligible, sorted alphabetically
   const eligibleStaff: StaffOption[] = useMemo(() => {
-    return (shiftBlock?.staff_assignments || []).map((a) => ({
+    const list = (shiftBlock?.staff_assignments || []).map((a) => ({
       id: a.staff_id,
       full_name: a.staff_name || `Staff #${a.staff_id}`,
       category: a.staff_category || null,
       phone: a.staff_phone || null,
     }));
+    return list.sort((a, b) =>
+      (a.full_name || "").localeCompare(b.full_name || "", undefined, { sensitivity: "base" })
+    );
   }, [shiftBlock]);
 
   useEffect(() => {

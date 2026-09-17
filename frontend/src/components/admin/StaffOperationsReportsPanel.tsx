@@ -920,7 +920,19 @@ export function StaffOperationsReportsPanel() {
                           </TD>
                           <TD className="text-xs text-slate-300 font-medium">{r.operational_area}</TD>
                           <TD className="text-xs text-white font-medium">{r.specific_duty}</TD>
-                          <TD className="text-xs text-slate-300">{r.location}</TD>
+                          <TD className="text-xs text-slate-300">
+                            <div className="font-medium text-white">{r.location}</div>
+                            {((r.building && r.building !== "—") || (r.room && r.room !== "—")) && (
+                              <div className="text-[11px] text-slate-400">
+                                {[
+                                  r.building && r.building !== "—" ? `Bldg: ${r.building}` : null,
+                                  r.room && r.room !== "—" ? `Room: ${r.room}` : null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </div>
+                            )}
+                          </TD>
                           <TD className="text-xs font-mono text-slate-300">
                             <div>{r.duty_time_span}</div>
                             <div className="text-[10px] text-slate-500">{r.duration}</div>

@@ -8,10 +8,12 @@ import openpyxl
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from .. import id_card, models
+from ..config import to_event_tz
 from ..database import get_db
+from .event_locations import resolve_duty_location_hierarchy
 from ..excel_styler import (
     ALIGN_CENTER,
     ALIGN_HEADER_CENTER,
@@ -868,23 +870,35 @@ def live_report_detail(
         }
 
     if section == "duty":
-        duties = db.query(models.DutyAssignment).order_by(models.DutyAssignment.start_time.asc().nullslast()).all()
+        duties = (
+            db.query(models.DutyAssignment)
+            .options(
+                joinedload(models.DutyAssignment.staff),
+                joinedload(models.DutyAssignment.location).joinedload(models.EventLocation.room).joinedload(models.Room.floor).joinedload(models.Floor.building),
+                joinedload(models.DutyAssignment.location).joinedload(models.EventLocation.building),
+                joinedload(models.DutyAssignment.location).joinedload(models.EventLocation.mat),
+                joinedload(models.DutyAssignment.room).joinedload(models.Room.floor).joinedload(models.Floor.building),
+            )
+            .order_by(models.DutyAssignment.start_time.asc().nullslast())
+            .all()
+        )
         rows = []
         for a in duties:
-            room = a.room
-            floor = room.floor if room else None
-            building = floor.building if floor else None
+            loc_name, bldg_name, room_name = resolve_duty_location_hierarchy(a)
+            st = to_event_tz(a.start_time)
+            et = to_event_tz(a.end_time)
             rows.append([
                 a.staff.full_name if a.staff else "—",
                 a.staff.category if a.staff else "—",
-                a.duty_type,
-                building.name if building else "—",
-                room.name if room else "—",
-                a.start_time.strftime("%d-%b %H:%M") if a.start_time else "—",
-                a.end_time.strftime("%d-%b %H:%M") if a.end_time else "—",
+                a.duty_type or "—",
+                loc_name,
+                bldg_name,
+                room_name,
+                st.strftime("%d-%b %H:%M") if st else "—",
+                et.strftime("%d-%b %H:%M") if et else "—",
             ])
         return {
-            "columns": ["Staff Name", "Category", "Duty Type", "Building", "Room", "Start", "End"],
+            "columns": ["Staff Name", "Category", "Duty Type", "Location", "Building", "Room", "Start", "End"],
             "rows": rows,
         }
 
@@ -894,21 +908,22 @@ def live_report_detail(
             .order_by(models.Match.tournament_id, models.Match.round_id, models.Match.id)
             .all()
         )
+        rows = []
+        for m in matches:
+            sched_tz = to_event_tz(m.scheduled_at)
+            rows.append([
+                m.tournament.name if m.tournament else "—",
+                m.round.name if m.round else "—",
+                m.team_a.name if m.team_a else "TBD",
+                m.team_b.name if m.team_b else "TBD",
+                m.status,
+                f"{m.team_a_score} - {m.team_b_score}",
+                m.mat.name if m.mat else "—",
+                sched_tz.strftime("%d-%b %H:%M") if sched_tz else "—",
+            ])
         return {
             "columns": ["Tournament", "Round", "Team A", "Team B", "Status", "Score", "Mat", "Scheduled"],
-            "rows": [
-                [
-                    m.tournament.name if m.tournament else "—",
-                    m.round.name if m.round else "—",
-                    m.team_a.name if m.team_a else "TBD",
-                    m.team_b.name if m.team_b else "TBD",
-                    m.status,
-                    f"{m.team_a_score} - {m.team_b_score}",
-                    m.mat.name if m.mat else "—",
-                    m.scheduled_at.strftime("%d-%b %H:%M") if m.scheduled_at else "—",
-                ]
-                for m in matches
-            ],
+            "rows": rows,
         }
 
     if section == "accommodation":
@@ -971,12 +986,23 @@ def live_report_detail(
 
 @router.get("/duties.xlsx", dependencies=[Depends(require_module("staff"))])
 def export_duties_xlsx(db: Session = Depends(get_db)):
-    duties = db.query(models.DutyAssignment).order_by(models.DutyAssignment.start_time.asc().nullslast()).all()
+    duties = (
+        db.query(models.DutyAssignment)
+        .options(
+            joinedload(models.DutyAssignment.staff),
+            joinedload(models.DutyAssignment.location).joinedload(models.EventLocation.room).joinedload(models.Room.floor).joinedload(models.Floor.building),
+            joinedload(models.DutyAssignment.location).joinedload(models.EventLocation.building),
+            joinedload(models.DutyAssignment.location).joinedload(models.EventLocation.mat),
+            joinedload(models.DutyAssignment.room).joinedload(models.Room.floor).joinedload(models.Floor.building),
+        )
+        .order_by(models.DutyAssignment.start_time.asc().nullslast())
+        .all()
+    )
 
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Duty Roster"
-    max_cols = 7
+    max_cols = 8
 
     next_row = style_header_banner(
         ws,
@@ -988,9 +1014,13 @@ def export_duties_xlsx(db: Session = Depends(get_db)):
     )
 
     total_d = len(duties)
-    unique_staff = len({d.staff_id for d in duties})
+    unique_staff = len({d.staff_id for d in duties if d.staff_id})
     unique_duty_types = len({d.duty_type for d in duties if d.duty_type})
-    unique_buildings = len({d.room.floor.building_id for d in duties if d.room and d.room.floor and d.room.floor.building_id})
+    unique_buildings = len({
+        bldg for d in duties
+        for _, bldg, _ in [resolve_duty_location_hierarchy(d)]
+        if bldg and bldg != "—"
+    })
 
     cards = [
         ("Total Assignments", total_d, "Duty Slots"),
@@ -1006,10 +1036,11 @@ def export_duties_xlsx(db: Session = Depends(get_db)):
         ("STAFF NAME", 24, ALIGN_HEADER_LEFT),
         ("CATEGORY", 20, ALIGN_HEADER_LEFT),
         ("DUTY TYPE", 16, ALIGN_HEADER_CENTER),
+        ("LOCATION", 22, ALIGN_HEADER_LEFT),
         ("BUILDING", 18, ALIGN_HEADER_LEFT),
         ("ROOM", 14, ALIGN_HEADER_CENTER),
-        ("START", 16, ALIGN_HEADER_CENTER),
-        ("END", 16, ALIGN_HEADER_CENTER),
+        ("START", 18, ALIGN_HEADER_CENTER),
+        ("END", 18, ALIGN_HEADER_CENTER),
     ]
 
     ws.row_dimensions[next_row].height = 22
@@ -1024,18 +1055,19 @@ def export_duties_xlsx(db: Session = Depends(get_db)):
     for idx, d in enumerate(duties, start=1):
         ws.row_dimensions[next_row].height = 20
         fill = FILL_ZEBRA_EVEN if idx % 2 == 0 else FILL_ZEBRA_ODD
-        room = d.room
-        floor = room.floor if room else None
-        building = floor.building if floor else None
+        loc_name, bldg_name, room_name = resolve_duty_location_hierarchy(d)
+        st = to_event_tz(d.start_time)
+        et = to_event_tz(d.end_time)
 
         row_data = [
             (d.staff.full_name if d.staff else "—", ALIGN_LEFT, FONT_TD_BOLD),
             (d.staff.category if d.staff else "—", ALIGN_LEFT, FONT_TD),
             (d.duty_type or "—", ALIGN_CENTER, FONT_TD),
-            (building.name if building else "—", ALIGN_LEFT, FONT_TD),
-            (room.name if room else "—", ALIGN_CENTER, FONT_TD),
-            (d.start_time.strftime("%d %b %Y %H:%M") if d.start_time else "—", ALIGN_CENTER, FONT_TD),
-            (d.end_time.strftime("%d %b %Y %H:%M") if d.end_time else "—", ALIGN_CENTER, FONT_TD),
+            (loc_name, ALIGN_LEFT, FONT_TD),
+            (bldg_name, ALIGN_LEFT, FONT_TD),
+            (room_name, ALIGN_CENTER, FONT_TD),
+            (st.strftime("%d %b %Y %H:%M") if st else "—", ALIGN_CENTER, FONT_TD),
+            (et.strftime("%d %b %Y %H:%M") if et else "—", ALIGN_CENTER, FONT_TD),
         ]
 
         for col_idx, (val, align, font) in enumerate(row_data, start=1):

@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   ChevronLeft,
   Calendar,
@@ -74,15 +75,38 @@ export function ShiftWorkspace({
   onToggleTask,
   onDeleteTask,
 }: ShiftWorkspaceProps) {
-  const [workspaceTab, setWorkspaceTab] = useState<
-    "overview" | "staff" | "duties" | "tasks" | "incharges"
-  >("overview");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const validSubtabs = ["overview", "staff", "duties", "tasks", "incharges"] as const;
+  type Subtab = typeof validSubtabs[number];
+  const paramSubtab = searchParams.get("subtab") as Subtab | null;
+  const initialSubtab: Subtab = paramSubtab && validSubtabs.includes(paramSubtab) ? paramSubtab : "overview";
+  const [workspaceTab, setWorkspaceTabState] = useState<Subtab>(initialSubtab);
 
-  // Roster assignments on this shift
-  const assignments = useMemo(
-    () => shiftBlock.staff_assignments || [],
-    [shiftBlock]
-  );
+  useEffect(() => {
+    if (paramSubtab && validSubtabs.includes(paramSubtab) && paramSubtab !== workspaceTab) {
+      setWorkspaceTabState(paramSubtab);
+    }
+  }, [paramSubtab]);
+
+  const setWorkspaceTab = (tab: Subtab) => {
+    setWorkspaceTabState(tab);
+    setSearchParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        p.set("subtab", tab);
+        return p;
+      },
+      { replace: true }
+    );
+  };
+
+  // Roster assignments on this shift - sorted alphabetically by staff name
+  const assignments = useMemo(() => {
+    const list = shiftBlock.staff_assignments || [];
+    return [...list].sort((a, b) =>
+      (a.staff_name || "").localeCompare(b.staff_name || "", undefined, { sensitivity: "base" })
+    );
+  }, [shiftBlock]);
   const totalStaff = assignments.length || shiftBlock.staff_count || 0;
 
   // Shift assignment IDs for lookups

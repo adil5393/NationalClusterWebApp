@@ -663,3 +663,82 @@ def test_r_shift_block_delete_safety_regression(client, sample_staff, sample_are
     r_del = client.delete(f"/api/staff/shift-blocks/{active_block['id']}")
     assert r_del.status_code == 409
     assert "Cannot delete this shift because operational duties or tasks are attached" in r_del.text
+
+
+# --- S. Duty reports populate Location, Building, Room, and Local Time ---
+def test_s_duty_reports_populate_location_building_room_and_local_time(client, db_session, sample_staff, sample_area):
+    # 1. Create building, floor, room hierarchy
+    bldg = models.Building(name="Sarojini Hostel")
+    db_session.add(bldg)
+    db_session.flush()
+
+    flr = models.Floor(name="1st Floor", building_id=bldg.id)
+    db_session.add(flr)
+    db_session.flush()
+
+    rm = models.Room(name="Room 105", floor_id=flr.id, capacity=4)
+    db_session.add(rm)
+    db_session.commit()
+
+    # 2. Assign duty with room location and specific UTC time (03:30 UTC = 09:00 IST)
+    r = client.post(
+        "/api/staff/duties",
+        json={
+            "staff_id": sample_staff.id,
+            "location_source": "room",
+            "location_source_id": rm.id,
+            "duty_type": "Hostel Incharge",
+            "operational_area_id": sample_area.id,
+            "start_time": "2026-09-18T03:30:00Z",
+            "end_time": "2026-09-18T11:30:00Z",
+        },
+    )
+    assert r.status_code == 201
+
+    # 3. Test GET /api/export/live-detail/duty
+    detail_res = client.get("/api/export/live-detail/duty")
+    assert detail_res.status_code == 200
+    detail = detail_res.json()
+    assert "Location" in detail["columns"]
+    assert "Building" in detail["columns"]
+    assert "Room" in detail["columns"]
+    assert "Start" in detail["columns"]
+    assert "End" in detail["columns"]
+
+    # Check the row
+    loc_idx = detail["columns"].index("Location")
+    bldg_idx = detail["columns"].index("Building")
+    room_idx = detail["columns"].index("Room")
+    start_idx = detail["columns"].index("Start")
+    end_idx = detail["columns"].index("End")
+
+    row = detail["rows"][0]
+    assert "Sarojini Hostel" in row[loc_idx]
+    assert "Room 105" in row[loc_idx]
+    assert row[bldg_idx] == "Sarojini Hostel"
+    assert row[room_idx] == "Room 105"
+    # Local Indian time: 03:30 UTC -> 09:00 IST
+    assert "09:00" in row[start_idx]
+    assert "17:00" in row[end_idx]
+
+    # 4. Test GET /api/export/duties.xlsx
+    xlsx_res = client.get("/api/export/duties.xlsx")
+    assert xlsx_res.status_code == 200
+    assert len(xlsx_res.content) > 0
+
+    # 5. Test GET /api/staff-reports/duties
+    sr_res = client.get("/api/staff-reports/duties")
+    assert sr_res.status_code == 200
+    sr_data = sr_res.json()
+    assert sr_data["total"] >= 1
+    sr_row = sr_data["rows"][0]
+    assert sr_row["building"] == "Sarojini Hostel"
+    assert sr_row["room"] == "Room 105"
+    assert "09:00" in sr_row["duty_time_span"]
+    assert "17:00" in sr_row["duty_time_span"]
+
+    # 6. Test GET /api/staff-reports/duties.xlsx
+    sr_xlsx = client.get("/api/staff-reports/duties.xlsx")
+    assert sr_xlsx.status_code == 200
+    assert len(sr_xlsx.content) > 0
+
