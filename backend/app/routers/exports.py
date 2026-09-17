@@ -1416,9 +1416,10 @@ def _coach_photo_path(coach: models.Coach):
 def export_idcard_coach(coach_id: int, db: Session = Depends(get_db)):
     """One coach/manager's own card, centered on its own full page (a custom
     small-badge size, see id_card.STAFF_PAGE_WIDTH_CM/HEIGHT_CM) — see
-    id_card.render_staff_id_card_page. Admin counterpart to
-    public.py's public_coach_idcard (same rendering, just behind the
-    organizer login instead of a team's public portal link)."""
+    id_card.render_staff_id_card_page. Organizer-only: unlike participants,
+    Coach/Manager cards carry an Aadhaar number, so this is deliberately not
+    exposed anywhere on the public team portal — only from this admin-gated
+    route (require_module("teams"))."""
     coach = db.get(models.Coach, coach_id)
     if not coach:
         raise HTTPException(404, "Coach not found")

@@ -7,11 +7,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from .. import id_card, models, schemas
+from .. import models, schemas
 from ..auth_utils import verify_password
 from ..database import get_db
 from ..face_crop import suggest_crop
@@ -724,24 +723,4 @@ async def upload_coach_photo(
 
     return {"photo_url": coach.photo_url}
 
-
-@router.get("/coaches/{coach_id}/idcard.pdf")
-def public_coach_idcard(coach_id: int, db: Session = Depends(get_db)):
-    """No-login download of one coach/manager's own ID card — a single
-    filled card centered on its own page at a custom small-badge size (see
-    id_card.render_staff_id_card_page / STAFF_PAGE_WIDTH_CM/HEIGHT_CM),
-    reachable from the same team portal a coach already uses to manage their
-    roster's photos."""
-    coach = db.get(models.Coach, coach_id)
-    if not coach:
-        raise HTTPException(404, "Coach not found")
-    photo_path = ASSETS_COACHES_DIR / coach.photo_filename if coach.photo_filename else None
-    page = id_card.render_staff_id_card_page(coach, coach.team, photo_path)
-    pdf = id_card.build_pdf([page])
-    role_slug = (coach.role or "coach").lower()
-    return Response(
-        content=pdf,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{role_slug}-idcard-{coach.id}.pdf"'},
-    )
 

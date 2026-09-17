@@ -708,14 +708,6 @@ export default function TeamPortal() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <a
-                      href={assetUrl(`/api/public/coaches/${c.id}/idcard.pdf`)}
-                      title="Download ID Card (PDF)"
-                      data-testid={`download-coach-idcard-${c.id}`}
-                      className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-1 font-mono text-xs font-semibold text-slate-300 hover:bg-white/10 hover:text-white"
-                    >
-                      <Shield className="h-3 w-3 text-gold" />
-                    </a>
                     {c.phone ? (
                       <a
                         href={`tel:${c.phone}`}
