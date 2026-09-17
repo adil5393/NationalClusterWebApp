@@ -81,6 +81,68 @@ def rooms(db: Session = Depends(get_db)):
     return out
 
 
+def room_report_rows(db: Session) -> list[dict]:
+    """One row per Room across every Building/Floor (sorted building -> floor
+    -> room, so it always reads top-to-bottom the way the hostel is laid
+    out), with the four figures an organizer actually wants for a room-
+    utilization report:
+      - capacity: beds the room is rated for
+      - allotted: beds/slots actually assigned (a whole-team assignment
+        counts as that team's real roster size, same convention as
+        _room_headcount — never as a single row)
+      - occupied: how many of those allotted people have actually checked
+        in (Participant.is_present) — allotted-but-not-yet-arrived is the
+        normal state before a team's arrival, not a data error
+      - free: capacity minus allotted (never negative in the report even if
+        a room is knowingly overbooked — see create_assignment's warning-not-
+        block behavior; a negative "free" reads as a bug, not as "3 people
+        over capacity", so over-capacity is instead its own boolean flag)
+    Shared by the JSON "view" (GET /room-map-report) and every Room Map
+    Report export (routers/exports.py's rooms-detailed.xlsx/.csv/.pdf) so
+    all three always agree with each other and with the visual /map."""
+    rows = []
+    for b in db.query(models.Building).order_by(models.Building.name).all():
+        for f in sorted(b.floors, key=lambda fl: fl.name):
+            for r in sorted(f.rooms, key=lambda rm: rm.name):
+                capacity = r.capacity or 0
+                allotted = _room_headcount(db, r.id)
+                occupied = _room_present_count(db, r.id)
+                rows.append({
+                    "room_id": r.id,
+                    "building": b.name,
+                    "building_code": b.code,
+                    "floor": f.name,
+                    "room": r.name,
+                    "room_type": r.room_type,
+                    "capacity": capacity,
+                    "allotted": allotted,
+                    "occupied": occupied,
+                    "free": max(0, capacity - allotted),
+                    "over_capacity": capacity > 0 and allotted > capacity,
+                })
+    return rows
+
+
+@router.get("/room-map-report")
+def room_map_report(db: Session = Depends(get_db)):
+    """The Room Map Report's data source — see room_report_rows. Also
+    returns the same building/floor/room list's own totals so the frontend
+    "view" and every export's KPI cards are always computed from, and thus
+    consistent with, this exact row set."""
+    rows = room_report_rows(db)
+    return {
+        "rows": rows,
+        "totals": {
+            "rooms": len(rows),
+            "capacity": sum(r["capacity"] for r in rows),
+            "allotted": sum(r["allotted"] for r in rows),
+            "occupied": sum(r["occupied"] for r in rows),
+            "free": sum(r["free"] for r in rows),
+            "over_capacity_rooms": sum(1 for r in rows if r["over_capacity"]),
+        },
+    }
+
+
 @router.get("/assignments")
 def assignments(db: Session = Depends(get_db)):
     rows = db.query(models.AccommodationAssignment).order_by(models.AccommodationAssignment.id.desc()).all()

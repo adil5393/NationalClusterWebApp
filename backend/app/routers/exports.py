@@ -5,7 +5,7 @@ import itertools
 import zipfile
 
 import openpyxl
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session, joinedload
 from .. import id_card, models
 from ..config import to_event_tz
 from ..database import get_db
+from ..pdf_report import build_table_pdf
+from .accommodation import room_report_rows
 from .event_locations import resolve_duty_location_hierarchy
 from ..excel_styler import (
     ALIGN_CENTER,
@@ -308,6 +310,195 @@ def export_room_allocation_xlsx(db: Session = Depends(get_db)):
         iter([buf.getvalue()]),
         media_type=XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": 'attachment; filename="room_allocations.xlsx"'},
+    )
+
+
+@router.get("/rooms.pdf", dependencies=[Depends(require_module("accommodation"))])
+def export_room_allocation_pdf(db: Session = Depends(get_db)):
+    """Printable PDF twin of rooms.xlsx above — same per-occupant Accommodation
+    Report (who's in which bed), same source query, just laid out as a
+    paginated table instead of a workbook."""
+    assignments = db.query(models.AccommodationAssignment).all()
+    participant_counts = dict(
+        db.query(models.Participant.team_id, func.count(models.Participant.id))
+        .group_by(models.Participant.team_id)
+        .all()
+    )
+    participant_present_counts = dict(
+        db.query(models.Participant.team_id, func.count(models.Participant.id))
+        .filter(models.Participant.is_present.is_(True))
+        .group_by(models.Participant.team_id)
+        .all()
+    )
+
+    rows = []
+    for a in assignments:
+        room = a.room
+        floor = room.floor if room else None
+        building = floor.building if floor else None
+        participant = db.get(models.Participant, a.participant_id) if a.participant_id else None
+        rows.append([
+            building.name if building else "—",
+            floor.name if floor else "—",
+            room.name if room else "—",
+            a.bed.label if a.bed else "(Any Bed)",
+            participant.full_name if participant else "(Whole Team)",
+            a.team.name if a.team else "—",
+            participant_counts.get(a.team_id, 0) if a.team_id else "—",
+            participant_present_counts.get(a.team_id, 0) if a.team_id else "—",
+        ])
+
+    pdf = build_table_pdf(
+        title="ACCOMMODATION REPORT",
+        subtitle="Building, Floor, Room, Bed & Assigned Occupant Detail — Every Active Allocation",
+        headers=["Building", "Floor", "Room", "Bed", "Occupant", "Team", "Allotted", "Present"],
+        rows=rows,
+        col_widths=[3.5, 2.8, 2.2, 2.5, 4.5, 4.5, 2.2, 2.2],
+        kpis=[
+            ("Total Allocations", str(len(assignments))),
+            ("Rooms Assigned", str(len({a.room_id for a in assignments if a.room_id}))),
+            ("Bed Assignments", str(sum(1 for a in assignments if a.bed_id is not None))),
+        ],
+    )
+    return Response(
+        content=pdf,
+        media_type=PDF_MEDIA_TYPE,
+        headers={"Content-Disposition": 'attachment; filename="accommodation_report.pdf"'},
+    )
+
+
+@router.get("/rooms-detailed.csv", dependencies=[Depends(require_module("accommodation"))])
+def export_room_map_report_csv(db: Session = Depends(get_db)):
+    """Room Map Report — one row per Room across every Building/Floor (see
+    accommodation.room_report_rows), unlike rooms.csv above which is one row
+    per occupant/bed. This is the room-utilization view: Capacity, Allotted,
+    Occupied (checked-in), Free."""
+    rows = room_report_rows(db)
+    csv_rows = [
+        [r["building"], r["floor"], r["room"], r["room_type"] or "", r["capacity"], r["allotted"], r["occupied"], r["free"]]
+        for r in rows
+    ]
+    return _csv_response(
+        ["Building", "Floor", "Room", "Room Type", "Capacity", "Allotted", "Occupied", "Free"],
+        csv_rows,
+        "room-map-report.csv",
+    )
+
+
+@router.get("/rooms-detailed.xlsx", dependencies=[Depends(require_module("accommodation"))])
+def export_room_map_report_xlsx(db: Session = Depends(get_db)):
+    rows = room_report_rows(db)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Room Map Report"
+    max_cols = 8
+
+    next_row = style_header_banner(
+        ws,
+        tournament_name="ROOM MAP REPORT",
+        subtitle="Building, Floor & Room Occupancy Detail — Capacity, Allotted, Occupied & Free",
+        badge_text="OFFICIAL ROOM UTILIZATION EXPORT",
+        max_col=max_cols,
+        start_row=1,
+    )
+
+    total_capacity = sum(r["capacity"] for r in rows)
+    total_allotted = sum(r["allotted"] for r in rows)
+    total_occupied = sum(r["occupied"] for r in rows)
+    total_free = sum(r["free"] for r in rows)
+
+    cards = [
+        ("Total Rooms", len(rows), "Across All Buildings"),
+        ("Total Capacity", total_capacity, "Rated Beds"),
+        ("Allotted", total_allotted, "Assigned Slots"),
+        ("Occupied", total_occupied, "Checked In"),
+        ("Free", total_free, "Remaining Capacity"),
+    ]
+    next_row = style_kpi_cards(ws, cards, start_row=next_row, card_width_cols=1)
+    next_row = style_section_bar(ws, "Room-by-Room Occupancy", next_row, max_col=max_cols, icon="🏨")
+
+    headers = [
+        ("BUILDING", 20, ALIGN_HEADER_LEFT),
+        ("FLOOR", 16, ALIGN_HEADER_LEFT),
+        ("ROOM", 14, ALIGN_HEADER_CENTER),
+        ("ROOM TYPE", 16, ALIGN_HEADER_LEFT),
+        ("CAPACITY", 12, ALIGN_HEADER_CENTER),
+        ("ALLOTTED", 12, ALIGN_HEADER_CENTER),
+        ("OCCUPIED", 12, ALIGN_HEADER_CENTER),
+        ("FREE", 10, ALIGN_HEADER_CENTER),
+    ]
+    ws.row_dimensions[next_row].height = 22
+    for col_idx, (th_label, _, align) in enumerate(headers, start=1):
+        cell = ws.cell(row=next_row, column=col_idx, value=th_label)
+        cell.font = FONT_TH
+        cell.fill = FILL_TH_PRIMARY
+        cell.alignment = align
+        cell.border = BORDER_HEADER
+    next_row += 1
+
+    for idx, r in enumerate(rows, start=1):
+        ws.row_dimensions[next_row].height = 20
+        fill = FILL_ZEBRA_EVEN if idx % 2 == 0 else FILL_ZEBRA_ODD
+        if r["over_capacity"]:
+            fill = PatternFill("solid", fgColor=CLR_AMBER_BG)
+
+        row_data = [
+            (r["building"], ALIGN_LEFT, FONT_TD_BOLD),
+            (r["floor"], ALIGN_LEFT, FONT_TD),
+            (r["room"], ALIGN_CENTER, FONT_TD_BOLD),
+            (r["room_type"] or "—", ALIGN_LEFT, FONT_TD),
+            (r["capacity"], ALIGN_CENTER, FONT_TD),
+            (r["allotted"], ALIGN_CENTER, FONT_TD_BOLD),
+            (r["occupied"], ALIGN_CENTER, FONT_TD),
+            (r["free"], ALIGN_CENTER, FONT_TD_BOLD),
+        ]
+        for col_idx, (val, align, font) in enumerate(row_data, start=1):
+            cell = ws.cell(row=next_row, column=col_idx, value=val)
+            cell.font = font
+            cell.alignment = align
+            cell.fill = fill
+            cell.border = BORDER_CELL
+        next_row += 1
+
+    style_footer(ws, next_row + 1, max_col=max_cols)
+    auto_fit_columns(ws, min_width=8, max_width=40, extra_padding=3)
+    enable_sheet_ergonomics(ws, freeze_pane="A7")
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type=XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": 'attachment; filename="room_map_report.xlsx"'},
+    )
+
+
+@router.get("/rooms-detailed.pdf", dependencies=[Depends(require_module("accommodation"))])
+def export_room_map_report_pdf(db: Session = Depends(get_db)):
+    rows = room_report_rows(db)
+    table_rows = [
+        [r["building"], r["floor"], r["room"], r["room_type"] or "—", r["capacity"], r["allotted"], r["occupied"], r["free"]]
+        for r in rows
+    ]
+    pdf = build_table_pdf(
+        title="ROOM MAP REPORT",
+        subtitle="Building, Floor & Room Occupancy Detail — Capacity, Allotted, Occupied & Free",
+        headers=["Building", "Floor", "Room", "Room Type", "Capacity", "Allotted", "Occupied", "Free"],
+        rows=table_rows,
+        col_widths=[3.5, 2.8, 2.2, 3.0, 2.2, 2.2, 2.2, 2.0],
+        kpis=[
+            ("Total Rooms", str(len(rows))),
+            ("Total Capacity", str(sum(r["capacity"] for r in rows))),
+            ("Allotted", str(sum(r["allotted"] for r in rows))),
+            ("Free", str(sum(r["free"] for r in rows))),
+        ],
+    )
+    return Response(
+        content=pdf,
+        media_type=PDF_MEDIA_TYPE,
+        headers={"Content-Disposition": 'attachment; filename="room_map_report.pdf"'},
     )
 
 
@@ -741,6 +932,7 @@ _LIVE_DETAIL_MODULES = {
     "duty": "staff",
     "matches": "matches",
     "accommodation": "accommodation",
+    "room-map": "accommodation",
     "accounts": None,  # admin-only, checked separately below
 }
 
@@ -958,6 +1150,17 @@ def live_report_detail(
         return {
             "columns": ["Building", "Floor", "Room", "Bed Label", "Occupant Name", "Team Affiliation", "Allotted", "Filled"],
             "rows": rows,
+        }
+
+    if section == "room-map":
+        rows = room_report_rows(db)
+        return {
+            "columns": ["Building", "Floor", "Room", "Room Type", "Capacity", "Allotted", "Occupied", "Free"],
+            "rows": [
+                [r["building"], r["floor"], r["room"], r["room_type"] or "—", r["capacity"], r["allotted"], r["occupied"], r["free"]]
+                for r in rows
+            ],
+            "row_flags": [r["over_capacity"] for r in rows],
         }
 
     # section == "accounts" (admin-only, checked above)

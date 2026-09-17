@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Download, BedDouble, Building, Layers, CheckCircle2, FileSpreadsheet } from "lucide-react";
+import { Download, BedDouble, Building, Layers, CheckCircle2, FileSpreadsheet, FileText, LayoutGrid, Table2 } from "lucide-react";
 import { api, BASE_URL } from "@/lib/api";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
+import { Table, THead, TH, TR, TD, TBody } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
 const BACKEND = BASE_URL;
@@ -36,14 +37,44 @@ interface Building {
   floors: Floor[];
 }
 
+interface RoomReportRow {
+  room_id: number;
+  building: string;
+  floor: string;
+  room: string;
+  room_type: string | null;
+  capacity: number;
+  allotted: number;
+  occupied: number;
+  free: number;
+  over_capacity: boolean;
+}
+interface RoomReportTotals {
+  rooms: number;
+  capacity: number;
+  allotted: number;
+  occupied: number;
+  free: number;
+  over_capacity_rooms: number;
+}
+
 export default function RoomMap() {
   const [data, setData] = useState<Building[]>([]);
   const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState<"visual" | "table">("visual");
+  const [reportRows, setReportRows] = useState<RoomReportRow[]>([]);
+  const [reportTotals, setReportTotals] = useState<RoomReportTotals | null>(null);
 
   useEffect(() => {
-    api
-      .get<Building[]>("/accommodation/map")
-      .then((r) => setData(r.data))
+    Promise.all([
+      api.get<Building[]>("/accommodation/map"),
+      api.get<{ rows: RoomReportRow[]; totals: RoomReportTotals }>("/accommodation/room-map-report"),
+    ])
+      .then(([map, report]) => {
+        setData(map.data);
+        setReportRows(report.data.rows);
+        setReportTotals(report.data.totals);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -73,25 +104,113 @@ export default function RoomMap() {
             Badge shows Capacity / Allotted / Present
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
           <a
-            href={`${BACKEND}/api/export/rooms.csv`}
+            href={`${BACKEND}/api/export/rooms-detailed.csv`}
             className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3.5 py-2 text-xs font-heading font-bold text-slate-200 hover:bg-white/10 hover:text-white transition-colors"
             data-testid="export-rooms-btn"
           >
             <Download className="h-4 w-4 text-slate-400" /> Export CSV
           </a>
           <a
-            href={`${BACKEND}/api/export/rooms.xlsx`}
+            href={`${BACKEND}/api/export/rooms-detailed.xlsx`}
             className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2 text-xs font-heading font-bold text-emerald-300 hover:bg-emerald-500/20 transition-colors"
             data-testid="export-rooms-xlsx-btn"
           >
             <FileSpreadsheet className="h-4 w-4 text-emerald-400" /> Export XLSX
           </a>
+          <a
+            href={`${BACKEND}/api/export/rooms-detailed.pdf`}
+            className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3.5 py-2 text-xs font-heading font-bold text-red-300 hover:bg-red-500/20 transition-colors"
+            data-testid="export-rooms-pdf-btn"
+          >
+            <FileText className="h-4 w-4 text-red-400" /> Export PDF
+          </a>
         </div>
       </div>
 
-      {data.length === 0 ? (
+      {/* VIEW TOGGLE */}
+      <div className="flex gap-2" data-testid="room-map-view-tabs">
+        <button
+          onClick={() => setViewMode("visual")}
+          data-testid="room-map-view-visual"
+          className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition-colors ${
+            viewMode === "visual" ? "bg-gold text-obsidian-950" : "bg-white/5 text-slate-300 hover:bg-white/10"
+          }`}
+        >
+          <LayoutGrid className="h-3.5 w-3.5" /> Visual Map
+        </button>
+        <button
+          onClick={() => setViewMode("table")}
+          data-testid="room-map-view-table"
+          className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition-colors ${
+            viewMode === "table" ? "bg-gold text-obsidian-950" : "bg-white/5 text-slate-300 hover:bg-white/10"
+          }`}
+        >
+          <Table2 className="h-3.5 w-3.5" /> Detailed Report
+        </button>
+      </div>
+
+      {viewMode === "table" ? (
+        <div className="space-y-4" data-testid="room-map-detailed-report">
+          {reportTotals && (
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              {[
+                { label: "Total Rooms", value: reportTotals.rooms },
+                { label: "Total Capacity", value: reportTotals.capacity },
+                { label: "Allotted", value: reportTotals.allotted },
+                { label: "Occupied", value: reportTotals.occupied },
+                { label: "Free", value: reportTotals.free },
+              ].map((k) => (
+                <div key={k.label} className="rounded-xl border border-white/10 bg-obsidian-900 p-3">
+                  <p className="text-[10px] font-heading font-bold uppercase tracking-wider text-slate-400">
+                    {k.label}
+                  </p>
+                  <p className="mt-1 text-xl font-black font-heading text-white">{k.value}</p>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="rounded-xl border border-white/10 bg-obsidian-950 overflow-hidden overflow-x-auto">
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Building</TH>
+                  <TH>Floor</TH>
+                  <TH>Room</TH>
+                  <TH>Room Type</TH>
+                  <TH className="text-right">Capacity</TH>
+                  <TH className="text-right">Allotted</TH>
+                  <TH className="text-right">Occupied</TH>
+                  <TH className="text-right">Free</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {reportRows.map((r) => (
+                  <TR key={r.room_id} data-testid={`room-report-row-${r.room_id}`}>
+                    <TD className="text-xs text-white font-bold">{r.building}</TD>
+                    <TD className="text-xs text-slate-300">{r.floor}</TD>
+                    <TD className="text-xs text-slate-300 font-mono">{r.room}</TD>
+                    <TD className="text-xs text-slate-400">{r.room_type || "—"}</TD>
+                    <TD className="text-right text-xs font-mono text-slate-300">{r.capacity}</TD>
+                    <TD className="text-right text-xs font-mono text-slate-300">{r.allotted}</TD>
+                    <TD className="text-right text-xs font-mono text-slate-300">{r.occupied}</TD>
+                    <TD className="text-right text-xs font-mono">
+                      {r.over_capacity ? (
+                        <Badge tone="red" size="sm">
+                          Over Capacity
+                        </Badge>
+                      ) : (
+                        <span className="text-emerald-400 font-bold">{r.free}</span>
+                      )}
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          </div>
+        </div>
+      ) : data.length === 0 ? (
         <div className="rounded-xl border border-white/10 bg-obsidian-900 p-6">
           <EmptyState title="No buildings configured" hint="Add buildings, floors and rooms first." />
         </div>

@@ -153,6 +153,31 @@ def _get_incharges_map(db: Session) -> Dict[Tuple[int, int], List[models.StaffMe
     return res
 
 
+def _get_tasks_by_staff_and_shift_block(db: Session) -> Dict[Tuple[Optional[int], Optional[int]], List[Dict[str, Any]]]:
+    """Every Task, indexed by (assigned_staff_id, shift_block_id) — lets the
+    Duty Report (_query_duty_assignments) surface each duty's own tasks
+    inline, instead of a separate Task Audit lookup. Keyed by shift_block_id
+    rather than Task.shift_id: a DutyAssignment and a Task can each point at
+    a different StaffShift row within the same ShiftBlock, and matching at
+    the block level is what actually ties a task to "this duty's shift" the
+    way an organizer means it. A task with no shift (shift_block_id None) is
+    a general to-do for that staff member and only surfaces on that staff's
+    own shiftless duty rows, for the same reason — it isn't tied to any one
+    of their shifts specifically."""
+    tasks = db.query(models.Task).options(joinedload(models.Task.shift)).all()
+    index: Dict[Tuple[Optional[int], Optional[int]], List[Dict[str, Any]]] = defaultdict(list)
+    for t in tasks:
+        shift_block_id = t.shift.shift_block_id if t.shift else None
+        index[(t.assigned_staff_id, shift_block_id)].append({
+            "id": t.id,
+            "title": t.title,
+            "status": t.status,
+            "priority": t.priority,
+            "due_date_display": _format_date(t.due_date) if t.due_date else "No Due Date",
+        })
+    return index
+
+
 # ---------------------------------------------------------------------------
 # Filter Metadata Endpoint
 # ---------------------------------------------------------------------------
@@ -1082,6 +1107,7 @@ def _query_duty_assignments(
     NEVER hide these records!
     """
     incharges_map = _get_incharges_map(db)
+    tasks_map = _get_tasks_by_staff_and_shift_block(db)
 
     q = (
         db.query(models.DutyAssignment)
@@ -1141,6 +1167,7 @@ def _query_duty_assignments(
         loc_name, bldg_name, room_name = resolve_duty_location_hierarchy(d)
         st_tz = to_event_tz(d.start_time)
         et_tz = to_event_tz(d.end_time)
+        duty_tasks = tasks_map.get((d.staff_id, sb.id if sb else None), [])
 
         rows.append({
             "id": d.id,
@@ -1168,6 +1195,8 @@ def _query_duty_assignments(
             "outside_shift": bool(overflow),
             "overflow_minutes": overflow,
             "notes": d.notes or "",
+            "tasks": duty_tasks,
+            "task_count": len(duty_tasks),
         })
 
     return rows
@@ -1218,12 +1247,12 @@ def export_duty_assignments_xlsx(
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Duty Assignments"
-    max_cols = 15
+    max_cols = 16
 
     next_row = style_header_banner(
         ws,
         tournament_name="STAFF DUTY ASSIGNMENT MASTER REGISTER",
-        subtitle="Individual Operational Duty Assignments, Timings, Locations & Shift Compliance",
+        subtitle="Individual Operational Duty Assignments, Timings, Locations, Shift Compliance & Linked Tasks",
         badge_text="OFFICIAL DUTY REGISTER",
         max_col=max_cols,
         start_row=1,
@@ -1233,12 +1262,14 @@ def export_duty_assignments_xlsx(
     distinct_staff = len({r["staff_id"] for r in rows})
     outside_shift = sum(1 for r in rows if r["outside_shift"])
     unclassified_areas = sum(1 for r in rows if r["operational_area"] == "Unclassified")
+    duties_with_tasks = sum(1 for r in rows if r["task_count"])
 
     cards = [
         ("Total Duty Records", total_duties, "Logged Assignments"),
         ("Distinct Staff", distinct_staff, "Assigned"),
         ("Outside Shift", outside_shift, "Overflow Alerts"),
         ("Unclassified Area", unclassified_areas, "Legacy/Unmapped"),
+        ("Duties With Tasks", duties_with_tasks, "Task-Linked"),
     ]
     next_row = style_kpi_cards(ws, cards, start_row=next_row, card_width_cols=1)
     next_row = style_section_bar(ws, "Duty Assignments Log", next_row, max_col=max_cols, icon="📋")
@@ -1259,6 +1290,7 @@ def export_duty_assignments_xlsx(
         ("IN-CHARGE(S)", 20, ALIGN_HEADER_LEFT),
         ("OUTSIDE SHIFT", 14, ALIGN_HEADER_CENTER),
         ("OVERFLOW", 12, ALIGN_HEADER_CENTER),
+        ("ASSIGNED TASKS", 32, ALIGN_HEADER_LEFT),
     ]
 
     ws.row_dimensions[next_row].height = 22
@@ -1292,6 +1324,11 @@ def export_duty_assignments_xlsx(
             (r["incharges"], ALIGN_LEFT, FONT_TD),
             ("YES" if r["outside_shift"] else "NO", ALIGN_CENTER, FONT_TD_BOLD),
             (f"+{r['overflow_minutes']}m" if r["overflow_minutes"] else "—", ALIGN_CENTER, FONT_TD_BOLD if r["overflow_minutes"] else FONT_TD),
+            (
+                ", ".join(f"{t['title']} [{t['status'].upper()}]" for t in r["tasks"]) if r["tasks"] else "—",
+                ALIGN_LEFT,
+                FONT_TD,
+            ),
         ]
         for col_idx, (val, align, font) in enumerate(row_data, start=1):
             cell = ws.cell(row=next_row, column=col_idx, value=val)

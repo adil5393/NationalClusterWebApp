@@ -889,6 +889,9 @@ export function StaffOperationsReportsPanel() {
                 <span className="text-xs font-heading font-bold text-white uppercase tracking-wider">
                   Duty Assignments Register ({reportData.total} Assignments)
                 </span>
+                <span className="text-[11px] font-mono text-slate-400">
+                  {reportData.rows?.filter((r: any) => r.task_count > 0).length ?? 0} with linked tasks
+                </span>
               </div>
               {reportData.rows?.length === 0 ? (
                 <div className="py-12 text-center text-slate-400 text-xs">No duty assignment records found.</div>
@@ -905,6 +908,7 @@ export function StaffOperationsReportsPanel() {
                         <TH>Time & Duration</TH>
                         <TH>In-Charge(s)</TH>
                         <TH>Shift Compliance</TH>
+                        <TH>Assigned Tasks</TH>
                       </TR>
                     </THead>
                     <TBody>
@@ -947,6 +951,24 @@ export function StaffOperationsReportsPanel() {
                               <Badge tone="green" size="sm">
                                 Within Shift
                               </Badge>
+                            )}
+                          </TD>
+                          <TD className="text-xs">
+                            {r.tasks?.length ? (
+                              <div className="space-y-1">
+                                {r.tasks.map((t: any) => (
+                                  <div key={t.id} className="flex items-center gap-1.5">
+                                    <Badge tone={t.status === "completed" ? "green" : "blue"} size="sm">
+                                      {t.status?.toUpperCase()}
+                                    </Badge>
+                                    <span className="text-slate-300 truncate max-w-[160px]" title={t.title}>
+                                      {t.title}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-slate-500">—</span>
                             )}
                           </TD>
                         </TR>

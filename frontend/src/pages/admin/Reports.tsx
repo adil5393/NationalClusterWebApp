@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Download, FileSpreadsheet, Trash2, Layers, RefreshCw, CheckSquare, Bus, ShieldCheck, UserCog, Wallet, BedDouble, Eye, Trophy } from "lucide-react";
+import { AlertTriangle, Download, FileSpreadsheet, Trash2, Layers, RefreshCw, CheckSquare, Bus, ShieldCheck, UserCog, Wallet, BedDouble, Eye, Trophy, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -54,6 +54,7 @@ function ReportDownloadCard({
   testId,
   fileLabel = ".xlsx",
   onView,
+  extraDownloads,
 }: {
   icon: React.ElementType;
   title: string;
@@ -62,6 +63,7 @@ function ReportDownloadCard({
   testId: string;
   fileLabel?: string;
   onView?: () => void;
+  extraDownloads?: { href: string; label: string }[];
 }) {
   return (
     <div
@@ -96,11 +98,22 @@ function ReportDownloadCard({
           data-testid={`download-${testId}`}
           className={cn(
             "inline-flex items-center justify-center gap-1 rounded-md border border-white/15 bg-white/5 px-2.5 py-1 text-xs font-heading font-bold text-slate-200 hover:bg-white/10 hover:text-white transition-colors h-7 shrink-0",
-            !onView && "w-full"
+            !onView && !extraDownloads && "w-full"
           )}
         >
           <Download className="h-3 w-3 text-gold" /> {fileLabel}
         </a>
+        {extraDownloads?.map((d) => (
+          <a
+            key={d.label}
+            href={d.href}
+            data-testid={`download-${testId}-${d.label.toLowerCase()}`}
+            title={`Download ${d.label}`}
+            className="inline-flex items-center justify-center gap-1 rounded-md border border-white/15 bg-white/5 px-2.5 py-1 text-xs font-heading font-bold text-slate-200 hover:bg-white/10 hover:text-white transition-colors h-7 shrink-0"
+          >
+            <Download className="h-3 w-3 text-emerald-400" /> {d.label}
+          </a>
+        ))}
       </div>
     </div>
   );
@@ -270,12 +283,30 @@ export default function Reports() {
             )}
             {accommodationAccess.canView && (
               <ReportDownloadCard
+                icon={LayoutGrid}
+                title="Room Map Report"
+                description="Every room's Capacity, Allotted, Occupied & Free — building by building."
+                href={`${BACKEND}/api/export/rooms-detailed.xlsx`}
+                testId="download-room-map-report-btn"
+                onView={() => openViewReport("room-map", `${BACKEND}/api/export/rooms-detailed.xlsx`, "Download Room Map .xlsx")}
+                extraDownloads={[
+                  { href: `${BACKEND}/api/export/rooms-detailed.csv`, label: "CSV" },
+                  { href: `${BACKEND}/api/export/rooms-detailed.pdf`, label: "PDF" },
+                ]}
+              />
+            )}
+            {accommodationAccess.canView && (
+              <ReportDownloadCard
                 icon={BedDouble}
-                title="Room Map / Accommodation"
+                title="Accommodation Report"
                 description="Building, floor, room & bed allocation for every occupant."
                 href={`${BACKEND}/api/export/rooms.xlsx`}
                 testId="download-accommodation-report-btn"
                 onView={() => openViewReport("accommodation", `${BACKEND}/api/export/rooms.xlsx`, "Download Rooms .xlsx")}
+                extraDownloads={[
+                  { href: `${BACKEND}/api/export/rooms.csv`, label: "CSV" },
+                  { href: `${BACKEND}/api/export/rooms.pdf`, label: "PDF" },
+                ]}
               />
             )}
             {(canEdit || me?.is_admin) && (

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Plus, Trash2, Pencil, BedDouble, Building, Users, CheckCircle2, AlertTriangle, Layers, ScrollText } from "lucide-react";
+import { Plus, Trash2, Pencil, BedDouble, Building, Users, CheckCircle2, AlertTriangle, Layers, ScrollText, Download, FileSpreadsheet, FileText } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { Table, THead, TH, TR, TD, TBody } from "@/components/ui/table";
@@ -525,10 +525,33 @@ export default function Accommodation() {
 
       {/* ASSIGNMENTS TABLE */}
       <div>
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h2 className="font-heading text-xs font-bold uppercase tracking-wider text-slate-400">
-            Active Allocations ({assignments.length})
+            Active Allocations ({assignments.length}) — Accommodation Report
           </h2>
+          <div className="flex items-center gap-2">
+            <a
+              href={`${BASE_URL}/api/export/rooms.csv`}
+              className="inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-white/5 px-2.5 py-1.5 text-xs font-heading font-bold text-slate-200 hover:bg-white/10 hover:text-white transition-colors"
+              data-testid="export-accommodation-csv-btn"
+            >
+              <Download className="h-3.5 w-3.5 text-slate-400" /> CSV
+            </a>
+            <a
+              href={`${BASE_URL}/api/export/rooms.xlsx`}
+              className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-heading font-bold text-emerald-300 hover:bg-emerald-500/20 transition-colors"
+              data-testid="export-accommodation-xlsx-btn"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" /> XLSX
+            </a>
+            <a
+              href={`${BASE_URL}/api/export/rooms.pdf`}
+              className="inline-flex items-center gap-1.5 rounded-md border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-xs font-heading font-bold text-red-300 hover:bg-red-500/20 transition-colors"
+              data-testid="export-accommodation-pdf-btn"
+            >
+              <FileText className="h-3.5 w-3.5 text-red-400" /> PDF
+            </a>
+          </div>
         </div>
 
         {assignments.length === 0 ? (

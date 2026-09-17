@@ -21,6 +21,7 @@ export type ReportSection =
   | "duty"
   | "matches"
   | "accommodation"
+  | "room-map"
   | "accounts";
 
 export const REPORT_TITLES: Record<ReportSection, string> = {
@@ -29,7 +30,8 @@ export const REPORT_TITLES: Record<ReportSection, string> = {
   billing: "Payments & Billing Ledger",
   duty: "Staff Duty Report",
   matches: "Match Progress & Scores",
-  accommodation: "Room Map / Accommodation Report",
+  accommodation: "Accommodation Report",
+  "room-map": "Room Map Report",
   accounts: "Organizer Accounts & Permissions",
 };
 
