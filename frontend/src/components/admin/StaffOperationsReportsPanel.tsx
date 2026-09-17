@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   Download,
+  FileText,
   Printer,
   RefreshCw,
   Users,
@@ -178,6 +179,19 @@ export function StaffOperationsReportsPanel() {
     return `${BACKEND}/api/staff-reports/${activeReport}.xlsx?${params.toString()}`;
   };
 
+  // operational-areas and individual are nested/single-subject views, not a
+  // flat table — the backend has no PDF for those (use Print instead, see
+  // routers/staff_reports.py's export_flat_report_pdf docstring).
+  const FLAT_PDF_REPORTS: StaffReportKey[] = [
+    "staff-master",
+    "shift-roster",
+    "incharges",
+    "duties",
+    "tasks",
+    "operational-issues",
+  ];
+  const getExportPdfUrl = () => `${BACKEND}/api/staff-reports/${activeReport}.pdf?${buildQueryParams().toString()}`;
+
   const handleBrowserPrint = () => {
     window.print();
   };
@@ -205,7 +219,9 @@ export function StaffOperationsReportsPanel() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {(activeReport === "shift-roster" || activeReport === "operational-areas" || activeReport === "individual") && (
+            {(activeReport === "shift-roster" ||
+              activeReport === "operational-areas" ||
+              activeReport === "individual") && (
               <Button
                 variant="outline"
                 size="sm"
@@ -215,6 +231,15 @@ export function StaffOperationsReportsPanel() {
               >
                 <Printer className="h-3.5 w-3.5 text-slate-400" /> Print
               </Button>
+            )}
+            {FLAT_PDF_REPORTS.includes(activeReport) && (
+              <a
+                href={getExportPdfUrl()}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/20 font-heading font-bold text-xs px-3.5 py-2 transition-colors"
+                data-testid="export-staff-report-pdf-btn"
+              >
+                <FileText className="h-3.5 w-3.5 text-red-400" /> Export PDF
+              </a>
             )}
             <a
               href={getExportUrl()}

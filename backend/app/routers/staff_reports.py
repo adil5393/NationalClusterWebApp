@@ -17,7 +17,7 @@ from datetime import datetime, date, timedelta, timezone
 import io
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill
@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session, joinedload
 from .. import models, schemas
 from ..database import get_db
 from ..config import to_event_tz
+from ..pdf_report import build_table_pdf
 from .event_locations import resolve_duty_location_hierarchy, resolve_location_display
 from ..excel_styler import (
     ALIGN_CENTER,
@@ -2325,4 +2326,174 @@ def export_operational_issues_xlsx(
         iter([buf.getvalue()]),
         media_type=XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": 'attachment; filename="operational_issues_report.xlsx"'},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Printable PDFs — shared by every FLAT-row report above (staff-master,
+# shift-roster, incharges, duties, tasks, operational-issues). The two
+# nested/grouped reports (operational-areas, individual) deliberately have
+# no entry here: flattening a ShiftBlock -> Area -> Staff tree, or a single
+# person's whole work-plan document, into one generic table would lose the
+# structure that makes them useful — the frontend's own browser Print
+# button (StaffOperationsReportsPanel.tsx) covers those two instead.
+# ---------------------------------------------------------------------------
+def _staff_master_row(r: Dict[str, Any]) -> list:
+    status_label = "ACTIVE" if r["is_active"] is True else ("INACTIVE" if r["is_active"] is False else "NO LOGIN")
+    return [r["full_name"], r["category"], r["phone"], r["email"], "YES" if r["login_linked"] else "NO", r["username"], status_label]
+
+
+def _shift_roster_row(r: Dict[str, Any]) -> list:
+    warning = r["outside_shift_warning"] or ("No Duty Assigned" if not r["has_duty"] else "—")
+    return [
+        r["date"], r["shift_name"], r["shift_time_span"], r["staff_name"], r["category"], r["phone"],
+        r["operational_area"], r["specific_duty"], r["duty_time_span"], r["location"], r["incharges"], warning,
+    ]
+
+
+def _incharge_row(r: Dict[str, Any]) -> list:
+    return [
+        r["staff_name"], r["phone"], r["date"], r["shift_name"], r["operational_area"],
+        r["distinct_staff_count"], r["reporting_staff_names"], r["category"],
+    ]
+
+
+def _duty_pdf_row(r: Dict[str, Any]) -> list:
+    tasks = ", ".join(f"{t['title']} [{t['status'].upper()}]" for t in r["tasks"]) if r["tasks"] else "—"
+    return [
+        r["staff_name"], r["category"], r["date"], r["shift_name"], r["operational_area"], r["specific_duty"],
+        r["location"], r["building"], r["room"], r["start_time_display"], r["end_time_display"], r["duration"],
+        r["incharges"], "YES" if r["outside_shift"] else "NO",
+        f"+{r['overflow_minutes']}m" if r["overflow_minutes"] else "—", tasks,
+    ]
+
+
+def _task_pdf_row(r: Dict[str, Any]) -> list:
+    return [
+        r["title"], r["assigned_staff"], r["staff_category"], r["shift_name"], r["category"],
+        r["priority"].upper() if r["priority"] else "—", r["status"].upper() if r["status"] else "—",
+        r["due_date_display"], "OVERDUE" if r["is_overdue"] else "OK",
+    ]
+
+
+def _issue_pdf_row(r: Dict[str, Any]) -> list:
+    return [
+        r["severity"], r["issue_type"].replace("_", " "), r["date"], r["shift_name"],
+        r["staff_name"], r["operational_area"], r["related_entity"], r["description"],
+    ]
+
+
+_FLAT_REPORT_PDF_SPECS: Dict[str, Dict[str, Any]] = {
+    "staff-master": {
+        "title": "STAFF MASTER REPORT",
+        "subtitle": "Directory With Credentials Linkage Status",
+        "headers": ["Staff Name", "Category", "Phone", "Email", "Login Linked", "Username", "Account Status"],
+        "row": _staff_master_row,
+    },
+    "shift-roster": {
+        "title": "SHIFT ROSTER REPORT",
+        "subtitle": "Date to Shift Block to Staff Deployment, Including Unassigned Staff",
+        "headers": [
+            "Date", "Shift Name", "Shift Time", "Staff Name", "Category", "Phone", "Operational Area",
+            "Specific Duty", "Duty Time", "Location", "In-Charge(s)", "Notes / Warning",
+        ],
+        "row": _shift_roster_row,
+    },
+    "incharges": {
+        "title": "IN-CHARGE REPORT",
+        "subtitle": "Leadership Responsibilities & Distinct Reporting Staff",
+        "headers": [
+            "Lead / In-Charge", "Phone", "Date", "Shift Block", "Operational Area",
+            "Distinct Staff Reporting", "Reporting Staff Names", "Category",
+        ],
+        "row": _incharge_row,
+    },
+    "duties": {
+        "title": "DUTY ASSIGNMENT REPORT",
+        "subtitle": "Individual Operational Duty Assignments, Timings, Locations, Shift Compliance & Linked Tasks",
+        "headers": [
+            "Staff Name", "Category", "Date", "Shift Block", "Operational Area", "Specific Duty", "Location",
+            "Building", "Room", "Start", "End", "Duration", "In-Charge(s)", "Outside Shift", "Overflow", "Assigned Tasks",
+        ],
+        "row": _duty_pdf_row,
+    },
+    "tasks": {
+        "title": "TASK REPORT",
+        "subtitle": "Tasks With Derived Overdue Detection",
+        "headers": ["Task Title", "Assigned Staff", "Staff Category", "Shift Link", "Task Category", "Priority", "Status", "Due Date", "Overdue"],
+        "row": _task_pdf_row,
+    },
+    "operational-issues": {
+        "title": "OPERATIONAL ISSUES REPORT",
+        "subtitle": "Diagnostic Detection of Gaps, Unassigned Duties, Missing In-Charges, Outside Shift, Overdue Tasks",
+        "headers": ["Severity", "Issue Type", "Date", "Shift Block", "Staff Member", "Operational Area", "Related Entity", "Description"],
+        "row": _issue_pdf_row,
+    },
+}
+
+
+@router.get("/{report}.pdf")
+def export_flat_report_pdf(
+    report: str,
+    date: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    shift_block_id: Optional[int] = Query(None),
+    staff_id: Optional[int] = Query(None),
+    category: Optional[str] = Query(None),
+    operational_area_id: Optional[int] = Query(None),
+    duty_type: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    priority: Optional[str] = Query(None),
+    overdue_only: bool = Query(False),
+    issue_type: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Printable PDF for any of the flat-row Staff Operations reports (see
+    _FLAT_REPORT_PDF_SPECS) — each report's own existing query function
+    reused as-is (same filters, same result set as its .xlsx sibling), just
+    piped through pdf_report.build_table_pdf instead of an openpyxl
+    workbook. 404s for operational-areas/individual — see the module
+    docstring above this section for why those aren't here."""
+    spec = _FLAT_REPORT_PDF_SPECS.get(report)
+    if not spec:
+        raise HTTPException(404, f"No printable PDF for '{report}' — use the Print button for this report instead.")
+
+    if report == "staff-master":
+        rows = _query_staff_master(db, category, staff_id)
+    elif report == "shift-roster":
+        rows = _query_shift_roster(
+            db, date_from=date_from, date_to=date_to, shift_block_id=shift_block_id,
+            staff_id=staff_id, category=category, operational_area_id=operational_area_id,
+        )
+    elif report == "incharges":
+        rows = _query_incharge_report(db, staff_id, shift_block_id, operational_area_id)
+    elif report == "duties":
+        rows = _query_duty_assignments(
+            db, target_date=date, shift_block_id=shift_block_id, staff_id=staff_id,
+            category=category, operational_area_id=operational_area_id, duty_type=duty_type,
+        )
+    elif report == "tasks":
+        rows = _query_tasks_report(
+            db, staff_id=staff_id, shift_block_id=shift_block_id, status=status,
+            priority=priority, category=category, overdue_only=overdue_only,
+        )
+    else:  # operational-issues
+        rows = _diagnose_operational_issues(
+            db, issue_type=issue_type, target_date=date, shift_block_id=shift_block_id,
+            operational_area_id=operational_area_id, staff_id=staff_id,
+        )["issues"]
+
+    table_rows = [spec["row"](r) for r in rows]
+    pdf = build_table_pdf(
+        title=spec["title"],
+        subtitle=spec["subtitle"],
+        headers=spec["headers"],
+        rows=table_rows,
+        kpis=[("Total Records", str(len(table_rows)))],
+    )
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{report.replace("-", "_")}_report.pdf"'},
     )

@@ -937,19 +937,7 @@ _LIVE_DETAIL_MODULES = {
 }
 
 
-@router.get("/live-detail/{section}")
-def live_report_detail(
-    section: str, current: models.OrganizerUser = Depends(require_auth), db: Session = Depends(get_db)
-):
-    """The full row-by-row data behind one Live Reports card (see
-    live_reports_summary above) — same numbers, just the underlying sheet
-    instead of the rolled-up stat, for the "click a card to see everything"
-    view in Reports.tsx. Deliberately its own on-demand endpoint rather than
-    folded into live-summary: that one gets polled every 20s and returning
-    every participant/match/account row on every poll would be wasteful —
-    this only runs when someone actually opens a card's detail dialog.
-    Returns {"columns": [...], "rows": [[...], ...]} — a generic shape the
-    frontend renders with one plain <table>, no per-section UI needed."""
+def _require_live_detail_access(section: str, current: models.OrganizerUser) -> None:
     if section not in _LIVE_DETAIL_MODULES:
         raise HTTPException(404, "Unknown report section")
     module_key = _LIVE_DETAIL_MODULES[section]
@@ -959,6 +947,29 @@ def live_report_detail(
     elif not _has_view(current, module_key) and not (section == "attendance" and _has_view(current, "teams")):
         raise HTTPException(403, "You don't have view access to this section")
 
+
+# Title/subtitle for each section's printable PDF (see /live-detail/{section}.pdf
+# below) — kept here rather than duplicated on the frontend since the PDF is
+# generated entirely server-side.
+_LIVE_DETAIL_PDF_META = {
+    "attendance": ("ATTENDANCE REPORT", "Present/Absent Status — Every Registered Participant"),
+    "arrival": ("ARRIVAL REPORT", "School Delegation Arrival Status & Pending Processes"),
+    "billing": ("PAYMENTS LEDGER", "Per-Team Registration-Fee Billing, Refunds & Net Collected"),
+    "duty": ("DUTY REPORT", "Staff Duty Assignments Across Every Building & Room"),
+    "matches": ("MATCH PROGRESS REPORT", "Scheduled, Live & Completed Matches — All Tournaments"),
+    "accommodation": ("ACCOMMODATION REPORT", "Building, Floor, Room, Bed & Assigned Occupant Detail"),
+    "room-map": ("ROOM MAP REPORT", "Building, Floor & Room Occupancy Detail — Capacity, Allotted, Occupied & Free"),
+    "accounts": ("USER REPORT", "Organizer Portal Accounts, Roles & Module Permissions"),
+}
+
+
+def _live_detail_data(section: str, db: Session) -> dict:
+    """The full row-by-row data behind one Live Reports card (see
+    live_reports_summary above) — same numbers, just the underlying sheet
+    instead of the rolled-up stat. Shared by the JSON "view" endpoint below
+    and its PDF twin, so both are always built from the exact same query.
+    Returns {"columns": [...], "rows": [[...], ...]} — a generic shape the
+    frontend renders with one plain <table>, no per-section UI needed."""
     if section == "attendance":
         teams = {t.id: t.name for t in db.query(models.Team).all()}
         participants = (
@@ -1185,6 +1196,54 @@ def live_report_detail(
         "columns": ["Username", "Full Name", "Role", "Status", "Module Permissions", "Linked Staff"],
         "rows": rows,
     }
+
+
+@router.get("/live-detail/{section}.pdf")
+def live_report_detail_pdf(
+    section: str, current: models.OrganizerUser = Depends(require_auth), db: Session = Depends(get_db)
+):
+    """Printable PDF twin of live_report_detail below — same query, same
+    access rule, laid out as a paginated table (pdf_report.build_table_pdf)
+    instead of JSON. Covers every report on the Reports & Export hub that
+    doesn't already have its own dedicated styled .xlsx (Attendance,
+    Arrival, Payments, Duty, Match Progress, Accounts) — Room Map and
+    Accommodation have their own PDF endpoints instead since they need
+    extra KPI cards their .xlsx siblings also carry.
+
+    Registered *before* the plain /live-detail/{section} route below: since
+    {section} is an unconstrained path param it would otherwise greedily
+    match "room-map.pdf" as a literal (nonexistent) section name too — a
+    Starlette/FastAPI route matches in declaration order, not by
+    specificity, so the more specific ".pdf" path has to come first."""
+    _require_live_detail_access(section, current)
+    data = _live_detail_data(section, db)
+    title, subtitle = _LIVE_DETAIL_PDF_META.get(section, (section.upper(), "Report Detail"))
+    pdf = build_table_pdf(
+        title=title,
+        subtitle=subtitle,
+        headers=data["columns"],
+        rows=data["rows"],
+        kpis=[("Total Records", str(len(data["rows"])))],
+    )
+    return Response(
+        content=pdf,
+        media_type=PDF_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{section}_report.pdf"'},
+    )
+
+
+@router.get("/live-detail/{section}")
+def live_report_detail(
+    section: str, current: models.OrganizerUser = Depends(require_auth), db: Session = Depends(get_db)
+):
+    """JSON row data for one Live Reports card's "click to see everything"
+    view in Reports.tsx — see _live_detail_data. Deliberately its own
+    on-demand endpoint rather than folded into live-summary: that one gets
+    polled every 20s and returning every participant/match/account row on
+    every poll would be wasteful — this only runs when someone actually
+    opens a card's detail dialog."""
+    _require_live_detail_access(section, current)
+    return _live_detail_data(section, db)
 
 
 @router.get("/duties.xlsx", dependencies=[Depends(require_module("staff"))])

@@ -249,6 +249,7 @@ export default function Reports() {
                 href={`${BACKEND}/api/export/attendance.xlsx`}
                 testId="download-attendance-report-btn"
                 onView={() => openViewReport("attendance", `${BACKEND}/api/export/attendance.xlsx`, "Download Attendance .xlsx")}
+                extraDownloads={[{ href: `${BACKEND}/api/export/live-detail/attendance.pdf`, label: "PDF" }]}
               />
             )}
             {teamsAccess.canView && (
@@ -259,6 +260,7 @@ export default function Reports() {
                 href={`${BACKEND}/api/export/arrival.xlsx`}
                 testId="download-arrival-report-btn"
                 onView={() => openViewReport("arrival", `${BACKEND}/api/export/arrival.xlsx`, "Download Arrival .xlsx")}
+                extraDownloads={[{ href: `${BACKEND}/api/export/live-detail/arrival.pdf`, label: "PDF" }]}
               />
             )}
             {teamsAccess.canView && (
@@ -269,6 +271,7 @@ export default function Reports() {
                 href={`${BACKEND}/api/export/payments.xlsx`}
                 testId="download-payments-report-btn"
                 onView={() => openViewReport("billing", `${BACKEND}/api/export/payments.xlsx`, "Download Payments .xlsx")}
+                extraDownloads={[{ href: `${BACKEND}/api/export/live-detail/billing.pdf`, label: "PDF" }]}
               />
             )}
             {staffAccess.canView && (
@@ -279,6 +282,7 @@ export default function Reports() {
                 href={`${BACKEND}/api/export/duties.xlsx`}
                 testId="download-duty-report-btn"
                 onView={() => openViewReport("duty", `${BACKEND}/api/export/duties.xlsx`, "Download Duties .xlsx")}
+                extraDownloads={[{ href: `${BACKEND}/api/export/live-detail/duty.pdf`, label: "PDF" }]}
               />
             )}
             {accommodationAccess.canView && (
@@ -317,6 +321,7 @@ export default function Reports() {
                 href={selectedId ? `${BACKEND}/api/reports/tournaments/${selectedId}/full.xlsx` : `${BACKEND}/api/export/live-summary`}
                 testId="download-matches-report-btn"
                 onView={() => openViewReport("matches", selectedId ? `${BACKEND}/api/reports/tournaments/${selectedId}/full.xlsx` : undefined, "Download Match Workbook")}
+                extraDownloads={[{ href: `${BACKEND}/api/export/live-detail/matches.pdf`, label: "PDF" }]}
               />
             )}
             {me?.is_admin && (
@@ -327,6 +332,7 @@ export default function Reports() {
                 href={`${BACKEND}/api/export/organizer-users.xlsx`}
                 testId="download-user-report-btn"
                 onView={() => openViewReport("accounts", `${BACKEND}/api/export/organizer-users.xlsx`, "Download Users .xlsx")}
+                extraDownloads={[{ href: `${BACKEND}/api/export/live-detail/accounts.pdf`, label: "PDF" }]}
               />
             )}
           </div>
