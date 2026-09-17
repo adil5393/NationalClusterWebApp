@@ -34,10 +34,12 @@ import { formatDate } from "@/lib/meta";
 import { TeamAvatar } from "@/components/ui/team-badge";
 
 interface Coach {
+  id: number;
   full_name: string;
   role: string;
   email?: string;
   phone?: string | null;
+  photo_url?: string | null;
 }
 interface TeamDetail {
   id: number;
@@ -144,6 +146,26 @@ export default function TeamPortal() {
   // Once a participant already has a photo, replacing it locks behind an
   // admin password instead of DOB — see backend routers/public.py.
   const photoLocked = !!photoTarget?.photo_url;
+
+  // Coach/manager's own photo — same shape as the participant photo dialog
+  // above, just gated by the coach's own phone number instead of a
+  // participant's date of birth (Coach has no DOB field).
+  const [coachPhotoTarget, setCoachPhotoTarget] = useState<Coach | null>(null);
+  const [coachPhotoPhone, setCoachPhotoPhone] = useState("");
+  const [coachPhotoAdminPassword, setCoachPhotoAdminPassword] = useState("");
+  const [coachPhotoFile, setCoachPhotoFile] = useState<File | null>(null);
+  const [coachPhotoBusy, setCoachPhotoBusy] = useState(false);
+  const [coachPhotoAttemptsLeft, setCoachPhotoAttemptsLeft] = useState<number | null>(null);
+  const [coachPhotoObjectUrl, setCoachPhotoObjectUrl] = useState<string | null>(null);
+  const [coachPhotoCrop, setCoachPhotoCrop] = useState({ x: 0, y: 0 });
+  const [coachPhotoZoom, setCoachPhotoZoom] = useState(1);
+  const [coachCroppedAreaPixels, setCoachCroppedAreaPixels] = useState<Area | null>(null);
+  const [coachCropSuggestion, setCoachCropSuggestion] = useState<Area | null>(null);
+  const [coachDetectingFace, setCoachDetectingFace] = useState(false);
+  const [loadingExistingCoachPhoto, setLoadingExistingCoachPhoto] = useState(false);
+  const coachPhotoLocked = !!coachPhotoTarget?.photo_url;
+  // Matches STAFF_PHOTO_BOX in id_card.py: (398, 378, 623, 602) -> 225x224.
+  const COACH_PHOTO_ASPECT = 225 / 224;
   // Matches the ID card's photo box aspect ratio (PHOTO_BOX in id_card.py:
   // (364, 466, 660, 776) -> 296x310) — the cropper is locked to this so
   // whatever the coach frames here is exactly what prints on the card.
@@ -336,6 +358,129 @@ export default function TeamPortal() {
       }
     } finally {
       setPhotoBusy(false);
+    }
+  };
+
+  const closeCoachPhotoDialog = () => {
+    setCoachPhotoTarget(null);
+    setCoachPhotoPhone("");
+    setCoachPhotoAdminPassword("");
+    setCoachPhotoFile(null);
+    setCoachPhotoAttemptsLeft(null);
+    if (coachPhotoObjectUrl) URL.revokeObjectURL(coachPhotoObjectUrl);
+    setCoachPhotoObjectUrl(null);
+    setCoachPhotoCrop({ x: 0, y: 0 });
+    setCoachPhotoZoom(1);
+    setCoachCroppedAreaPixels(null);
+    setCoachCropSuggestion(null);
+    setCoachDetectingFace(false);
+  };
+
+  const onCoachPhotoFileSelected = async (file: File | null) => {
+    setCoachPhotoFile(file);
+    setCoachPhotoCrop({ x: 0, y: 0 });
+    setCoachPhotoZoom(1);
+    setCoachCroppedAreaPixels(null);
+    setCoachCropSuggestion(null);
+    if (coachPhotoObjectUrl) URL.revokeObjectURL(coachPhotoObjectUrl);
+    if (!file) {
+      setCoachPhotoObjectUrl(null);
+      return;
+    }
+    setCoachPhotoObjectUrl(URL.createObjectURL(file));
+    setCoachDetectingFace(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = await api.post<Area>("/public/participants/photo-crop-suggestion", fd, {
+        headers: { "Content-Type": undefined } as any,
+      });
+      setCoachCropSuggestion({
+        x: r.data.x * 100,
+        y: r.data.y * 100,
+        width: r.data.width * 100,
+        height: r.data.height * 100,
+      });
+    } catch {
+      setCoachCropSuggestion(null);
+    } finally {
+      setCoachDetectingFace(false);
+    }
+  };
+
+  const editExistingCoachPhoto = async () => {
+    if (!coachPhotoTarget?.photo_url) return;
+    setLoadingExistingCoachPhoto(true);
+    try {
+      // Same cache-busting fetch() as editExistingPhoto above — the coach
+      // list thumbnail already loaded this exact URL as a plain <img> (a
+      // no-cors request), so re-fetching it verbatim here would hit
+      // Chromium's cached opaque response and surface a false
+      // "No Access-Control-Allow-Origin" error.
+      const bustUrl = `${assetUrl(coachPhotoTarget.photo_url)}?_=${Date.now()}`;
+      const fetchResp = await fetch(bustUrl);
+      if (!fetchResp.ok) throw new Error(`fetch failed: ${fetchResp.status}`);
+      const blob = await fetchResp.blob();
+      const ext = blob.type.includes("png") ? "png" : blob.type.includes("webp") ? "webp" : "jpg";
+      await onCoachPhotoFileSelected(new File([blob], `current-photo.${ext}`, { type: blob.type }));
+    } catch (e) {
+      console.error("Could not load existing photo for framing:", e);
+      toast.error("Could not load the current photo for editing");
+    } finally {
+      setLoadingExistingCoachPhoto(false);
+    }
+  };
+
+  const uploadCoachPhoto = async () => {
+    if (!coachPhotoTarget) return;
+    if (coachPhotoLocked) {
+      if (!coachPhotoAdminPassword.trim()) return toast.error("Enter the admin password");
+    } else if (!coachPhotoPhone.trim()) {
+      return toast.error("Enter your registered phone number");
+    }
+    if (!coachPhotoFile || !coachPhotoObjectUrl) return toast.error("Choose or take a photo");
+    setCoachPhotoBusy(true);
+    try {
+      const fd = new FormData();
+      if (coachPhotoLocked) fd.append("admin_password", coachPhotoAdminPassword.trim());
+      else fd.append("phone", coachPhotoPhone.trim());
+      if (coachCroppedAreaPixels) {
+        const blob = await getCroppedImageBlob(coachPhotoObjectUrl, coachCroppedAreaPixels);
+        fd.append("file", blob, "photo.jpg");
+      } else {
+        fd.append("file", coachPhotoFile);
+      }
+      const r = await api.post<{ photo_url: string }>(`/public/coaches/${coachPhotoTarget.id}/photo`, fd, {
+        headers: { "Content-Type": undefined } as any,
+      });
+      setTeam((t) =>
+        t
+          ? {
+              ...t,
+              coaches: t.coaches.map((c) =>
+                c.id === coachPhotoTarget.id ? { ...c, photo_url: r.data.photo_url } : c,
+              ),
+            }
+          : t,
+      );
+      toast.success("Photo uploaded");
+      closeCoachPhotoDialog();
+    } catch (e: any) {
+      const status = e?.response?.status;
+      const detail = e?.response?.data?.detail;
+      const remaining = typeof detail?.attempts_remaining === "number" ? detail.attempts_remaining : null;
+      if (status === 401 || status === 400) {
+        setCoachPhotoAttemptsLeft(remaining);
+        const fallback = coachPhotoLocked ? "Incorrect admin password" : "Phone number didn't match";
+        toast.error(typeof detail?.message === "string" ? detail.message : fallback);
+      } else if (status === 429) {
+        setCoachPhotoAttemptsLeft(0);
+        toast.error("Too many attempts — try again later");
+      } else {
+        toast.error("Could not upload photo");
+      }
+    } finally {
+      setCoachPhotoBusy(false);
     }
   };
 
@@ -533,35 +678,65 @@ export default function TeamPortal() {
             <ul className="space-y-3">
               {team.coaches.map((c, i) => (
                 <li key={i} className="flex items-center justify-between gap-3 rounded-lg border border-white/5 bg-white/[0.02] p-3 text-xs">
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <p className="font-heading font-bold text-white text-sm">{c.full_name}</p>
-                      <Badge tone={c.role === "Manager" ? "coral" : "gold"} size="sm">
-                        {c.role}
-                      </Badge>
-                    </div>
-                    {c.email && <p className="text-slate-400 font-body mt-0.5">{c.email}</p>}
-                  </div>
-                  {c.phone ? (
-                    <a
-                      href={`tel:${c.phone}`}
-                      className="inline-flex items-center gap-1 rounded bg-gold/15 px-2.5 py-1 font-mono text-xs font-bold text-gold hover:bg-gold/25"
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => setCoachPhotoTarget(c)}
+                      title={c.photo_url ? "Update photo" : "Add photo"}
+                      data-testid={`coach-photo-btn-${c.id}`}
+                      className="relative group shrink-0 h-10 w-10 rounded-lg overflow-hidden border border-white/10 bg-obsidian-900/90 hover:border-gold/60 focus:outline-none focus:ring-2 focus:ring-gold/40 transition-all flex items-center justify-center"
                     >
-                      <Phone className="h-3 w-3" /> {c.phone}
+                      {c.photo_url ? (
+                        <>
+                          <img src={assetUrl(c.photo_url)} alt={c.full_name} className="h-full w-full object-cover" loading="lazy" />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <Camera className="h-3.5 w-3.5 text-white" />
+                          </div>
+                        </>
+                      ) : (
+                        <Camera className="h-4 w-4 text-slate-500 group-hover:text-gold transition-colors" />
+                      )}
+                    </button>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-heading font-bold text-white text-sm truncate">{c.full_name}</p>
+                        <Badge tone={c.role === "Manager" ? "coral" : "gold"} size="sm">
+                          {c.role}
+                        </Badge>
+                      </div>
+                      {c.email && <p className="text-slate-400 font-body mt-0.5 truncate">{c.email}</p>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <a
+                      href={assetUrl(`/api/public/coaches/${c.id}/idcard.pdf`)}
+                      title="Download ID Card (PDF)"
+                      data-testid={`download-coach-idcard-${c.id}`}
+                      className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-1 font-mono text-xs font-semibold text-slate-300 hover:bg-white/10 hover:text-white"
+                    >
+                      <Shield className="h-3 w-3 text-gold" />
                     </a>
-                  ) : (
-                    team.has_hidden_contacts &&
-                    !contactsRevealed && (
-                      <button
-                        onClick={() => setRevealOpen(true)}
-                        data-testid="reveal-contacts-btn"
-                        className="inline-flex items-center gap-1 rounded bg-white/5 px-2.5 py-1 font-mono text-xs font-semibold text-slate-400 hover:bg-white/10 hover:text-white"
-                        title="Click to reveal contact number"
+                    {c.phone ? (
+                      <a
+                        href={`tel:${c.phone}`}
+                        className="inline-flex items-center gap-1 rounded bg-gold/15 px-2.5 py-1 font-mono text-xs font-bold text-gold hover:bg-gold/25"
                       >
-                        <Lock className="h-3 w-3" /> •••• ••••••
-                      </button>
-                    )
-                  )}
+                        <Phone className="h-3 w-3" /> {c.phone}
+                      </a>
+                    ) : (
+                      team.has_hidden_contacts &&
+                      !contactsRevealed && (
+                        <button
+                          onClick={() => setRevealOpen(true)}
+                          data-testid="reveal-contacts-btn"
+                          className="inline-flex items-center gap-1 rounded bg-white/5 px-2.5 py-1 font-mono text-xs font-semibold text-slate-400 hover:bg-white/10 hover:text-white"
+                          title="Click to reveal contact number"
+                        >
+                          <Lock className="h-3 w-3" /> •••• ••••••
+                        </button>
+                      )
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
@@ -913,6 +1088,147 @@ export default function TeamPortal() {
               data-testid="submit-participant-photo-btn"
             >
               {photoBusy ? "Uploading…" : "Upload"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* COACH/MANAGER PHOTO UPLOAD — first upload gated by the coach's own
+          phone number; once a photo exists, replacing it locks behind an
+          admin password instead, same shape as the participant dialog above */}
+      <Dialog
+        open={!!coachPhotoTarget}
+        onClose={closeCoachPhotoDialog}
+        title={coachPhotoTarget ? `Photo for ${coachPhotoTarget.full_name}` : "Upload Photo"}
+        testId="coach-photo-dialog"
+      >
+        <div className="space-y-4">
+          {coachPhotoLocked ? (
+            <p className="text-xs text-slate-400 font-body flex items-start gap-1.5">
+              <Lock className="h-3.5 w-3.5 text-gold shrink-0 mt-0.5" />
+              This coach/manager already has a photo. Enter the organizer admin password to replace it.
+            </p>
+          ) : (
+            <p className="text-xs text-slate-400 font-body">
+              Enter any phone number registered to this team's Coach or Manager to confirm you're authorized to add
+              this photo.
+            </p>
+          )}
+          <div>
+            {coachPhotoLocked ? (
+              <Input
+                type="password"
+                placeholder="Admin password"
+                value={coachPhotoAdminPassword}
+                onChange={(e) => setCoachPhotoAdminPassword(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && uploadCoachPhoto()}
+                data-testid="coach-photo-admin-password-input"
+                autoFocus
+              />
+            ) : (
+              <Input
+                placeholder="Coach or Manager's phone number"
+                value={coachPhotoPhone}
+                onChange={(e) => setCoachPhotoPhone(e.target.value)}
+                data-testid="coach-photo-phone-input"
+                autoFocus
+              />
+            )}
+          </div>
+          {coachPhotoAttemptsLeft !== null && (
+            <p className="text-xs font-semibold text-red-400" data-testid="coach-photo-attempts-warning">
+              {coachPhotoAttemptsLeft > 0
+                ? `${coachPhotoLocked ? "Incorrect admin password" : "Phone number didn't match"} — ${coachPhotoAttemptsLeft} attempt${coachPhotoAttemptsLeft === 1 ? "" : "s"} left.`
+                : "Too many failed attempts — try again later."}
+            </p>
+          )}
+          {coachPhotoLocked && !coachPhotoObjectUrl && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={editExistingCoachPhoto}
+              disabled={loadingExistingCoachPhoto}
+              data-testid="edit-existing-coach-photo-framing-btn"
+              className="w-full"
+            >
+              <Crop className="h-4 w-4 text-gold" />
+              {loadingExistingCoachPhoto ? "Loading current photo…" : "Adjust framing of current photo"}
+            </Button>
+          )}
+          {coachPhotoLocked && !coachPhotoObjectUrl && (
+            <p className="text-center text-[11px] text-slate-500 font-body">— or —</p>
+          )}
+          <div>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(e) => onCoachPhotoFileSelected(e.target.files?.[0] ?? null)}
+              data-testid="coach-photo-file-input"
+              className="block w-full text-xs text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-white/20"
+            />
+          </div>
+          {coachPhotoObjectUrl && (
+            <div className="space-y-2">
+              <div className="relative h-56 sm:h-64 w-full rounded-lg overflow-hidden bg-black/40">
+                {coachDetectingFace ? (
+                  <div className="absolute inset-0 flex items-center justify-center text-xs text-slate-300 font-body">
+                    Detecting face…
+                  </div>
+                ) : (
+                  <Cropper
+                    image={coachPhotoObjectUrl}
+                    crop={coachPhotoCrop}
+                    zoom={coachPhotoZoom}
+                    minZoom={1}
+                    maxZoom={PHOTO_MAX_ZOOM}
+                    aspect={COACH_PHOTO_ASPECT}
+                    cropShape="rect"
+                    showGrid={false}
+                    onCropChange={setCoachPhotoCrop}
+                    onZoomChange={setCoachPhotoZoom}
+                    onCropComplete={(_area, areaPixels) => setCoachCroppedAreaPixels(areaPixels)}
+                    initialCroppedAreaPercentages={coachCropSuggestion ?? undefined}
+                  />
+                )}
+              </div>
+              {!coachDetectingFace && (
+                <>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold shrink-0">
+                      Zoom
+                    </span>
+                    <input
+                      type="range"
+                      min={1}
+                      max={PHOTO_MAX_ZOOM}
+                      step={0.01}
+                      value={coachPhotoZoom}
+                      onChange={(e) => setCoachPhotoZoom(Number(e.target.value))}
+                      className="flex-1 accent-gold"
+                      data-testid="coach-photo-zoom-slider"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500 font-body">
+                    Drag to reposition and use the slider to zoom — this is exactly how the photo will appear on
+                    the ID card.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+            <Button variant="outline" size="sm" onClick={closeCoachPhotoDialog}>
+              Cancel
+            </Button>
+            <Button
+              variant="gold"
+              size="sm"
+              onClick={uploadCoachPhoto}
+              disabled={coachPhotoBusy || coachDetectingFace}
+              data-testid="submit-coach-photo-btn"
+            >
+              {coachPhotoBusy ? "Uploading…" : "Upload"}
             </Button>
           </div>
         </div>

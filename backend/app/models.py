@@ -297,6 +297,14 @@ class Coach(TimestampMixin, Base):
     email = Column(String(200))
     phone = Column(String(60))
     notes = Column(Text)
+    # ID-card fields — see id_card.py's render_staff_id_card. aadhaar_no is
+    # free-text (not validated/unique) since it's only ever printed on the
+    # physical card, never used to look anyone up.
+    aadhaar_no = Column(String(20))
+    # Set via the public /public/coaches/{id}/photo upload (gated by phone
+    # number, same shape as Participant.photo_filename's DOB-gated upload —
+    # see public.py) or an admin removing it from the Participants admin page.
+    photo_filename = Column(String(120))
     # Attendance/check-in at the event, same convention as Participant — kept
     # off any fixture/eligibility query on purpose, so coaches/managers never
     # count toward age-group eligibility or present-count thresholds.
@@ -304,6 +312,10 @@ class Coach(TimestampMixin, Base):
     checked_in_at = Column(DateTime(timezone=True))
 
     team = relationship("Team", back_populates="coaches")
+
+    @property
+    def photo_url(self) -> "str | None":
+        return f"/api/assets/coaches/{self.photo_filename}" if self.photo_filename else None
 
 
 class Volunteer(TimestampMixin, Base):

@@ -38,6 +38,8 @@ interface Coach {
   email?: string;
   phone?: string;
   notes?: string;
+  aadhaar_no?: string;
+  photo_url?: string | null;
   is_present?: boolean;
 }
 
@@ -304,6 +306,17 @@ export default function Participants() {
     await api.delete(`/coaches/${id}`);
     toast.success("Coach deleted");
     load();
+  };
+
+  const removeCoachPhoto = async (c: Coach) => {
+    if (!confirm(`Remove ${c.full_name}'s photo?`)) return;
+    try {
+      await api.delete(`/coaches/${c.id}/photo`);
+      setCoaches((rows) => rows.map((r) => (r.id === c.id ? { ...r, photo_url: null } : r)));
+      toast.success("Photo removed");
+    } catch {
+      toast.error("Could not remove photo");
+    }
   };
 
   const toggleCoachAttendance = async (c: Coach) => {
@@ -1025,8 +1038,38 @@ export default function Participants() {
                     {c.phone && (
                       <span className="rounded bg-white/5 px-1.5 py-0.5 font-mono text-slate-300">{c.phone}</span>
                     )}
+                    {c.aadhaar_no && (
+                      <span className="rounded bg-white/5 px-1.5 py-0.5 font-mono text-slate-300">{c.aadhaar_no}</span>
+                    )}
                     {c.email && (
                       <span className="rounded bg-white/5 px-1.5 py-0.5 text-slate-300">{c.email}</span>
+                    )}
+                  </div>
+
+                  <div className="border-t border-white/10 pt-2.5 flex gap-2">
+                    <a
+                      href={`${BASE_URL}/api/export/idcards/coach/${c.id}.pdf`}
+                      className={cn(
+                        "inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md border text-xs font-semibold transition-colors",
+                        c.photo_url
+                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+                          : "border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20",
+                      )}
+                      data-testid={`download-coach-idcard-mobile-${c.id}`}
+                    >
+                      <IdCard className={cn("h-3.5 w-3.5", c.photo_url ? "text-emerald-400" : "text-red-400")} /> Download ID Card
+                    </a>
+                    {canEdit && c.photo_url && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 shrink-0"
+                        onClick={() => removeCoachPhoto(c)}
+                        data-testid={`remove-coach-photo-mobile-${c.id}`}
+                        title="Remove Uploaded Photo"
+                      >
+                        <ImageOff className="h-3.5 w-3.5 text-red-400" />
+                      </Button>
                     )}
                   </div>
 
@@ -1069,6 +1112,7 @@ export default function Participants() {
                     <TH>Team / School</TH>
                     <TH>Role</TH>
                     <TH>Phone</TH>
+                    <TH>Aadhaar No.</TH>
                     <TH>Email</TH>
                     <TH>Attendance Verification</TH>
                     <TH className="text-right">Actions</TH>
@@ -1088,6 +1132,7 @@ export default function Participants() {
                         </span>
                       </TD>
                       <TD className="font-mono text-xs text-slate-400">{c.phone || "—"}</TD>
+                      <TD className="font-mono text-xs text-slate-400">{c.aadhaar_no || "—"}</TD>
                       <TD className="text-xs text-slate-400">{c.email || "—"}</TD>
                       <TD>
                         {canMarkAttendance ? (
@@ -1119,6 +1164,34 @@ export default function Participants() {
                       </TD>
                       <TD className="text-right">
                         <div className="flex items-center justify-end gap-1">
+                          <a
+                            href={`${BASE_URL}/api/export/idcards/coach/${c.id}.pdf`}
+                            className={cn(
+                              "inline-flex items-center justify-center gap-2 rounded-md font-body tracking-wide transition-colors h-8 w-8 p-0",
+                              c.photo_url
+                                ? "text-emerald-500 hover:bg-emerald-500/10 hover:text-emerald-400"
+                                : "text-red-500 hover:bg-red-500/10 hover:text-red-400",
+                            )}
+                            data-testid={`download-coach-idcard-${c.id}`}
+                            title={
+                              c.photo_url
+                                ? "Download ID Card (PDF) — photo uploaded"
+                                : "Download ID Card (PDF) — photo not uploaded"
+                            }
+                          >
+                            <IdCard className="h-3.5 w-3.5" />
+                          </a>
+                          {canEdit && c.photo_url && (
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => removeCoachPhoto(c)}
+                              data-testid={`remove-coach-photo-${c.id}`}
+                              title="Remove Uploaded Photo"
+                            >
+                              <ImageOff className="h-3.5 w-3.5 text-red-400" />
+                            </Button>
+                          )}
                           {canEdit && (
                             <Button
                               variant="ghost"
@@ -1369,13 +1442,23 @@ export default function Participants() {
               />
             </div>
           </div>
-          <div>
-            <Label>Email</Label>
-            <Input
-              value={coachForm.email ?? ""}
-              onChange={(e) => setCoachField("email", e.target.value)}
-              placeholder="name@example.com"
-            />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label>Aadhaar No.</Label>
+              <Input
+                value={coachForm.aadhaar_no ?? ""}
+                onChange={(e) => setCoachField("aadhaar_no", e.target.value)}
+                placeholder="XXXX XXXX XXXX"
+              />
+            </div>
+            <div>
+              <Label>Email</Label>
+              <Input
+                value={coachForm.email ?? ""}
+                onChange={(e) => setCoachField("email", e.target.value)}
+                placeholder="name@example.com"
+              />
+            </div>
           </div>
           <div>
             <Label>Notes</Label>

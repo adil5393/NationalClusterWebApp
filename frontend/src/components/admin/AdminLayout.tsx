@@ -133,6 +133,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/admin/teams", label: "Teams", icon: Users, moduleKey: "teams" },
       { to: "/admin/participants", label: "Participants", icon: UserSquare2, moduleKey: "teams" },
+      { to: "/admin/blank-id-cards", label: "Blank ID Card Stock", icon: IdCard, moduleKey: "teams" },
       { to: "/admin/venues", label: "Venues", icon: MapPin, moduleKey: "venues" },
       { to: "/admin/accommodation", label: "Accommodation", icon: BedDouble, moduleKey: "accommodation" },
       { to: "/admin/room-map", label: "Room Map", icon: LayoutGrid, moduleKey: "accommodation" },

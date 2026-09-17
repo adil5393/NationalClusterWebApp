@@ -5,7 +5,7 @@ import itertools
 import zipfile
 
 import openpyxl
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -36,7 +36,7 @@ from ..excel_styler import (
 from openpyxl.styles import PatternFill
 from ..security import require_admin, require_auth, require_module
 from .payments import _billed_keys, _present_members
-from .public import ASSETS_PARTICIPANTS_DIR
+from .public import ASSETS_COACHES_DIR, ASSETS_PARTICIPANTS_DIR
 
 router = APIRouter(prefix="/api/export", tags=["export"])
 
@@ -1221,6 +1221,64 @@ def _individual_card_files(participants: list[models.Participant], team_by_id: d
     return files
 
 
+def _team_staff_cards(team: models.Team) -> list:
+    """Coach/Manager cards appended after a team's participant cards (see
+    export_idcard_team and friends below) — Coach first, then Manager, each
+    sorted by name. A role with no actual record on the team yet gets one
+    blank placeholder card instead (id_card.render_blank_staff_card) rather
+    than being skipped, so the export always ends with at least one Coach
+    slot and one Manager slot to fill in by hand."""
+    coaches = [c for c in team.coaches if (c.role or "Coach") != "Manager"]
+    managers = [c for c in team.coaches if c.role == "Manager"]
+    cards: list = []
+    if coaches:
+        cards += [
+            id_card.render_staff_id_card(c, team, _coach_photo_path(c))
+            for c in sorted(coaches, key=lambda c: c.full_name)
+        ]
+    else:
+        cards.append(id_card.render_blank_staff_card("Coach"))
+    if managers:
+        cards += [
+            id_card.render_staff_id_card(c, team, _coach_photo_path(c))
+            for c in sorted(managers, key=lambda c: c.full_name)
+        ]
+    else:
+        cards.append(id_card.render_blank_staff_card("Manager"))
+    return cards
+
+
+def _team_staff_card_files(team: models.Team) -> list[tuple[str, bytes]]:
+    """Same Coach/Manager set as _team_staff_cards, but as standalone
+    one-page-per-card PDFs (id_card.render_staff_id_card_page /
+    render_blank_staff_card_page) for _individual_card_files-style ZIPs."""
+    coaches = [c for c in team.coaches if (c.role or "Coach") != "Manager"]
+    managers = [c for c in team.coaches if c.role == "Manager"]
+    files: list[tuple[str, bytes]] = []
+
+    def _add(c: "models.Coach | None", role: str):
+        if c is not None:
+            page = id_card.render_staff_id_card_page(c, team, _coach_photo_path(c))
+            slug = "".join(ch if ch.isalnum() or ch in " -_" else "_" for ch in c.full_name).strip() or role.lower()
+            name = f"{role}_{c.id}_{slug}.pdf"
+        else:
+            page = id_card.render_blank_staff_card_page(role)
+            name = f"{role}_blank.pdf"
+        files.append((name, id_card.build_pdf([page])))
+
+    if coaches:
+        for c in sorted(coaches, key=lambda c: c.full_name):
+            _add(c, "Coach")
+    else:
+        _add(None, "Coach")
+    if managers:
+        for c in sorted(managers, key=lambda c: c.full_name):
+            _add(c, "Manager")
+    else:
+        _add(None, "Manager")
+    return files
+
+
 def _team_card_groups(participants: list[models.Participant], team: models.Team) -> list:
     """Renders one team's cards, grouped by age group in print order — each
     group must start its own fresh sheet page (see id_card.build_pdf_sheets),
@@ -1257,8 +1315,14 @@ def export_idcard_team(team_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Team not found")
     if not team.participants:
         raise HTTPException(404, "This team has no participants to generate cards for")
+    # Coach + Manager cards always close out the download, after every
+    # participant age group — see _team_staff_cards (blank placeholder cards
+    # fill in for a role with no record on the team yet), drawn bigger than
+    # the participant cards (id_card.STAFF_SHEET_CARD_BUMP_CM) and still
+    # filling the last age group's sheet rather than forcing a fresh one
+    # whenever there's room for them at that bigger size.
     groups = _team_card_groups(team.participants, team)
-    pdf = id_card.build_pdf_sheets(groups, layout=id_card.A4_SHEET, dpi=id_card.PRINT_DPI)
+    pdf = id_card.build_pdf_sheets_with_staff_tail(groups, _team_staff_cards(team), layout=id_card.A4_SHEET, dpi=id_card.PRINT_DPI)
     return _pdf_response(pdf, f"idcards-{team.school_code or team.id}.pdf")
 
 
@@ -1273,7 +1337,7 @@ def export_idcard_team_12x18(team_id: int, db: Session = Depends(get_db)):
     if not team.participants:
         raise HTTPException(404, "This team has no participants to generate cards for")
     groups = _team_card_groups(team.participants, team)
-    pdf = id_card.build_pdf_sheets(groups, layout=id_card.SHEET_12X18, dpi=id_card.PRINT_DPI)
+    pdf = id_card.build_pdf_sheets_with_staff_tail(groups, _team_staff_cards(team), layout=id_card.SHEET_12X18, dpi=id_card.PRINT_DPI)
     return _pdf_response(pdf, f"idcards-{team.school_code or team.id}-12x18.pdf")
 
 
@@ -1288,7 +1352,7 @@ def export_idcard_team_individual(team_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Team not found")
     if not team.participants:
         raise HTTPException(404, "This team has no participants to generate cards for")
-    files = _individual_card_files(team.participants, {team.id: team})
+    files = _individual_card_files(team.participants, {team.id: team}) + _team_staff_card_files(team)
     return _zip_response(files, f"idcards-{team.school_code or team.id}-individual.zip")
 
 
@@ -1340,6 +1404,66 @@ def export_idcard_all_individual(db: Session = Depends(get_db)):
         raise HTTPException(404, "No participants to generate cards for")
     files = _individual_card_files(participants, teams)
     return _zip_response(files, "idcards-all-teams-individual.zip")
+
+
+def _coach_photo_path(coach: models.Coach):
+    if not coach.photo_filename:
+        return None
+    return ASSETS_COACHES_DIR / coach.photo_filename
+
+
+@router.get("/idcards/coach/{coach_id}.pdf", dependencies=[Depends(require_module("teams"))])
+def export_idcard_coach(coach_id: int, db: Session = Depends(get_db)):
+    """One coach/manager's own card, centered on its own full page (a custom
+    small-badge size, see id_card.STAFF_PAGE_WIDTH_CM/HEIGHT_CM) — see
+    id_card.render_staff_id_card_page. Admin counterpart to
+    public.py's public_coach_idcard (same rendering, just behind the
+    organizer login instead of a team's public portal link)."""
+    coach = db.get(models.Coach, coach_id)
+    if not coach:
+        raise HTTPException(404, "Coach not found")
+    page = id_card.render_staff_id_card_page(coach, coach.team, _coach_photo_path(coach))
+    pdf = id_card.build_pdf([page])
+    role_slug = (coach.role or "coach").lower()
+    return _pdf_response(pdf, f"{role_slug}-idcard-{coach.id}.pdf")
+
+
+# Coach/Manager-sized grids (id_card.staff_sheet_layout), not the plain
+# participant A4_SHEET/SHEET_12X18 — this bulk download is entirely Coach/
+# Manager cards, so every card on it gets the bigger Coach/Manager size
+# (id_card.STAFF_SHEET_CARD_BUMP_CM), same as when they're tiled alongside
+# participants in a team's own download.
+_BLANK_STAFF_SHEET_LAYOUTS = {
+    "a4": id_card.staff_sheet_layout(id_card.A4_SHEET),
+    "12x18": id_card.staff_sheet_layout(id_card.SHEET_12X18),
+}
+
+
+@router.get("/idcards/blank/staff.pdf", dependencies=[Depends(require_module("teams"))])
+def export_blank_staff_idcards(
+    role: str = Query("Coach", pattern="^(Coach|Manager)$"),
+    count: int = Query(..., gt=0, le=500),
+    sheet: str = Query("a4", pattern="^(a4|12x18|a7)$"),
+):
+    """Pre-printing stock: `count` blank copies of the Coach or Manager
+    template (no photo/name filled in — id_card.render_blank_staff_card).
+    "a4"/"12x18" tile them edge-to-edge (zero gap/margin, never overlapping
+    — see SheetLayout) onto grid sheets of that paper at the Coach/Manager
+    card size (_BLANK_STAFF_SHEET_LAYOUTS), chunked across as many sheets as
+    `count` needs — e.g. 20 cards on "12x18" fills one full sheet plus
+    however many that layout's cards_per_sheet leaves for a second; "a7"
+    instead gives one card per own page at the custom single-card size
+    (id_card.STAFF_PAGE_WIDTH_CM/HEIGHT_CM) — same treatment as the
+    single-card download, just repeated `count` times in one multi-page PDF.
+    Stateless — no coach/team records involved, just the raw template, for
+    an admin who wants physical blank cards ready before anyone's assigned."""
+    if sheet == "a7":
+        page = id_card.render_blank_staff_card_page(role)
+        pdf = id_card.build_pdf([page] * count)
+    else:
+        blank = id_card.render_blank_staff_card(role)
+        pdf = id_card.build_pdf_sheets([[blank] * count], layout=_BLANK_STAFF_SHEET_LAYOUTS[sheet], dpi=id_card.PRINT_DPI)
+    return _pdf_response(pdf, f"blank-{role.lower()}-idcards-{sheet}.pdf")
 
 
 @router.get("/payments.xlsx", dependencies=[Depends(require_module("teams"))])

@@ -7,10 +7,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from .. import models, schemas
+from .. import id_card, models, schemas
 from ..auth_utils import verify_password
 from ..database import get_db
 from ..face_crop import suggest_crop
@@ -368,9 +369,11 @@ def public_team_detail(team_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Team not found")
 
     # Phone numbers are deliberately withheld here — a visitor has to pass the
-    # /reveal-contacts check to get them, see below.
+    # /reveal-contacts check to get them, see below. aadhaar_no is withheld
+    # too — it's only ever baked into the rendered PDF, never sent to a client.
     coaches = [
-        {"full_name": c.full_name, "role": c.role, "email": c.email} for c in team.coaches
+        {"id": c.id, "full_name": c.full_name, "role": c.role, "email": c.email, "photo_url": c.photo_url}
+        for c in team.coaches
     ]
     has_hidden_contacts = any(c.phone for c in team.coaches)
     participants = [
@@ -467,7 +470,12 @@ def reveal_team_contacts(team_id: int, payload: RevealContactsRequest, db: Sessi
     team = db.get(models.Team, team_id)
     if not team:
         raise HTTPException(404, "Team not found")
-    return {"coaches": [{"full_name": c.full_name, "role": c.role, "phone": c.phone} for c in team.coaches]}
+    return {
+        "coaches": [
+            {"id": c.id, "full_name": c.full_name, "role": c.role, "email": c.email, "phone": c.phone, "photo_url": c.photo_url}
+            for c in team.coaches
+        ]
+    }
 
 
 import re
@@ -628,4 +636,112 @@ async def upload_participant_photo(
             old_path.unlink()
 
     return {"photo_url": participant.photo_url, "photo_finalized": participant.photo_finalized}
+
+
+# ---------- Coach / Manager self-service (photo + ID card) ----------------
+# Same no-login shape as the participant photo flow above, just gated by the
+# coach/manager's own registered phone number instead of a participant's date
+# of birth (Coach has no DOB field) — and its own attempt-limiter dict so a
+# coach_id and a participant_id sharing a numeric value can never collide.
+ASSETS_COACHES_DIR = Path(__file__).resolve().parent.parent.parent / "assets" / "coaches"
+_failed_coach_photo_attempts: dict[int, list[float]] = {}
+
+
+def _coach_photo_upload_rate_limited(coach_id: int) -> bool:
+    now = time.time()
+    attempts = [t for t in _failed_coach_photo_attempts.get(coach_id, []) if now - t < _PHOTO_UPLOAD_WINDOW_SECONDS]
+    _failed_coach_photo_attempts[coach_id] = attempts
+    return len(attempts) >= _PHOTO_UPLOAD_MAX_ATTEMPTS
+
+
+def _record_failed_coach_photo_attempt(coach_id: int) -> int:
+    attempts = _failed_coach_photo_attempts.setdefault(coach_id, [])
+    attempts.append(time.time())
+    return max(0, _PHOTO_UPLOAD_MAX_ATTEMPTS - len(attempts))
+
+
+def _digits_only(raw: str) -> str:
+    return re.sub(r"\D", "", raw)
+
+
+@router.post("/coaches/{coach_id}/photo")
+async def upload_coach_photo(
+    coach_id: int,
+    phone: "str | None" = Form(None),
+    admin_password: "str | None" = Form(None),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """A coach/manager uploads a first photo — for themselves OR their
+    counterpart — by typing ANY phone number registered to that team's
+    coaching staff (Coach or Manager), no login. This is deliberately not
+    limited to this coach's own phone: a team may only have one number on
+    file (e.g. the Coach's, with the Manager's left blank), and either of
+    them should still be able to authorize either person's photo upload with
+    whatever number the team actually has registered. Same "first upload is
+    self-service, replacing an existing one needs an admin password" shape
+    as upload_participant_photo above."""
+    coach = db.get(models.Coach, coach_id)
+    if not coach:
+        raise HTTPException(404, "Coach not found")
+
+    if _coach_photo_upload_rate_limited(coach_id):
+        raise HTTPException(429, "Too many attempts — try again later")
+
+    if coach.photo_filename:
+        if not admin_password or not _verify_any_admin_password(db, admin_password):
+            remaining = _record_failed_coach_photo_attempt(coach_id)
+            raise HTTPException(
+                401,
+                {
+                    "message": "This coach/manager already has a photo — an admin password is required to replace it.",
+                    "attempts_remaining": remaining,
+                },
+            )
+    else:
+        team_phones = {_digits_only(c.phone) for c in coach.team.coaches if c.phone}
+        if not phone or not team_phones or _digits_only(phone) not in team_phones:
+            remaining = _record_failed_coach_photo_attempt(coach_id)
+            raise HTTPException(401, {"message": "Phone number does not match", "attempts_remaining": remaining})
+
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in VALID_IMAGE_EXTENSIONS:
+        raise HTTPException(400, "Unsupported file type (use JPG, PNG, or WEBP)")
+
+    ASSETS_COACHES_DIR.mkdir(parents=True, exist_ok=True)
+    content = optimize_image(await file.read(), ext)
+    name = f"coach-{coach_id}-{uuid.uuid4().hex[:8]}{ext}"
+
+    old_filename = coach.photo_filename
+    (ASSETS_COACHES_DIR / name).write_bytes(content)
+    coach.photo_filename = name
+    db.commit()
+
+    if old_filename:
+        old_path = ASSETS_COACHES_DIR / old_filename
+        if old_path.exists() and old_path.is_file():
+            old_path.unlink()
+
+    return {"photo_url": coach.photo_url}
+
+
+@router.get("/coaches/{coach_id}/idcard.pdf")
+def public_coach_idcard(coach_id: int, db: Session = Depends(get_db)):
+    """No-login download of one coach/manager's own ID card — a single
+    filled card centered on its own page at a custom small-badge size (see
+    id_card.render_staff_id_card_page / STAFF_PAGE_WIDTH_CM/HEIGHT_CM),
+    reachable from the same team portal a coach already uses to manage their
+    roster's photos."""
+    coach = db.get(models.Coach, coach_id)
+    if not coach:
+        raise HTTPException(404, "Coach not found")
+    photo_path = ASSETS_COACHES_DIR / coach.photo_filename if coach.photo_filename else None
+    page = id_card.render_staff_id_card_page(coach, coach.team, photo_path)
+    pdf = id_card.build_pdf([page])
+    role_slug = (coach.role or "coach").lower()
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{role_slug}-idcard-{coach.id}.pdf"'},
+    )
 

@@ -591,6 +591,7 @@ class CoachBase(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     notes: Optional[str] = None
+    aadhaar_no: Optional[str] = None
 
 
 class CoachCreate(CoachBase):
@@ -604,12 +605,14 @@ class CoachUpdate(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     notes: Optional[str] = None
+    aadhaar_no: Optional[str] = None
 
 
 class CoachRead(ORMModel, CoachBase):
     id: int
     is_present: bool = False
     checked_in_at: Optional[datetime] = None
+    photo_url: Optional[str] = None
 
 
 # --- Volunteers ---
