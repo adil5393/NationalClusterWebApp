@@ -208,6 +208,35 @@ def delete_empty_teams(db: Session = Depends(get_db)):
     return {"deleted": len(names), "names": names}
 
 
+def _get_app_settings(db: Session) -> models.AppSettings:
+    settings_row = db.get(models.AppSettings, 1)
+    if not settings_row:
+        # Guards against a hand-seeded/older DB missing the migration's
+        # INSERT — never expected in practice, but cheaper than crashing.
+        settings_row = models.AppSettings(id=1)
+        db.add(settings_row)
+        db.commit()
+        db.refresh(settings_row)
+    return settings_row
+
+
+# Registered before "/{team_id}" — same "static path before int path param"
+# ordering gotcha as "/empty" above. One switch for every team/participant/
+# coach at once; see models.AppSettings and public.py's upload endpoints
+# (which OR this with each team's own Team.photo_uploads_locked).
+@router.get("/photo-uploads-lock", response_model=schemas.GlobalPhotoLockRead)
+def get_photo_uploads_lock(db: Session = Depends(get_db)):
+    return {"locked": _get_app_settings(db).global_photo_uploads_locked}
+
+
+@router.put("/photo-uploads-lock", response_model=schemas.GlobalPhotoLockRead)
+def set_photo_uploads_lock(payload: schemas.GlobalPhotoLockUpdate, db: Session = Depends(get_db)):
+    settings_row = _get_app_settings(db)
+    settings_row.global_photo_uploads_locked = payload.locked
+    db.commit()
+    return {"locked": settings_row.global_photo_uploads_locked}
+
+
 @router.get("/{team_id}", response_model=schemas.TeamRead)
 def get_team(team_id: int, db: Session = Depends(get_db)):
     team = db.get(models.Team, team_id)

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Pencil, Trash2, QrCode, Upload, Trophy, X, Shield, Users, Search, ImageIcon, IdCard, Receipt, Printer, FileArchive, Bus } from "lucide-react";
+import { Plus, Pencil, Trash2, QrCode, Upload, Trophy, X, Shield, Users, Search, ImageIcon, IdCard, Receipt, Printer, FileArchive, Bus, Lock, Unlock } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -61,6 +61,7 @@ interface Team {
   all_photos_uploaded?: boolean;
   is_active?: boolean;
   has_arrived?: boolean;
+  photo_uploads_locked?: boolean;
   arrival_date?: string | null;
   arrival_time?: string | null;
   arrival_location?: string | null;
@@ -489,6 +490,8 @@ export default function AdminTeams() {
   const [teamArrivalImportOpen, setTeamArrivalImportOpen] = useState(false);
   const [form, setForm] = useState<Partial<Team>>(empty);
   const [search, setSearch] = useState("");
+  const [globalPhotoLock, setGlobalPhotoLock] = useState(false);
+  const [globalPhotoLockBusy, setGlobalPhotoLockBusy] = useState(false);
 
   const load = (silent = false) => {
     // silent=true skips the full-page loading spinner (which unmounts the
@@ -502,6 +505,22 @@ export default function AdminTeams() {
       .finally(() => setLoading(false));
   };
   useEffect(load, []);
+  useEffect(() => {
+    api
+      .get<{ locked: boolean }>("/teams/photo-uploads-lock")
+      .then((r) => setGlobalPhotoLock(r.data.locked))
+      .catch(() => {});
+  }, []);
+
+  const toggleGlobalPhotoLock = () => {
+    const locking = !globalPhotoLock;
+    setGlobalPhotoLockBusy(true);
+    api
+      .put<{ locked: boolean }>("/teams/photo-uploads-lock", { locked: locking })
+      .then((r) => setGlobalPhotoLock(r.data.locked))
+      .catch((e: any) => toast.error(e?.response?.data?.detail ?? "Could not update global photo upload lock"))
+      .finally(() => setGlobalPhotoLockBusy(false));
+  };
 
   const save = async () => {
     if (!form.name?.trim()) return toast.error("Team name is required");
@@ -649,6 +668,26 @@ export default function AdminTeams() {
 
         {canEdit && (
           <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant={globalPhotoLock ? "danger" : "outline"}
+              size="sm"
+              onClick={toggleGlobalPhotoLock}
+              disabled={globalPhotoLockBusy}
+              data-testid="toggle-global-photo-lock-btn"
+              className="text-xs font-semibold"
+              title={
+                globalPhotoLock
+                  ? "Photo uploads are locked for every team — click to unlock all"
+                  : "Lock photo uploads for every team, participant & coach on the public site"
+              }
+            >
+              {globalPhotoLock ? (
+                <Lock className="h-3.5 w-3.5" />
+              ) : (
+                <Unlock className="h-3.5 w-3.5 text-gold" />
+              )}
+              {globalPhotoLock ? "Unlock All Photo Uploads" : "Lock All Photo Uploads"}
+            </Button>
             <Button
               variant="outline"
               size="sm"

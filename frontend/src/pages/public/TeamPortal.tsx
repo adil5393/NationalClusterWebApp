@@ -32,6 +32,7 @@ import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { QRDialog } from "@/components/admin/QRDialog";
 import { formatDate } from "@/lib/meta";
 import { TeamAvatar } from "@/components/ui/team-badge";
+import { cn } from "@/lib/utils";
 
 interface Coach {
   id: number;
@@ -68,6 +69,7 @@ interface TeamDetail {
     route?: string;
   }[];
   schedule: { title: string; venue?: string; start_time?: string; end_time?: string }[];
+  photo_uploads_locked?: boolean;
 }
 
 function ageGroupRank(g: string) {
@@ -659,6 +661,12 @@ export default function TeamPortal() {
       <div className="mt-8 grid gap-5 md:grid-cols-2">
         {/* COACHES & MANAGER */}
         <SectionCard icon={UserCog} title="Coaching & Delegation Staff" badge={`${team.coaches.length} Staff`}>
+          {team.photo_uploads_locked && (
+            <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-300">
+              <Lock className="h-3.5 w-3.5 shrink-0" />
+              <span>Photo uploads are currently locked by the organizers.</span>
+            </div>
+          )}
           {team.coaches.length === 0 ? (
             <p className="text-xs text-slate-400">No coach assigned in records yet.</p>
           ) : (
@@ -681,10 +689,23 @@ export default function TeamPortal() {
                   <div className="flex items-center gap-2.5 min-w-0">
                     <button
                       type="button"
-                      onClick={() => setCoachPhotoTarget(c)}
-                      title={c.photo_url ? "Update photo" : "Add photo"}
+                      onClick={() =>
+                        team.photo_uploads_locked
+                          ? toast.error("Photo uploads are currently locked by the organizers for this team.")
+                          : setCoachPhotoTarget(c)
+                      }
+                      title={
+                        team.photo_uploads_locked
+                          ? "Photo uploads are locked by the organizers"
+                          : c.photo_url
+                            ? "Update photo"
+                            : "Add photo"
+                      }
                       data-testid={`coach-photo-btn-${c.id}`}
-                      className="relative group shrink-0 h-10 w-10 rounded-lg overflow-hidden border border-white/10 bg-obsidian-900/90 hover:border-gold/60 focus:outline-none focus:ring-2 focus:ring-gold/40 transition-all flex items-center justify-center"
+                      className={cn(
+                        "relative group shrink-0 h-10 w-10 rounded-lg overflow-hidden border border-white/10 bg-obsidian-900/90 focus:outline-none focus:ring-2 focus:ring-gold/40 transition-all flex items-center justify-center",
+                        team.photo_uploads_locked ? "opacity-60 cursor-not-allowed" : "hover:border-gold/60",
+                      )}
                     >
                       {c.photo_url ? (
                         <>
@@ -818,6 +839,12 @@ export default function TeamPortal() {
       {/* REGISTERED SQUAD ROSTER */}
       <div className="mt-8">
         <SectionCard icon={Users} title="Official Squad Roster" badge={`${team.participants.length} Athletes`}>
+          {team.photo_uploads_locked && (
+            <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-300">
+              <Lock className="h-3.5 w-3.5 shrink-0" />
+              <span>Photo uploads are currently locked by the organizers.</span>
+            </div>
+          )}
           {team.participants.length === 0 ? (
             <p className="text-xs text-slate-400">Athlete roster verification in progress.</p>
           ) : (
@@ -845,16 +872,25 @@ export default function TeamPortal() {
                         >
                           <button
                             type="button"
-                            onClick={() => setPhotoTarget(p)}
+                            onClick={() =>
+                              team.photo_uploads_locked
+                                ? toast.error("Photo uploads are currently locked by the organizers for this team.")
+                                : setPhotoTarget(p)
+                            }
                             title={
-                              p.photo_url
-                                ? p.photo_finalized
-                                  ? "Photo framed & finalized — click to replace"
-                                  : "Update photo"
-                                : "Add photo"
+                              team.photo_uploads_locked
+                                ? "Photo uploads are locked by the organizers"
+                                : p.photo_url
+                                  ? p.photo_finalized
+                                    ? "Photo framed & finalized — click to replace"
+                                    : "Update photo"
+                                  : "Add photo"
                             }
                             data-testid={`participant-photo-btn-${p.id}`}
-                            className="relative group shrink-0 h-12 w-12 sm:h-14 sm:w-14 rounded-xl overflow-hidden border border-white/10 bg-obsidian-900/90 hover:border-gold/60 focus:outline-none focus:ring-2 focus:ring-gold/40 transition-all flex items-center justify-center shadow-inner"
+                            className={cn(
+                              "relative group shrink-0 h-12 w-12 sm:h-14 sm:w-14 rounded-xl overflow-hidden border border-white/10 bg-obsidian-900/90 focus:outline-none focus:ring-2 focus:ring-gold/40 transition-all flex items-center justify-center shadow-inner",
+                              team.photo_uploads_locked ? "opacity-60 cursor-not-allowed" : "hover:border-gold/60",
+                            )}
                           >
                             {p.photo_url ? (
                               <>

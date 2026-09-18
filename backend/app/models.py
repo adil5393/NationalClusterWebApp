@@ -40,6 +40,22 @@ class TimestampMixin:
     )
 
 
+class AppSettings(Base):
+    """Single-row table (always id=1) for organizer-wide toggles that don't
+    belong to any one team/participant/coach — see routers/teams.py's
+    get_photo_uploads_lock/set_photo_uploads_lock for the only field so far.
+    Read with `db.get(AppSettings, 1)`; the startup-run migration that adds a
+    new column here should also backfill the existing row via server_default,
+    same as any other additive migration."""
+    __tablename__ = "app_settings"
+    id = Column(Integer, primary_key=True)
+    # Global kill-switch for public no-login photo uploads (routers/public.py's
+    # upload_participant_photo/upload_coach_photo) — ORed with each team's own
+    # Team.photo_uploads_locked, so either one locks that team; unlocking here
+    # doesn't affect a team that's individually locked, and vice versa.
+    global_photo_uploads_locked = Column(Boolean, nullable=False, default=False, server_default="false")
+
+
 class Event(TimestampMixin, Base):
     __tablename__ = "events"
     id = Column(Integer, primary_key=True)
@@ -95,6 +111,13 @@ class Team(TimestampMixin, Base):
     # The form response's own Timestamp column — lets a resync keep only the
     # latest submission per school when someone corrects an earlier entry.
     arrival_reported_at = Column(DateTime)
+    # Organizer kill-switch for this team's public no-login photo uploads
+    # (routers/public.py's upload_participant_photo/upload_coach_photo) —
+    # e.g. once a roster is finalized and photos shouldn't change anymore.
+    # Checked at upload time regardless of who's asking (a coach typing the
+    # right DOB/phone doesn't bypass it); never affects already-uploaded
+    # photos or anything else about the team.
+    photo_uploads_locked = Column(Boolean, nullable=False, default=False, server_default="false")
 
     participants = relationship("Participant", back_populates="team", cascade="all, delete-orphan")
     coaches = relationship("Coach", back_populates="team", cascade="all, delete-orphan")

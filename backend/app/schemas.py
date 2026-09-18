@@ -79,6 +79,14 @@ class TeamCreate(TeamBase):
     pass
 
 
+class GlobalPhotoLockRead(BaseModel):
+    locked: bool
+
+
+class GlobalPhotoLockUpdate(BaseModel):
+    locked: bool
+
+
 class LastYearAwardEntry(ORMModel):
     age_group: str
     award: Literal["winner", "runner", "third", "fourth"]
@@ -101,6 +109,10 @@ class TeamUpdate(BaseModel):
     # Also toggled directly from the Teams table — purely informational, see
     # models.py Team.has_arrived.
     has_arrived: Optional[bool] = None
+    # Also toggled directly from the Teams table — see models.py
+    # Team.photo_uploads_locked. No admin_password gate: a routine
+    # content-moderation toggle, not tied to billing/eligibility.
+    photo_uploads_locked: Optional[bool] = None
     # When present, REPLACES this team's whole set of last-year awards (one
     # entry per age group it holds an award in). Exclusivity/pool-conflict
     # rules enforced in the router.
@@ -139,6 +151,7 @@ class TeamRead(ORMModel, TeamBase):
     all_photos_uploaded: bool = False
     is_active: bool = True
     has_arrived: bool = False
+    photo_uploads_locked: bool = False
     # Self-reported travel plan from the arrival Google Form sync — read-only
     # here (see TeamUpdate, which never accepts these), distinct from the
     # organizer-confirmed has_arrived above.

@@ -445,6 +445,7 @@ def public_team_detail(team_id: int, db: Session = Depends(get_db)):
         "accommodation": accommodation,
         "transport": transport,
         "schedule": schedule,
+        "photo_uploads_locked": team.photo_uploads_locked or _global_photo_uploads_locked(db),
     }
 
 
@@ -585,6 +586,8 @@ async def upload_participant_photo(
     participant = db.get(models.Participant, participant_id)
     if not participant:
         raise HTTPException(404, "Participant not found")
+    if participant.team.photo_uploads_locked or _global_photo_uploads_locked(db):
+        raise HTTPException(423, "Photo uploads are currently locked by the organizers for this team.")
 
     if _photo_upload_rate_limited(participant_id):
         raise HTTPException(429, "Too many attempts — try again later")
@@ -663,6 +666,15 @@ def _digits_only(raw: str) -> str:
     return re.sub(r"\D", "", raw)
 
 
+def _global_photo_uploads_locked(db: Session) -> bool:
+    """The admin-panel-wide kill-switch (routers/teams.py's
+    get_photo_uploads_lock/set_photo_uploads_lock) — ORed with each team's own
+    Team.photo_uploads_locked wherever uploads are gated or the lock state is
+    reported to a client."""
+    settings_row = db.get(models.AppSettings, 1)
+    return bool(settings_row and settings_row.global_photo_uploads_locked)
+
+
 @router.post("/coaches/{coach_id}/photo")
 async def upload_coach_photo(
     coach_id: int,
@@ -683,6 +695,8 @@ async def upload_coach_photo(
     coach = db.get(models.Coach, coach_id)
     if not coach:
         raise HTTPException(404, "Coach not found")
+    if coach.team.photo_uploads_locked or _global_photo_uploads_locked(db):
+        raise HTTPException(423, "Photo uploads are currently locked by the organizers for this team.")
 
     if _coach_photo_upload_rate_limited(coach_id):
         raise HTTPException(429, "Too many attempts — try again later")
