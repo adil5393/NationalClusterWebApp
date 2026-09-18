@@ -60,7 +60,7 @@ const emptyCoach: Partial<Coach> = { full_name: "", role: "Coach", is_present: f
 const AGE_GROUP_WEIGHT_CAPS: Record<string, number> = {
   "under 14": 51,
   "under 17": 57,
-  "under 19": 75,
+  "under 19": 70,
 };
 function weightCapFor(ageGroup?: string): number | undefined {
   if (!ageGroup) return undefined;

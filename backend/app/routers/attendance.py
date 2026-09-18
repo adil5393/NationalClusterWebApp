@@ -35,7 +35,7 @@ coach_router = APIRouter(prefix="/api/coaches", tags=["attendance"])
 AGE_GROUP_WEIGHT_CAPS = {
     "under 14": 51,
     "under 17": 57,
-    "under 19": 75,
+    "under 19": 70,
 }
 
 
