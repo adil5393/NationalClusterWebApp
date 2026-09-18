@@ -179,12 +179,14 @@ export function StaffOperationsReportsPanel() {
     return `${BACKEND}/api/staff-reports/${activeReport}.xlsx?${params.toString()}`;
   };
 
-  // operational-areas and individual are nested/single-subject views, not a
-  // flat table — the backend has no PDF for those (use Print instead, see
+  // "individual" is a single person's whole work-plan document (several
+  // distinct sub-tables), not one table to flatten — the backend has no
+  // PDF for it (use Print instead, see
   // routers/staff_reports.py's export_flat_report_pdf docstring).
   const FLAT_PDF_REPORTS: StaffReportKey[] = [
     "staff-master",
     "shift-roster",
+    "operational-areas",
     "incharges",
     "duties",
     "tasks",

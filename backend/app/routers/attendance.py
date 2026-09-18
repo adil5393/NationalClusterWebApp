@@ -120,6 +120,31 @@ def set_weight(participant_id: int, payload: schemas.WeightUpdate, db: Session =
     return p
 
 
+@router.post("/{participant_id}/active", response_model=schemas.ParticipantRead)
+def set_active(participant_id: int, payload: schemas.ActiveUpdate, db: Session = Depends(get_db)):
+    """Activates/deactivates a participant — gated by an admin password in
+    both directions (unlike set_attendance's one-way gate above), since
+    either transition changes whether their ID card renders at all: turning
+    a participant inactive drops them from every ID-card export
+    (id_card.py's callers in routers/exports.py all filter on this), e.g.
+    for someone disqualified or withdrawn after registration; reactivating
+    puts them straight back into every export. Never affects is_present,
+    weight, billing, or match/pool eligibility — this is purely an ID-card
+    opt-out, not a roster removal."""
+    p = db.get(models.Participant, participant_id)
+    if not p:
+        raise HTTPException(404, "Participant not found")
+    if payload.is_active != p.is_active:
+        _require_admin_password(
+            db, payload.admin_password,
+            action=f"mark this participant {'active' if payload.is_active else 'inactive'}",
+        )
+    p.is_active = payload.is_active
+    db.commit()
+    db.refresh(p)
+    return p
+
+
 @coach_router.post("/{coach_id}/attendance", response_model=schemas.CoachRead)
 def set_coach_attendance(coach_id: int, payload: schemas.AttendanceUpdate, db: Session = Depends(get_db)):
     c = db.get(models.Coach, coach_id)

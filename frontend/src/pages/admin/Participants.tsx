@@ -28,6 +28,7 @@ interface Participant {
   date_of_birth?: string;
   student_class?: string;
   photo_url?: string | null;
+  is_active?: boolean;
 }
 
 interface Coach {
@@ -95,6 +96,11 @@ export default function Participants() {
   const [weightEditValue, setWeightEditValue] = useState("");
   const [weightEditPassword, setWeightEditPassword] = useState("");
   const [weightEditBusy, setWeightEditBusy] = useState(false);
+  const [pendingActiveChange, setPendingActiveChange] = useState<
+    { id: number; name: string; targetActive: boolean } | null
+  >(null);
+  const [activePassword, setActivePassword] = useState("");
+  const [activeBusy, setActiveBusy] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -360,6 +366,40 @@ export default function Participants() {
       else toast.error("Could not update attendance");
     } finally {
       setUnmarkBusy(false);
+    }
+  };
+
+  const openActiveChange = (p: Participant, targetActive: boolean) => {
+    setPendingActiveChange({ id: p.id, name: p.full_name, targetActive });
+    setActivePassword("");
+  };
+
+  const closeActiveDialog = () => {
+    setPendingActiveChange(null);
+    setActivePassword("");
+  };
+
+  const confirmActiveChange = async () => {
+    if (!pendingActiveChange) return;
+    if (!activePassword.trim()) return toast.error("Enter the admin password");
+    setActiveBusy(true);
+    try {
+      const r = await api.post<Participant>(`/participants/${pendingActiveChange.id}/active`, {
+        is_active: pendingActiveChange.targetActive,
+        admin_password: activePassword.trim(),
+      });
+      setParticipants((rows) =>
+        rows.map((row) => (row.id === pendingActiveChange.id ? { ...row, ...r.data } : row)),
+      );
+      toast.success(
+        `${pendingActiveChange.name} marked ${pendingActiveChange.targetActive ? "active" : "inactive"}`,
+      );
+      closeActiveDialog();
+    } catch (e: any) {
+      if (e?.response?.status === 401) toast.error(e.response?.data?.detail ?? "Incorrect admin password");
+      else toast.error("Could not update active status");
+    } finally {
+      setActiveBusy(false);
     }
   };
 
@@ -679,20 +719,40 @@ export default function Participants() {
                         {p.age_group}
                       </span>
                     )}
+                    <button
+                      onClick={() => canEdit && openActiveChange(p, !(p.is_active ?? true))}
+                      disabled={!canEdit}
+                      data-testid={`active-toggle-mobile-${p.id}`}
+                      title={(p.is_active ?? true) ? "Click to mark ID card inactive" : "Click to reactivate ID card"}
+                    >
+                      {(p.is_active ?? true) ? (
+                        <Badge tone="live" size="sm">
+                          Active
+                        </Badge>
+                      ) : (
+                        <Badge tone="red" size="sm">
+                          Inactive
+                        </Badge>
+                      )}
+                    </button>
                   </div>
 
                   <div className="border-t border-white/10 pt-2.5 flex gap-2">
                     <a
-                      href={`${BASE_URL}/api/export/idcards/participant/${p.id}.pdf`}
+                      href={(p.is_active ?? true) ? `${BASE_URL}/api/export/idcards/participant/${p.id}.pdf` : undefined}
+                      aria-disabled={!(p.is_active ?? true)}
                       className={cn(
                         "inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md border text-xs font-semibold transition-colors",
-                        p.photo_url
+                        !(p.is_active ?? true)
+                          ? "border-white/10 bg-white/5 text-slate-500 cursor-not-allowed pointer-events-none"
+                          : p.photo_url
                           ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
                           : "border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20",
                       )}
                       data-testid={`download-idcard-mobile-${p.id}`}
                     >
-                      <IdCard className={cn("h-3.5 w-3.5", p.photo_url ? "text-emerald-400" : "text-red-400")} /> Download ID Card
+                      <IdCard className={cn("h-3.5 w-3.5", p.photo_url ? "text-emerald-400" : "text-red-400")} />
+                      {(p.is_active ?? true) ? "Download ID Card" : "Inactive — No ID Card"}
                     </a>
                     {canEdit && p.photo_url && (
                       <Button
@@ -750,6 +810,7 @@ export default function Participants() {
                     <TH>Age Group</TH>
                     <TH>Weight (kg)</TH>
                     <TH>Attendance Verification</TH>
+                    <TH>ID Card Status</TH>
                     <TH className="text-right">Actions</TH>
                   </TR>
                 </THead>
@@ -870,19 +931,56 @@ export default function Participants() {
                           </Badge>
                         )}
                       </TD>
+                      <TD>
+                        {canEdit ? (
+                          <button
+                            onClick={() => openActiveChange(p, !(p.is_active ?? true))}
+                            data-testid={`active-toggle-${p.id}`}
+                            className="inline-flex items-center hover:opacity-80 transition-opacity"
+                            title={(p.is_active ?? true) ? "Click to mark ID card inactive" : "Click to reactivate ID card"}
+                          >
+                            {(p.is_active ?? true) ? (
+                              <Badge tone="live" size="sm">
+                                <CheckCircle2 className="h-3.5 w-3.5" /> Active
+                              </Badge>
+                            ) : (
+                              <Badge tone="red" size="sm">
+                                <Circle className="h-3.5 w-3.5" /> Inactive
+                              </Badge>
+                            )}
+                          </button>
+                        ) : (p.is_active ?? true) ? (
+                          <Badge tone="live" size="sm">
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Active
+                          </Badge>
+                        ) : (
+                          <Badge tone="red" size="sm">
+                            <Circle className="h-3.5 w-3.5" /> Inactive
+                          </Badge>
+                        )}
+                      </TD>
                       <TD className="text-right">
                         <div className="flex items-center justify-end gap-1">
                           <a
-                            href={`${BASE_URL}/api/export/idcards/participant/${p.id}.pdf`}
+                            href={
+                              (p.is_active ?? true)
+                                ? `${BASE_URL}/api/export/idcards/participant/${p.id}.pdf`
+                                : undefined
+                            }
+                            aria-disabled={!(p.is_active ?? true)}
                             className={cn(
                               "inline-flex items-center justify-center gap-2 rounded-md font-body tracking-wide transition-colors h-8 w-8 p-0",
-                              p.photo_url
+                              !(p.is_active ?? true)
+                                ? "text-slate-600 cursor-not-allowed pointer-events-none"
+                                : p.photo_url
                                 ? "text-emerald-500 hover:bg-emerald-500/10 hover:text-emerald-400"
                                 : "text-red-500 hover:bg-red-500/10 hover:text-red-400",
                             )}
                             data-testid={`download-idcard-${p.id}`}
                             title={
-                              p.photo_url
+                              !(p.is_active ?? true)
+                                ? "Inactive — ID card not available"
+                                : p.photo_url
                                 ? "Download ID Card (PDF) — photo uploaded"
                                 : "Download ID Card (PDF) — photo not uploaded"
                             }
@@ -1570,6 +1668,53 @@ export default function Participants() {
               data-testid="confirm-weight-edit-btn"
             >
               {weightEditBusy ? "Verifying…" : "Confirm Change"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={!!pendingActiveChange}
+        onClose={closeActiveDialog}
+        title={pendingActiveChange?.targetActive ? "Confirm: Reactivate Participant" : "Confirm: Mark Inactive"}
+        testId="active-change-dialog"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-slate-400 font-body">
+            {pendingActiveChange?.targetActive
+              ? "This restores the athlete's ID card to every download and export."
+              : "This removes the athlete's ID card from every download and export (individual, team sheets, and bulk) — e.g. for a disqualification or withdrawal. Roster, attendance, weight and billing are unaffected."}{" "}
+            Requires an admin account's password to confirm.
+          </p>
+          <div className="rounded-xl border border-white/10 bg-obsidian-950 p-3.5 space-y-1">
+            <p className="font-heading font-bold text-white">{pendingActiveChange?.name}</p>
+            <p className="text-xs text-slate-400">
+              {pendingActiveChange?.targetActive ? "Will become Active" : "Will become Inactive"}
+            </p>
+          </div>
+          <div>
+            <Label>Admin Password</Label>
+            <Input
+              type="password"
+              value={activePassword}
+              onChange={(e) => setActivePassword(e.target.value)}
+              data-testid="active-change-admin-password-input"
+              autoFocus
+              onKeyDown={(e) => e.key === "Enter" && confirmActiveChange()}
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+            <Button variant="outline" size="sm" onClick={closeActiveDialog}>
+              Cancel
+            </Button>
+            <Button
+              variant="gold"
+              size="sm"
+              onClick={confirmActiveChange}
+              disabled={activeBusy}
+              data-testid="confirm-active-change-btn"
+            >
+              {activeBusy ? "Verifying…" : pendingActiveChange?.targetActive ? "Confirm Reactivate" : "Confirm Mark Inactive"}
             </Button>
           </div>
         </div>

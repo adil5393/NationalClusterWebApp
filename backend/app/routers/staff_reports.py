@@ -2330,13 +2330,17 @@ def export_operational_issues_xlsx(
 
 
 # ---------------------------------------------------------------------------
-# Printable PDFs — shared by every FLAT-row report above (staff-master,
-# shift-roster, incharges, duties, tasks, operational-issues). The two
-# nested/grouped reports (operational-areas, individual) deliberately have
-# no entry here: flattening a ShiftBlock -> Area -> Staff tree, or a single
-# person's whole work-plan document, into one generic table would lose the
-# structure that makes them useful — the frontend's own browser Print
-# button (StaffOperationsReportsPanel.tsx) covers those two instead.
+# Printable PDFs — shared by every report above EXCEPT "individual". Most of
+# these (staff-master, shift-roster, incharges, duties, tasks,
+# operational-issues) are flat by nature; operational-areas is nested
+# (ShiftBlock -> Area -> Staff) on screen but its query already produces a
+# pre-flattened "flat_rows" list too — the exact rows its own .xlsx renders
+# — so it gets a PDF the same way, just sourced from that instead of the
+# nested "areas" structure. Only "individual" has no entry here: it's a
+# single person's whole work-plan document (several distinct sub-tables:
+# shifts, duties, in-charge-of areas, tasks), not one table to flatten — the
+# frontend's own browser Print button (StaffOperationsReportsPanel.tsx)
+# covers that one instead.
 # ---------------------------------------------------------------------------
 def _staff_master_row(r: Dict[str, Any]) -> list:
     status_label = "ACTIVE" if r["is_active"] is True else ("INACTIVE" if r["is_active"] is False else "NO LOGIN")
@@ -2376,6 +2380,13 @@ def _task_pdf_row(r: Dict[str, Any]) -> list:
     ]
 
 
+def _operational_area_pdf_row(r: Dict[str, Any]) -> list:
+    return [
+        r["date"], r["shift_name"], r["operational_area"], r["incharges"], r["incharges_phones"],
+        r["staff_name"], r["staff_phone"], r["category"], r["specific_duty"], r["duty_time"], r["location"],
+    ]
+
+
 def _issue_pdf_row(r: Dict[str, Any]) -> list:
     return [
         r["severity"], r["issue_type"].replace("_", " "), r["date"], r["shift_name"],
@@ -2398,6 +2409,15 @@ _FLAT_REPORT_PDF_SPECS: Dict[str, Dict[str, Any]] = {
             "Specific Duty", "Duty Time", "Location", "In-Charge(s)", "Notes / Warning",
         ],
         "row": _shift_roster_row,
+    },
+    "operational-areas": {
+        "title": "OPERATIONAL TEAM & RESPONSIBILITY REPORT",
+        "subtitle": "Workforce Distribution Across Operational Areas, Leads & Specific Duties",
+        "headers": [
+            "Date", "Shift", "Operational Area", "In-Charge Name(s)", "In-Charge Phone(s)",
+            "Staff Name", "Staff Phone", "Category", "Specific Duty", "Duty Time", "Location",
+        ],
+        "row": _operational_area_pdf_row,
     },
     "incharges": {
         "title": "IN-CHARGE REPORT",
@@ -2451,10 +2471,12 @@ def export_flat_report_pdf(
 ):
     """Printable PDF for any of the flat-row Staff Operations reports (see
     _FLAT_REPORT_PDF_SPECS) — each report's own existing query function
-    reused as-is (same filters, same result set as its .xlsx sibling), just
-    piped through pdf_report.build_table_pdf instead of an openpyxl
-    workbook. 404s for operational-areas/individual — see the module
-    docstring above this section for why those aren't here."""
+    reused as-is (same filters, same result set and same columns as its
+    .xlsx sibling — operational-areas uses its query's own "flat_rows", the
+    exact same pre-flattened rows its .xlsx already renders), just piped
+    through pdf_report.build_table_pdf instead of an openpyxl workbook.
+    404s only for "individual" — see the module docstring above this
+    section for why that one stays Print-only."""
     spec = _FLAT_REPORT_PDF_SPECS.get(report)
     if not spec:
         raise HTTPException(404, f"No printable PDF for '{report}' — use the Print button for this report instead.")
@@ -2466,6 +2488,11 @@ def export_flat_report_pdf(
             db, date_from=date_from, date_to=date_to, shift_block_id=shift_block_id,
             staff_id=staff_id, category=category, operational_area_id=operational_area_id,
         )
+    elif report == "operational-areas":
+        rows = _query_operational_area_report(
+            db, target_date=date, shift_block_id=shift_block_id,
+            operational_area_id=operational_area_id, staff_id=staff_id,
+        )["flat_rows"]
     elif report == "incharges":
         rows = _query_incharge_report(db, staff_id, shift_block_id, operational_area_id)
     elif report == "duties":

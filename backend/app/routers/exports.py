@@ -1033,12 +1033,18 @@ def _live_detail_data(section: str, db: Session) -> dict:
                 t.school_code or "—",
                 t.name,
                 "Arrived" if t.has_arrived else "Not Arrived",
+                t.arrival_date.strftime("%d-%b-%Y") if t.arrival_date else "—",
+                t.arrival_time or "—",
+                t.arrival_location or "—",
                 pending_label,
                 f"{registered}/{total_members}/{billed}",
             ])
             row_flags.append(registered > billed)
         return {
-            "columns": ["School Code", "School / Team", "Arrived", "Pending Processes", "R/T/B (Reg./Total/Billed)"],
+            "columns": [
+                "School Code", "School / Team", "Arrived", "Planned Date", "Planned Time",
+                "Planned Location", "Pending Processes", "R/T/B (Reg./Total/Billed)",
+            ],
             "rows": rows,
             "row_flags": row_flags,
         }
@@ -1046,6 +1052,10 @@ def _live_detail_data(section: str, db: Session) -> dict:
     if section == "billing":
         teams = db.query(models.Team).order_by(models.Team.name).all()
         rows = []
+
+        def _fmt_date(d):
+            return d.strftime("%d-%b-%Y") if d else "—"
+
         for t in teams:
             bills = [p for p in t.payments if p.kind == "BILL"]
             pays = [p for p in t.payments if p.kind == "PAYMENT"]
@@ -1053,21 +1063,35 @@ def _live_detail_data(section: str, db: Session) -> dict:
             if not bills and not pays and not refunds:
                 continue
             billed = sum(p.amount for p in bills)
-            paid = sum(p.amount for p in pays)
-            refunded = sum(p.amount for p in refunds)
+            paid_cash = sum(p.amount for p in pays if p.payment_mode == "Cash")
+            paid_upi = sum(p.amount for p in pays if p.payment_mode == "UPI")
+            paid = paid_cash + paid_upi
+            refunded_cash = sum(p.amount for p in refunds if p.payment_mode == "Cash")
+            refunded_upi = sum(p.amount for p in refunds if p.payment_mode == "UPI")
+            refunded = refunded_cash + refunded_upi
             rows.append([
                 t.name,
                 t.school_code or "—",
                 billed,
                 paid,
+                paid_cash,
+                paid_upi,
                 billed - paid,
                 refunded,
+                refunded_cash,
+                refunded_upi,
                 paid - refunded,
+                _fmt_date(max((p.payment_date for p in bills), default=None)),
+                _fmt_date(max((p.payment_date for p in pays), default=None)),
+                _fmt_date(max((p.payment_date for p in refunds), default=None)),
+                len(t.payments),
             ])
         return {
             "columns": [
                 "School / Team", "School Code", "Total Billed (Rs.)", "Total Paid (Rs.)",
-                "Balance Due (Rs.)", "Total Refunded (Rs.)", "Net Collected (Rs.)",
+                "Paid - Cash (Rs.)", "Paid - UPI (Rs.)", "Balance Due (Rs.)", "Total Refunded (Rs.)",
+                "Refunded - Cash (Rs.)", "Refunded - UPI (Rs.)", "Net Collected (Rs.)",
+                "Last Bill Date", "Last Payment Date", "Last Refund Date", "Transactions",
             ],
             "rows": rows,
         }
@@ -1491,6 +1515,15 @@ def _idcard_filename(participant: models.Participant) -> str:
     return f"{participant.registration_no or participant.id}_{slug}.pdf"
 
 
+def _active_participants(participants: list[models.Participant]) -> list[models.Participant]:
+    """Every id_card.py caller below filters through this — an inactive
+    participant (Participant.is_active, toggled only via the admin-
+    password-gated POST /participants/{id}/active) never renders an ID
+    card, in any export, without needing every call site to remember the
+    filter itself."""
+    return [p for p in participants if p.is_active]
+
+
 def _individual_card_files(participants: list[models.Participant], team_by_id: dict[int, models.Team]) -> list[tuple[str, bytes]]:
     """Renders each participant's card as its own standalone one-page PDF
     (same render_id_card_page + build_pdf pairing the single-participant
@@ -1498,7 +1531,7 @@ def _individual_card_files(participants: list[models.Participant], team_by_id: d
     bundling into an individual-cards ZIP."""
     files: list[tuple[str, bytes]] = []
     seen_names: dict[str, int] = {}
-    for p in sorted(participants, key=id_card.sort_key):
+    for p in sorted(_active_participants(participants), key=id_card.sort_key):
         team = team_by_id[p.team_id]
         card = id_card.render_id_card_page(p, team, _photo_path(p))
         pdf = id_card.build_pdf([card])
@@ -1584,7 +1617,7 @@ def _team_card_groups(participants: list[models.Participant], team: models.Team)
     `card_groups` shape build_pdf_sheets expects — resizing each card to the
     sheet's cell size happens there, at whatever layout/dpi is requested, not
     here, since this rendering step is layout-independent."""
-    ordered = sorted(participants, key=id_card.sort_key)
+    ordered = sorted(_active_participants(participants), key=id_card.sort_key)
     groups: list = []
     for _age_group, group_iter in itertools.groupby(ordered, key=lambda p: p.age_group):
         group = list(group_iter)
@@ -1597,6 +1630,8 @@ def export_idcard_participant(participant_id: int, db: Session = Depends(get_db)
     participant = db.get(models.Participant, participant_id)
     if not participant:
         raise HTTPException(404, "Participant not found")
+    if not participant.is_active:
+        raise HTTPException(400, "This participant is inactive — their ID card is not available.")
     card = id_card.render_id_card_page(participant, participant.team, _photo_path(participant))
     pdf = id_card.build_pdf([card])
     return _pdf_response(pdf, f"idcard-{participant.registration_no or participant.id}.pdf")

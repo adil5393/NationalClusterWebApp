@@ -564,6 +564,7 @@ class ParticipantRead(ORMModel, ParticipantBase):
     checked_in_at: Optional[datetime] = None
     photo_url: Optional[str] = None
     weight: Optional[Decimal] = None
+    is_active: bool = True
 
 
 class AttendanceUpdate(BaseModel):
@@ -580,6 +581,14 @@ class WeightUpdate(BaseModel):
     weight: Optional[Decimal] = None
     # Required only when changing an already-recorded weight (the first
     # save is free) — see routers/attendance.py set_weight.
+    admin_password: "str | None" = None
+
+
+class ActiveUpdate(BaseModel):
+    is_active: bool
+    # Required both ways (unlike AttendanceUpdate's one-directional gate) —
+    # see routers/attendance.py set_active: this decides whether a
+    # participant's ID card renders at all, in either direction.
     admin_password: "str | None" = None
 
 

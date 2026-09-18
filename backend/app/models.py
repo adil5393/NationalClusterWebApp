@@ -280,6 +280,16 @@ class Participant(TimestampMixin, Base):
     father_name = Column(String(200))
     date_of_birth = Column(Date)
     student_class = Column(String(40))
+    # Toggled only via POST .../active (routers/attendance.py), gated behind
+    # an admin password in both directions — never the generic participant
+    # edit endpoint, same convention as is_present above. An inactive
+    # participant's ID card is skipped everywhere id_card.py renders one
+    # (single download, team sheets, individual-cards zip, bulk-all
+    # exports) — see routers/exports.py's _active_participants — but they
+    # otherwise stay a normal roster row (still counts for billing/
+    # attendance/match eligibility; this is purely an ID-card opt-out, e.g.
+    # for someone disqualified or who withdrew after registration).
+    is_active = Column(Boolean, nullable=False, default=True, server_default="true")
 
     team = relationship("Team", back_populates="participants")
 
