@@ -178,18 +178,32 @@ export default function Participants() {
     if (!form.full_name?.trim()) return toast.error("Full name is required");
     if (!form.team_id) return toast.error("Team is required");
     try {
+      // Only the fields this form edits (not the whole row — is_present,
+      // weight, photo_url etc. have their own endpoints). Blank -> null so a
+      // cleared DOB/age doesn't fail validation and registration_no's unique
+      // constraint isn't hit by "".
+      const blank = (v?: string | number | null) => (v !== undefined && v !== null && String(v).trim() ? String(v).trim() : null);
       const payload = {
-        ...form,
         team_id: Number(form.team_id),
-        age: form.age ? Number(form.age) : undefined,
+        full_name: form.full_name!.trim(),
+        registration_no: blank(form.registration_no),
+        role: blank(form.role),
+        gender: blank(form.gender),
+        age: form.age ? Number(form.age) : null,
+        age_group: blank(form.age_group),
+        father_name: blank(form.father_name),
+        date_of_birth: blank(form.date_of_birth),
+        student_class: blank(form.student_class),
+        notes: blank(form.notes),
       };
       if (form.id) await api.put(`/participants/${form.id}`, payload);
       else await api.post("/participants", payload);
       toast.success(form.id ? "Participant updated" : "Participant created");
       setOpen(false);
       load();
-    } catch {
-      toast.error("Could not save participant");
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Could not save participant");
     }
   };
 

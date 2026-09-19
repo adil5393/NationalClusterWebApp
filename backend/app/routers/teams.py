@@ -182,8 +182,24 @@ def list_teams(db: Session = Depends(get_db)):
     return teams
 
 
+def _check_team_codes_free(db: Session, data: dict, exclude_id: "int | None" = None) -> None:
+    """school_code / affiliation_number are unique (models.Team) — turn a
+    would-be DB IntegrityError into a readable 409 the form can show."""
+    for field, label in (("school_code", "School Code"), ("affiliation_number", "Affiliation No.")):
+        value = data.get(field)
+        if not value:
+            continue
+        q = db.query(models.Team).filter(getattr(models.Team, field) == value)
+        if exclude_id is not None:
+            q = q.filter(models.Team.id != exclude_id)
+        other = q.first()
+        if other:
+            raise HTTPException(409, f"{label} {value} is already used by team \"{other.name}\"")
+
+
 @router.post("", response_model=schemas.TeamRead, status_code=201)
 def create_team(payload: schemas.TeamCreate, db: Session = Depends(get_db)):
+    _check_team_codes_free(db, payload.model_dump())
     team = models.Team(**payload.model_dump())
     db.add(team)
     db.commit()
@@ -320,6 +336,7 @@ def update_team(team_id: int, payload: schemas.TeamUpdate, db: Session = Depends
     data = payload.model_dump(exclude_unset=True)
     data.pop("last_year_awards", None)
     admin_password = data.pop("admin_password", None)
+    _check_team_codes_free(db, data, exclude_id=team.id)
 
     if data.get("is_active") is False or data.get("has_arrived") is False:
         _require_admin_password(db, admin_password)

@@ -61,6 +61,15 @@ class ORMModel(BaseModel):
 
 
 # --- Teams ---
+def _blank_to_none(v):
+    """Form inputs send "" for an emptied field — for a unique column (school
+    code, registration no.) that would collide across rows, and for a date/int
+    column it fails validation, so blanks are stored as NULL instead."""
+    if isinstance(v, str) and not v.strip():
+        return None
+    return v.strip() if isinstance(v, str) else v
+
+
 class TeamBase(BaseModel):
     name: str
     school: Optional[str] = None
@@ -76,7 +85,12 @@ class TeamBase(BaseModel):
 
 
 class TeamCreate(TeamBase):
-    pass
+    # Organizer-assigned code / school's own affiliation number — both unique
+    # (models.Team), so blanks are normalised to None and dupes 409 in the router.
+    school_code: Optional[str] = None
+    affiliation_number: Optional[str] = None
+
+    _blank_codes = field_validator("school_code", "affiliation_number", mode="before")(lambda cls, v: _blank_to_none(v))
 
 
 class GlobalPhotoLockRead(BaseModel):
@@ -94,6 +108,8 @@ class LastYearAwardEntry(ORMModel):
 
 class TeamUpdate(BaseModel):
     name: Optional[str] = None
+    school_code: Optional[str] = None
+    affiliation_number: Optional[str] = None
     school: Optional[str] = None
     region: Optional[str] = None
     country: Optional[str] = None
@@ -103,6 +119,7 @@ class TeamUpdate(BaseModel):
     member_count: Optional[int] = None
     notes: Optional[str] = None
     stay: Optional[str] = None
+    _blank_codes = field_validator("school_code", "affiliation_number", mode="before")(lambda cls, v: _blank_to_none(v))
     # Toggled directly from the Teams table (see PUT /teams/{id}), never part
     # of the main edit form.
     is_active: Optional[bool] = None
@@ -554,11 +571,15 @@ class ParticipantBase(BaseModel):
 
 
 class ParticipantCreate(ParticipantBase):
-    pass
+    # Unique (models.Participant.registration_no) — blank -> None, dupes 409 in the router.
+    registration_no: Optional[str] = None
+
+    _blank_reg = field_validator("registration_no", "date_of_birth", "age", mode="before")(lambda cls, v: _blank_to_none(v))
 
 
 class ParticipantUpdate(BaseModel):
     team_id: Optional[int] = None
+    registration_no: Optional[str] = None
     full_name: Optional[str] = None
     gender: Optional[str] = None
     age: Optional[int] = None
@@ -568,6 +589,8 @@ class ParticipantUpdate(BaseModel):
     father_name: Optional[str] = None
     date_of_birth: Optional[date] = None
     student_class: Optional[str] = None
+
+    _blank_reg = field_validator("registration_no", "date_of_birth", "age", mode="before")(lambda cls, v: _blank_to_none(v))
 
 
 class ParticipantRead(ORMModel, ParticipantBase):

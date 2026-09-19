@@ -16,10 +16,23 @@ def list_participants(team_id: int | None = Query(None), db: Session = Depends(g
     return q.order_by(models.Participant.full_name).all()
 
 
+def _check_registration_no_free(db: Session, registration_no: "str | None", exclude_id: "int | None" = None) -> None:
+    """registration_no is unique (models.Participant) — turn a would-be DB
+    IntegrityError into a readable 409 the form can show."""
+    if not registration_no:
+        return
+    q = db.query(models.Participant).filter(models.Participant.registration_no == registration_no)
+    if exclude_id is not None:
+        q = q.filter(models.Participant.id != exclude_id)
+    if q.first():
+        raise HTTPException(409, f"Registration No. {registration_no} is already assigned to another participant")
+
+
 @router.post("", response_model=schemas.ParticipantRead, status_code=201)
 def create_participant(payload: schemas.ParticipantCreate, db: Session = Depends(get_db)):
     if not db.get(models.Team, payload.team_id):
         raise HTTPException(404, "Team not found")
+    _check_registration_no_free(db, payload.registration_no)
     p = models.Participant(**payload.model_dump())
     db.add(p)
     db.commit()
@@ -32,7 +45,12 @@ def update_participant(participant_id: int, payload: schemas.ParticipantUpdate, 
     p = db.get(models.Participant, participant_id)
     if not p:
         raise HTTPException(404, "Participant not found")
-    for k, v in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+    if data.get("team_id") is not None and not db.get(models.Team, data["team_id"]):
+        raise HTTPException(404, "Team not found")
+    if "registration_no" in data:
+        _check_registration_no_free(db, data["registration_no"], exclude_id=p.id)
+    for k, v in data.items():
         setattr(p, k, v)
     db.commit()
     db.refresh(p)

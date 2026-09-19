@@ -525,7 +525,26 @@ export default function AdminTeams() {
   const save = async () => {
     if (!form.name?.trim()) return toast.error("Team name is required");
     try {
-      const payload = { ...form, member_count: Number(form.member_count) || 0 };
+      // Send only the fields this form edits — spreading the whole team row
+      // would also resend is_active/has_arrived (a false value trips the
+      // admin-password gate on an ordinary detail edit) and last_year_awards.
+      // Blank text -> null so unique codes don't collide on "" and clearing
+      // a field actually clears it.
+      const blank = (v?: string | null) => (v && v.trim() ? v.trim() : null);
+      const payload = {
+        name: form.name!.trim(),
+        school_code: blank(form.school_code),
+        affiliation_number: blank(form.affiliation_number),
+        school: blank(form.school),
+        region: blank(form.region),
+        country: blank(form.country),
+        contact_name: blank(form.contact_name),
+        contact_email: blank(form.contact_email),
+        contact_phone: blank(form.contact_phone),
+        member_count: Number(form.member_count) || 0,
+        stay: blank(form.stay),
+        notes: blank(form.notes),
+      };
       if (form.id) await api.put(`/teams/${form.id}`, payload);
       else await api.post("/teams", payload);
       toast.success(form.id ? "Team updated" : "Team created");
@@ -1199,6 +1218,26 @@ export default function AdminTeams() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
+              <Label>School Code</Label>
+              <Input
+                value={form.school_code ?? ""}
+                onChange={(e) => set("school_code", e.target.value)}
+                placeholder="Assigned by organizer, e.g. C8-014"
+                data-testid="team-school-code-input"
+              />
+            </div>
+            <div>
+              <Label>CBSE Affiliation No.</Label>
+              <Input
+                value={form.affiliation_number ?? ""}
+                onChange={(e) => set("affiliation_number", e.target.value)}
+                placeholder="e.g. 2130850"
+                data-testid="team-affiliation-input"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
               <Label>School Affiliation</Label>
               <Input
                 value={form.school ?? ""}
@@ -1251,6 +1290,16 @@ export default function AdminTeams() {
                 placeholder="+91 98765 00000"
               />
             </div>
+          </div>
+          <div>
+            <Label>Contact Email</Label>
+            <Input
+              type="email"
+              value={form.contact_email ?? ""}
+              onChange={(e) => set("contact_email", e.target.value)}
+              placeholder="coach@school.edu"
+              data-testid="team-email-input"
+            />
           </div>
           <div>
             <Label>Stay (Fooding / Lodging)</Label>
