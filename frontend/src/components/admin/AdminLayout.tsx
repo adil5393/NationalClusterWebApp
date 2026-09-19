@@ -38,6 +38,7 @@ import {
   MapPinned,
   ClipboardList,
   HeartHandshake,
+  ShieldCheck,
   IdCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -104,6 +105,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/admin/staff", label: "Staff Operations", icon: HardHat, moduleKey: "staff" },
       { to: "/admin/volunteers", label: "Volunteers", icon: HeartHandshake, moduleKey: "volunteers" },
+      { to: "/admin/officials", label: "Officials", icon: ShieldCheck, moduleKey: "officials" },
       { to: "/admin/duties", label: "Staff Duties", icon: ClipboardList, moduleKey: "staff" },
       { to: "/admin/accounts", label: "Accounts & Access", icon: UserCog, moduleKey: "accounts" },
       { to: "/admin/staff-map", label: "Staff Live Map", icon: MapPinned, moduleKey: "staff_map" },

@@ -15,11 +15,13 @@ const COLUMNS: Record<string, string> = {
   teams: "name (required), school, region, country, member_count",
   participants: "team (required, must match a team name), full_name (required), role, gender, age",
   volunteers: "full_name (required), student_class, gender, phone, email, notes",
+  officials: "full_name (required), designation, organization, official_id_no, gender, phone, email, notes",
 };
 
 // Only types with a generated example spreadsheet get a "Download Template" link.
 const TEMPLATE_URLS: Partial<Record<string, string>> = {
   volunteers: "/volunteers/template.xlsx",
+  officials: "/officials/template.xlsx",
 };
 
 export function ImportDialog({
@@ -30,7 +32,7 @@ export function ImportDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  type: "teams" | "participants" | "volunteers";
+  type: "teams" | "participants" | "volunteers" | "officials";
   onDone: () => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
@@ -47,7 +49,7 @@ export function ImportDialog({
       // volunteers.py owns its own import endpoint (/api/volunteers/import)
       // rather than living in imports.py alongside teams/participants, so
       // it needs its own URL shape here instead of the shared /import/{type}.
-      const url = type === "volunteers" ? "/volunteers/import" : `/import/${type}`;
+      const url = type === "volunteers" || type === "officials" ? `/${type}/import` : `/import/${type}`;
       const r = await api.post(url, fd, { headers: { "Content-Type": undefined } as any });
       setResult(r.data);
       toast.success(`Imported ${r.data.created} ${type}`);

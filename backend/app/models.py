@@ -379,6 +379,28 @@ class Volunteer(TimestampMixin, Base):
         return self.organizer_users[0].username if self.organizer_users else None
 
 
+class Official(TimestampMixin, Base):
+    """CBSE officials who monitor the championship — a flat roster like
+    Volunteer, independent of any Team, with no self-service login. Gets its
+    own ID card (see id_card.py's render_official_id_card) showing name,
+    designation, organization, official ID no. and mobile, matching backend/assets/templates/official_id_card_template.png."""
+    __tablename__ = "officials"
+    id = Column(Integer, primary_key=True)
+    full_name = Column(String(200), nullable=False)
+    designation = Column(String(120))
+    organization = Column(String(200))
+    official_id_no = Column(String(80))
+    gender = Column(String(20))
+    phone = Column(String(60))
+    email = Column(String(200))
+    notes = Column(Text)
+    photo_filename = Column(String(120))
+
+    @property
+    def photo_url(self) -> "str | None":
+        return f"/api/assets/officials/{self.photo_filename}" if self.photo_filename else None
+
+
 class Building(TimestampMixin, Base):
     __tablename__ = "buildings"
     id = Column(Integer, primary_key=True)

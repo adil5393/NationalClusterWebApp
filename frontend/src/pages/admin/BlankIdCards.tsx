@@ -9,21 +9,39 @@ import { Input, Label, Select } from "@/components/ui/input";
 // many sheets/pages will this need" hint below. Update this alongside
 // id_card.py if those layouts ever change.
 const SHEETS = [
-  { value: "a7", label: "Single card page (7.9 x 11.0cm) — one card per page", cardsPerSheet: 1 },
-  { value: "a4", label: "A4 (21 x 29.7cm) grid sheet", cardsPerSheet: 9 },
-  { value: "12x18", label: "12in x 18in print-shop stock grid sheet", cardsPerSheet: 16 },
+  { value: "a7", label: "Single card page", cardsPerSheet: 1 },
+  { value: "a4", label: "A4 (21 x 29.7cm) grid sheet", cardsPerSheet: 6 },
+  { value: "12x18", label: "12in x 18in print-shop stock grid sheet", cardsPerSheet: 12 },
 ] as const;
+
+type Role = "Coach" | "Manager" | "Participant" | "Volunteer" | "Official";
+
+// Physical single-card page size per card type (id_card.py CARD_*_CM /
+// STAFF_PAGE_*_CM).
+const SINGLE_CARD_SIZE: Record<Role, string> = {
+  Coach: "8.2 x 11.5cm",
+  Manager: "8.2 x 11.5cm",
+  Participant: "6.6 x 11.5cm",
+  Volunteer: "6.6 x 11.5cm",
+  Official: "8.2 x 11.5cm",
+};
+
+// Coach/Manager/Official (8.2 x 11.5cm) cards fit fewer per sheet than participant/
+// volunteer (6.6 x 11.5cm) ones — mirrors id_card.staff_sheet_layout.
+const STAFF_PER_SHEET: Record<string, number> = { a4: 4, "12x18": 9 };
 
 const MAX_COUNT = 500;
 
 export default function BlankIdCards() {
-  const [role, setRole] = useState<"Coach" | "Manager">("Coach");
+  const [role, setRole] = useState<Role>("Coach");
   const [sheet, setSheet] = useState<(typeof SHEETS)[number]["value"]>("a7");
   const [count, setCount] = useState("25");
 
   const countNum = Number(count);
   const valid = Number.isFinite(countNum) && countNum > 0 && countNum <= MAX_COUNT;
-  const cardsPerSheet = SHEETS.find((s) => s.value === sheet)?.cardsPerSheet ?? 1;
+  const isStaff = role === "Coach" || role === "Manager" || role === "Official";
+  const cardsPerSheet =
+    isStaff && STAFF_PER_SHEET[sheet] ? STAFF_PER_SHEET[sheet] : SHEETS.find((s) => s.value === sheet)?.cardsPerSheet ?? 1;
   const sheetsNeeded = valid ? Math.ceil(countNum / cardsPerSheet) : 0;
 
   const downloadUrl = `${BASE_URL}/api/export/idcards/blank/staff.pdf?role=${role}&count=${countNum || 0}&sheet=${sheet}`;
@@ -35,10 +53,10 @@ export default function BlankIdCards() {
           PRE-PRINTING STOCK
         </span>
         <h1 className="mt-1 font-heading text-2xl sm:text-3xl font-black tracking-tight text-white">
-          Blank Coach / Manager ID Card Stock
+          Blank ID Card Stock
         </h1>
         <p className="mt-1 text-xs sm:text-sm text-slate-400 font-body">
-          Download a sheet of blank Coach or Manager cards — no name, photo, or team data filled in — for
+          Download a sheet of blank Participant, Volunteer, Official, Coach or Manager cards — no name, photo, or team data filled in — for
           pre-printing before anyone's been assigned a card.
         </p>
       </div>
@@ -47,7 +65,10 @@ export default function BlankIdCards() {
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <Label>Card Type</Label>
-            <Select value={role} onChange={(e) => setRole(e.target.value as "Coach" | "Manager")} data-testid="blank-idcard-role-select">
+            <Select value={role} onChange={(e) => setRole(e.target.value as Role)} data-testid="blank-idcard-role-select">
+              <option value="Participant">Participant</option>
+              <option value="Volunteer">Volunteer</option>
+              <option value="Official">Official</option>
               <option value="Coach">Coach</option>
               <option value="Manager">Manager</option>
             </Select>
@@ -57,7 +78,7 @@ export default function BlankIdCards() {
             <Select value={sheet} onChange={(e) => setSheet(e.target.value as (typeof SHEETS)[number]["value"])} data-testid="blank-idcard-sheet-select">
               {SHEETS.map((s) => (
                 <option key={s.value} value={s.value}>
-                  {s.label}
+                  {s.value === "a7" ? `Single card page (${SINGLE_CARD_SIZE[role]}) — one card per page` : s.label}
                 </option>
               ))}
             </Select>

@@ -676,6 +676,38 @@ class VolunteerCredentialResult(BaseModel):
     login_password: str
 
 
+# --- Officials (CBSE officials monitoring the championship) ---
+class OfficialBase(BaseModel):
+    full_name: str
+    designation: Optional[str] = None
+    organization: Optional[str] = None
+    official_id_no: Optional[str] = None
+    gender: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class OfficialCreate(OfficialBase):
+    pass
+
+
+class OfficialUpdate(BaseModel):
+    full_name: Optional[str] = None
+    designation: Optional[str] = None
+    organization: Optional[str] = None
+    official_id_no: Optional[str] = None
+    gender: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class OfficialRead(ORMModel, OfficialBase):
+    id: int
+    photo_url: Optional[str] = None
+
+
 # --- Transport ---
 class DriverBase(BaseModel):
     name: str
@@ -963,6 +995,7 @@ ORGANIZER_MODULES = {
     "matches": "Matches & Fixtures",
     "attendance": "Attendance",
     "volunteers": "Volunteers",
+    "officials": "Officials",
 }
 PERMISSION_LEVELS = ["view", "edit"]  # a module key missing from `permissions` means no access
 

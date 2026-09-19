@@ -1330,7 +1330,7 @@ export default function AdminTeams() {
             <IdCard className="h-5 w-5 text-gold shrink-0" />
             <div className="min-w-0">
               <p className="text-sm font-heading font-bold text-white">A4 Sheet</p>
-              <p className="text-xs text-slate-400">9 cards per page — standard printer paper</p>
+              <p className="text-xs text-slate-400">6 cards per page — standard printer paper</p>
             </div>
           </a>
           <a
@@ -1342,7 +1342,7 @@ export default function AdminTeams() {
             <Printer className="h-5 w-5 text-gold shrink-0" />
             <div className="min-w-0">
               <p className="text-sm font-heading font-bold text-white">12x18in Sheet</p>
-              <p className="text-xs text-slate-400">16 cards per page — for print-shop stock</p>
+              <p className="text-xs text-slate-400">12 cards per page — for print-shop stock</p>
             </div>
           </a>
           <a

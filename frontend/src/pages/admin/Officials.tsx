@@ -5,14 +5,13 @@ import {
   Trash2,
   Upload,
   Download,
-  HeartHandshake,
+  ShieldCheck,
   Search,
   IdCard,
   ImageOff,
   Camera,
   Printer,
   FileArchive,
-  KeyRound,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
@@ -25,120 +24,107 @@ import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { useModuleAccess } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
-interface Volunteer {
+interface Official {
   id: number;
   full_name: string;
-  student_class?: string;
+  designation?: string;
+  organization?: string;
+  official_id_no?: string;
   gender?: string;
   phone?: string;
   email?: string;
   notes?: string;
   photo_url?: string | null;
-  login_username?: string | null;
 }
 
-const empty: Partial<Volunteer> = { full_name: "" };
+const empty: Partial<Official> = { full_name: "" };
 
-export default function Volunteers() {
-  const { canEdit } = useModuleAccess("volunteers");
-  const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
+export default function Officials() {
+  const { canEdit } = useModuleAccess("officials");
+  const [officials, setOfficials] = useState<Official[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [downloadAllOpen, setDownloadAllOpen] = useState(false);
-  const [form, setForm] = useState<Partial<Volunteer>>(empty);
-  const [creatingCredentialId, setCreatingCredentialId] = useState<number | null>(null);
-  const [newLogin, setNewLogin] = useState<{ full_name: string; username: string; password: string } | null>(null);
+  const [form, setForm] = useState<Partial<Official>>(empty);
 
   const load = () => {
     setLoading(true);
     api
-      .get<Volunteer[]>("/volunteers")
-      .then((r) => setVolunteers(r.data))
+      .get<Official[]>("/officials")
+      .then((r) => setOfficials(r.data))
       .finally(() => setLoading(false));
   };
   useEffect(load, []);
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
-    if (!s) return volunteers;
-    return volunteers.filter(
+    if (!s) return officials;
+    return officials.filter(
       (v) =>
         v.full_name.toLowerCase().includes(s) ||
-        (v.student_class || "").toLowerCase().includes(s) ||
+        (v.designation || "").toLowerCase().includes(s) ||
+        (v.organization || "").toLowerCase().includes(s) ||
+        (v.official_id_no || "").toLowerCase().includes(s) ||
         (v.phone || "").toLowerCase().includes(s) ||
         (v.email || "").toLowerCase().includes(s),
     );
-  }, [volunteers, search]);
+  }, [officials, search]);
 
-  const withPhotoCount = volunteers.filter((v) => v.photo_url).length;
+  const withPhotoCount = officials.filter((v) => v.photo_url).length;
 
   const save = async () => {
     if (!form.full_name?.trim()) return toast.error("Full name is required");
     try {
-      if (form.id) await api.put(`/volunteers/${form.id}`, form);
-      else await api.post("/volunteers", form);
-      toast.success(form.id ? "Volunteer updated" : "Volunteer created");
+      if (form.id) await api.put(`/officials/${form.id}`, form);
+      else await api.post("/officials", form);
+      toast.success(form.id ? "Official updated" : "Official created");
       setOpen(false);
       load();
     } catch {
-      toast.error("Could not save volunteer");
+      toast.error("Could not save official");
     }
   };
 
   const remove = async (id: number) => {
-    if (!confirm("Delete this volunteer?")) return;
+    if (!confirm("Delete this official?")) return;
     try {
-      await api.delete(`/volunteers/${id}`);
-      toast.success("Volunteer deleted");
+      await api.delete(`/officials/${id}`);
+      toast.success("Official deleted");
       load();
     } catch {
-      toast.error("Could not delete volunteer");
+      toast.error("Could not delete official");
     }
   };
 
-  const uploadPhoto = async (v: Volunteer, file: File) => {
+  const uploadPhoto = async (v: Official, file: File) => {
     const fd = new FormData();
     fd.append("file", file);
     try {
-      const r = await api.post<Volunteer>(`/volunteers/${v.id}/photo`, fd, {
+      const r = await api.post<Official>(`/officials/${v.id}/photo`, fd, {
         headers: { "Content-Type": undefined } as any,
       });
-      setVolunteers((rows) => rows.map((row) => (row.id === v.id ? r.data : row)));
+      setOfficials((rows) => rows.map((row) => (row.id === v.id ? r.data : row)));
       toast.success("Photo uploaded");
     } catch {
       toast.error("Could not upload photo");
     }
   };
 
-  const removePhoto = async (v: Volunteer) => {
+  const removePhoto = async (v: Official) => {
     if (!confirm(`Remove ${v.full_name}'s photo?`)) return;
     try {
-      await api.delete(`/volunteers/${v.id}/photo`);
-      setVolunteers((rows) => rows.map((row) => (row.id === v.id ? { ...row, photo_url: null } : row)));
+      await api.delete(`/officials/${v.id}/photo`);
+      setOfficials((rows) => rows.map((row) => (row.id === v.id ? { ...row, photo_url: null } : row)));
       toast.success("Photo removed");
     } catch {
       toast.error("Could not remove photo");
     }
   };
 
-  const createCredential = async (v: Volunteer) => {
-    setCreatingCredentialId(v.id);
-    try {
-      const r = await api.post<{ login_username: string; login_password: string }>(`/volunteers/${v.id}/credential`);
-      setNewLogin({ full_name: v.full_name, username: r.data.login_username, password: r.data.login_password });
-      toast.success(`Login created for ${v.full_name}`);
-      load();
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail ?? "Could not create credential");
-    } finally {
-      setCreatingCredentialId(null);
-    }
-  };
-
   return (
-    <div data-testid="admin-volunteers" className="space-y-6">
+    <div data-testid="admin-officials" className="space-y-6">
       {/* PAGE HEADER */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between border-b border-white/10 pb-5">
         <div>
@@ -146,10 +132,10 @@ export default function Volunteers() {
             EVENT VOLUNTEER ROSTER
           </span>
           <h1 className="mt-1 font-heading text-2xl sm:text-3xl font-black tracking-tight text-white">
-            Volunteers
+            Officials
           </h1>
           <p className="mt-1 text-xs sm:text-sm text-slate-400 font-body">
-            {volunteers.length} registered volunteers ·{" "}
+            {officials.length} registered officials ·{" "}
             <span className="font-bold text-emerald-400 font-mono">{withPhotoCount} photos uploaded</span>
           </p>
         </div>
@@ -160,7 +146,7 @@ export default function Volunteers() {
               variant="outline"
               size="sm"
               onClick={() => setImportOpen(true)}
-              data-testid="import-volunteers-btn"
+              data-testid="import-officials-btn"
               className="text-xs font-semibold"
             >
               <Upload className="h-3.5 w-3.5 text-gold" /> Import Excel/CSV
@@ -170,9 +156,9 @@ export default function Volunteers() {
             variant="outline"
             size="sm"
             onClick={() => setDownloadAllOpen(true)}
-            data-testid="download-all-volunteers-btn"
+            data-testid="download-all-officials-btn"
             className="text-xs font-semibold"
-            disabled={volunteers.length === 0}
+            disabled={officials.length === 0}
           >
             <Download className="h-3.5 w-3.5 text-gold" /> Download All ID Cards
           </Button>
@@ -184,10 +170,10 @@ export default function Volunteers() {
                 setForm(empty);
                 setOpen(true);
               }}
-              data-testid="add-volunteer-btn"
+              data-testid="add-official-btn"
               className="text-xs font-extrabold"
             >
-              <Plus className="h-4 w-4" /> Add Volunteer
+              <Plus className="h-4 w-4" /> Add Official
             </Button>
           )}
         </div>
@@ -199,24 +185,24 @@ export default function Volunteers() {
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name, class, phone, or email…"
+          placeholder="Search by name, designation, organization, ID no., phone, or email…"
           className="pl-9"
-          data-testid="volunteer-search-input"
+          data-testid="official-search-input"
         />
       </div>
 
       {loading ? (
-        <Spinner label="Loading volunteers…" />
+        <Spinner label="Loading officials…" />
       ) : filtered.length === 0 ? (
         <EmptyState
-          icon={HeartHandshake}
-          title="No volunteers found"
-          hint={volunteers.length === 0 ? "Add a volunteer or import a spreadsheet to get started." : "No volunteers match your search."}
+          icon={ShieldCheck}
+          title="No officials found"
+          hint={officials.length === 0 ? "Add a official or import a spreadsheet to get started." : "No officials match your search."}
           action={
             canEdit &&
-            volunteers.length === 0 && (
+            officials.length === 0 && (
               <Button variant="gold" size="sm" onClick={() => { setForm(empty); setOpen(true); }}>
-                <Plus className="h-4 w-4" /> Add Volunteer
+                <Plus className="h-4 w-4" /> Add Official
               </Button>
             )
           }
@@ -228,17 +214,18 @@ export default function Volunteers() {
               <TH>#</TH>
               <TH>Photo</TH>
               <TH>Full Name</TH>
-              <TH>Class</TH>
+              <TH>Designation</TH>
+              <TH>Organization</TH>
+              <TH>Official ID No.</TH>
               <TH>Gender</TH>
               <TH>Phone</TH>
               <TH>Email</TH>
-              <TH>Account</TH>
               <TH className="text-right">Actions</TH>
             </TR>
           </THead>
           <TBody>
             {filtered.map((v, i) => (
-              <TR key={v.id} data-testid={`volunteer-row-${v.id}`}>
+              <TR key={v.id} data-testid={`official-row-${v.id}`}>
                 <TD className="text-slate-500 font-mono text-xs">{i + 1}</TD>
                 <TD>
                   {v.photo_url ? (
@@ -249,39 +236,19 @@ export default function Volunteers() {
                     />
                   ) : (
                     <div className="h-9 w-9 rounded-full bg-white/5 border border-white/10 grid place-items-center text-slate-500">
-                      <HeartHandshake className="h-4 w-4" />
+                      <ShieldCheck className="h-4 w-4" />
                     </div>
                   )}
                 </TD>
                 <TD className="font-bold text-white text-sm">{v.full_name}</TD>
-                <TD className="text-slate-300 font-body text-xs">{v.student_class || "—"}</TD>
+                <TD className="text-slate-300 font-body text-xs">{v.designation || "—"}</TD>
+                <TD className="text-slate-300 font-body text-xs">{v.organization || "—"}</TD>
+                <TD className="font-mono text-xs text-slate-400">{v.official_id_no || "—"}</TD>
                 <TD className="text-slate-300 font-body text-xs">{v.gender || "—"}</TD>
                 <TD className="font-mono text-xs text-slate-400">{v.phone || "—"}</TD>
                 <TD className="font-mono text-xs text-slate-400">{v.email || "—"}</TD>
-                <TD>
-                  {v.login_username ? (
-                    <div className="flex items-center gap-1.5">
-                      <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 shadow-emerald-400/50 shadow-xs" />
-                      <span className="font-mono text-xs text-emerald-400 font-bold">{v.login_username}</span>
-                    </div>
-                  ) : (
-                    <span className="text-[11px] font-mono text-slate-500">No login</span>
-                  )}
-                </TD>
                 <TD className="text-right">
                   <div className="flex items-center justify-end gap-1">
-                    {canEdit && !v.login_username && (
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => createCredential(v)}
-                        disabled={creatingCredentialId === v.id}
-                        data-testid={`create-credential-${v.id}`}
-                        title="Create Portal Login"
-                      >
-                        <KeyRound className="h-3.5 w-3.5 text-gold" />
-                      </Button>
-                    )}
                     {canEdit && (
                       <label
                         className="inline-flex items-center justify-center gap-2 rounded-md font-body tracking-wide transition-colors h-8 w-8 p-0 cursor-pointer text-slate-300 hover:bg-white/10 hover:text-white"
@@ -302,7 +269,7 @@ export default function Volunteers() {
                       </label>
                     )}
                     <a
-                      href={`${BASE_URL}/api/volunteers/${v.id}/idcard.pdf`}
+                      href={`${BASE_URL}/api/officials/${v.id}/idcard.pdf`}
                       className={cn(
                         "inline-flex items-center justify-center gap-2 rounded-md font-body tracking-wide transition-colors h-8 w-8 p-0",
                         v.photo_url
@@ -333,8 +300,8 @@ export default function Volunteers() {
                           setForm(v);
                           setOpen(true);
                         }}
-                        data-testid={`edit-volunteer-${v.id}`}
-                        title="Edit Volunteer"
+                        data-testid={`edit-official-${v.id}`}
+                        title="Edit Official"
                       >
                         <Pencil className="h-3.5 w-3.5 text-slate-300" />
                       </Button>
@@ -344,8 +311,8 @@ export default function Volunteers() {
                         variant="ghost"
                         size="icon-sm"
                         onClick={() => remove(v.id)}
-                        data-testid={`delete-volunteer-${v.id}`}
-                        title="Delete Volunteer"
+                        data-testid={`delete-official-${v.id}`}
+                        title="Delete Official"
                       >
                         <Trash2 className="h-3.5 w-3.5 text-red-400" />
                       </Button>
@@ -362,8 +329,8 @@ export default function Volunteers() {
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
-        title={form.id ? "Edit Volunteer" : "Add Volunteer"}
-        testId="volunteer-dialog"
+        title={form.id ? "Edit Official" : "Add Official"}
+        testId="official-dialog"
       >
         <div className="space-y-4">
           <div>
@@ -371,16 +338,34 @@ export default function Volunteers() {
             <Input
               value={form.full_name || ""}
               onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
-              data-testid="volunteer-name-input"
+              data-testid="official-name-input"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>Class</Label>
+              <Label>Designation</Label>
               <Input
-                value={form.student_class || ""}
-                onChange={(e) => setForm((f) => ({ ...f, student_class: e.target.value }))}
-                data-testid="volunteer-class-input"
+                value={form.designation || ""}
+                onChange={(e) => setForm((f) => ({ ...f, designation: e.target.value }))}
+                data-testid="official-designation-input"
+              />
+            </div>
+            <div>
+              <Label>Organization</Label>
+              <Input
+                value={form.organization || ""}
+                onChange={(e) => setForm((f) => ({ ...f, organization: e.target.value }))}
+                data-testid="official-organization-input"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Official ID No.</Label>
+              <Input
+                value={form.official_id_no || ""}
+                onChange={(e) => setForm((f) => ({ ...f, official_id_no: e.target.value }))}
+                data-testid="official-id-no-input"
               />
             </div>
             <div>
@@ -388,7 +373,7 @@ export default function Volunteers() {
               <Select
                 value={form.gender || ""}
                 onChange={(e) => setForm((f) => ({ ...f, gender: e.target.value }))}
-                data-testid="volunteer-gender-select"
+                data-testid="official-gender-select"
               >
                 <option value="">—</option>
                 <option value="Male">Male</option>
@@ -399,11 +384,11 @@ export default function Volunteers() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>Phone</Label>
+              <Label>Mobile No.</Label>
               <Input
                 value={form.phone || ""}
                 onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-                data-testid="volunteer-phone-input"
+                data-testid="official-phone-input"
               />
             </div>
             <div>
@@ -412,7 +397,7 @@ export default function Volunteers() {
                 type="email"
                 value={form.email || ""}
                 onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                data-testid="volunteer-email-input"
+                data-testid="official-email-input"
               />
             </div>
           </div>
@@ -421,98 +406,62 @@ export default function Volunteers() {
             <Textarea
               value={form.notes || ""}
               onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-              data-testid="volunteer-notes-input"
+              data-testid="official-notes-input"
             />
           </div>
           <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
             <Button variant="outline" size="sm" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button variant="gold" size="sm" onClick={save} data-testid="save-volunteer-btn">
+            <Button variant="gold" size="sm" onClick={save} data-testid="save-official-btn">
               Save
             </Button>
           </div>
         </div>
       </Dialog>
 
-      <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} type="volunteers" onDone={load} />
-
-      {/* NEW LOGIN CREDENTIALS DISPLAY DIALOG */}
-      <Dialog
-        open={Boolean(newLogin)}
-        onClose={() => setNewLogin(null)}
-        title="Volunteer Portal Login Provisioned"
-        testId="new-volunteer-login-dialog"
-      >
-        {newLogin && (
-          <div className="space-y-4">
-            <p className="text-xs text-slate-300 font-body leading-relaxed">
-              Portal credentials for <strong>{newLogin.full_name}</strong> have been generated. Share these with
-              the volunteer now — the temporary password cannot be retrieved once closed.
-            </p>
-            <div className="space-y-2.5 rounded-lg border border-gold/30 bg-gold/5 p-4">
-              <div>
-                <Label>Username</Label>
-                <p className="font-mono text-sm font-bold text-white" data-testid="new-volunteer-login-username">
-                  {newLogin.username}
-                </p>
-              </div>
-              <div>
-                <Label>Password</Label>
-                <p className="font-mono text-sm font-bold text-white" data-testid="new-volunteer-login-password">
-                  {newLogin.password}
-                </p>
-              </div>
-            </div>
-            <div className="flex justify-end pt-2 border-t border-white/10">
-              <Button variant="gold" size="sm" onClick={() => setNewLogin(null)} data-testid="close-new-volunteer-login">
-                Dismiss &amp; Copy
-              </Button>
-            </div>
-          </div>
-        )}
-      </Dialog>
+      <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} type="officials" onDone={load} />
 
       {/* DOWNLOAD ALL ID CARDS DIALOG */}
       <Dialog
         open={downloadAllOpen}
         onClose={() => setDownloadAllOpen(false)}
-        title="Download All Volunteer ID Cards"
-        testId="volunteer-idcard-download-dialog"
+        title="Download All Official ID Cards"
+        testId="official-idcard-download-dialog"
       >
         <div className="space-y-3">
           <p className="text-xs text-slate-400 font-body">
-            Choose how to download every volunteer's card, sorted by name.
+            Choose how to download every official's card, sorted by name.
           </p>
           <a
-            href={`${BASE_URL}/api/volunteers/idcards/all.pdf`}
+            href={`${BASE_URL}/api/officials/idcards/all.pdf`}
             onClick={() => setDownloadAllOpen(false)}
             className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-3.5 hover:border-gold/40 hover:bg-white/[0.06] transition-colors"
-            data-testid="volunteer-idcard-download-a4"
+            data-testid="official-idcard-download-a4"
           >
             <IdCard className="h-5 w-5 text-gold shrink-0" />
             <div className="min-w-0">
               <p className="text-sm font-heading font-bold text-white">A4 Sheet</p>
-              <p className="text-xs text-slate-400">6 cards per page — standard printer paper</p>
+              <p className="text-xs text-slate-400">4 cards per page — standard printer paper</p>
             </div>
           </a>
           <a
-            href={`${BASE_URL}/api/volunteers/idcards/all/sheet-12x18.pdf`}
+            href={`${BASE_URL}/api/officials/idcards/all/sheet-12x18.pdf`}
             onClick={() => setDownloadAllOpen(false)}
             className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-3.5 hover:border-gold/40 hover:bg-white/[0.06] transition-colors"
-            data-testid="volunteer-idcard-download-12x18"
+            data-testid="official-idcard-download-12x18"
           >
             <Printer className="h-5 w-5 text-gold shrink-0" />
             <div className="min-w-0">
               <p className="text-sm font-heading font-bold text-white">12x18in Sheet</p>
-              <p className="text-xs text-slate-400">12 cards per page — for print-shop stock</p>
+              <p className="text-xs text-slate-400">9 cards per page — for print-shop stock</p>
             </div>
           </a>
           <a
-            href={`${BASE_URL}/api/volunteers/idcards/all/individual.zip`}
+            href={`${BASE_URL}/api/officials/idcards/all/individual.zip`}
             onClick={() => setDownloadAllOpen(false)}
             className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-3.5 hover:border-gold/40 hover:bg-white/[0.06] transition-colors"
-            data-testid="volunteer-idcard-download-individual"
+            data-testid="official-idcard-download-individual"
           >
             <FileArchive className="h-5 w-5 text-gold shrink-0" />
             <div className="min-w-0">

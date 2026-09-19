@@ -56,12 +56,12 @@ TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "assets" / "templates" 
 # PRINT_SIZE_PX/PRINT_DPI), so the measured coordinates never need rescaling.
 TEMPLATE_SIZE = (1024, 1536)
 
-# Physical card size the org wants printed: 7cm wide x 10cm tall. 300 DPI is
+# Physical card size the org wants printed: 6.6cm wide x 11.5cm tall. 300 DPI is
 # standard print quality; PDF page size comes from pixel-size / DPI, so this
 # pins the exact physical output regardless of the template's native pixel
-# aspect ratio (1024:1536 = 2:3 ≈ 0.667, vs. the requested 7:10 = 0.7 — close
-# enough that scaling the whole composited card to this pixel size is an
-# imperceptible stretch, not a visible distortion).
+# aspect ratio (1024:1536 = 2:3 ≈ 0.667, vs. the requested 6.6:11.5 ≈ 0.574 — a
+# ~14% horizontal squeeze of the whole composited card, text and photo
+# included, so the layout stays proportionally intact).
 PRINT_DPI = 300
 # Used only for the "every participant, tournament-wide" bulk export — at
 # full 300 DPI that export is impractically large (measured 200MB+ at
@@ -71,9 +71,9 @@ BULK_PRINT_DPI = 150
 _CM_TO_IN = 1 / 2.54
 
 # Standalone single-card page size (used by the per-participant download —
-# one card fills the whole page, at its real 7x10cm print size).
-CARD_WIDTH_CM = 7.0
-CARD_HEIGHT_CM = 10.0
+# one card fills the whole page, at its real 6.6x11.5cm print size).
+CARD_WIDTH_CM = 6.6
+CARD_HEIGHT_CM = 11.5
 
 
 def _print_size_px(dpi: int) -> tuple[int, int]:
@@ -81,16 +81,15 @@ def _print_size_px(dpi: int) -> tuple[int, int]:
 
 
 # --- Sheet layouts (per-team / all-teams downloads) ------------------------
-# The org wants at least 9 cards per A4 portrait sheet, so cards there are
-# printed smaller than the standalone single-card download: a 3x3 grid of
-# 6.5x9cm cards, packed edge-to-edge with zero margin/gutter (cols/rows are
+# Sheet cards are the same 6.6x11.5cm as the standalone single-card download: a
+# 3x2 grid on A4 (6 per sheet), packed edge-to-edge with zero margin/gutter (cols/rows are
 # each capped so cards never overlap: cols*card_width_cm <= width_cm and
 # rows*card_height_cm <= height_cm) — any leftover slack that doesn't evenly
-# divide the sheet (e.g. A4's 3x6.5=19.5 of 21cm) sits unused past the last
+# divide the sheet (e.g. A4's 2x11.5=23 of 29.7cm rows) sits unused past the last
 # column/row rather than being spread out as margins.
 #
 # A second, larger layout (SHEET_12X18) is for print shops running bigger
-# stock — same 6.5x9cm card size, just more of them per page. It's a
+# stock — same 6.6x11.5cm card size, just more of them per page. It's a
 # dataclass (rather than another set of bare module constants like the A4
 # numbers above) so a second sheet size didn't mean duplicating every
 # _a4_size_px/_sheet_card_size_px helper for it too.
@@ -108,11 +107,11 @@ class SheetLayout:
         return self.cols * self.rows
 
 
-A4_SHEET = SheetLayout(width_cm=21.0, height_cm=29.7, cols=3, rows=3, card_width_cm=6.5, card_height_cm=9.0)
-# 12in x 18in print-shop stock (30.48 x 45.72cm), portrait, same 6.5x9cm
-# card as the A4 sheet: 4 cols (4*6.5=26 of 30.48cm) x 4 rows (4*9=36 of
-# 45.72cm), 16 cards/sheet.
-SHEET_12X18 = SheetLayout(width_cm=12 * 2.54, height_cm=18 * 2.54, cols=4, rows=4, card_width_cm=6.5, card_height_cm=9.0)
+A4_SHEET = SheetLayout(width_cm=21.0, height_cm=29.7, cols=3, rows=2, card_width_cm=6.6, card_height_cm=11.5)
+# 12in x 18in print-shop stock (30.48 x 45.72cm), portrait, same 6.6x11.5cm
+# card as the A4 sheet: 4 cols (4*6.6=26.4 of 30.48cm) x 3 rows (3*11.5=34.5 of
+# 45.72cm — a 4th row wouldn't fit), 12 cards/sheet.
+SHEET_12X18 = SheetLayout(width_cm=12 * 2.54, height_cm=18 * 2.54, cols=4, rows=3, card_width_cm=6.6, card_height_cm=11.5)
 
 
 def _sheet_size_px(layout: SheetLayout, dpi: int) -> tuple[int, int]:
@@ -203,28 +202,24 @@ def build_pdf_sheets(
     return buf.getvalue()
 
 
-# Coach/Manager cards render bigger than participant cards wherever they're
-# tiled onto a shared sheet — +0.5cm on each dimension over a participant
-# layout's own card size (e.g. 7.0x9.5cm on A4_SHEET/SHEET_12X18's
-# 6.5x9.0cm), same bump the standalone single-card page got. It's a flat
-# offset off whichever layout is passed in (not a hardcoded absolute size)
-# so it stays correct if the participant card size ever changes.
-STAFF_SHEET_CARD_BUMP_CM = 0.5
+# Coach/Manager cards are a fixed 8.2 x 11.5cm wherever they're tiled onto a
+# sheet (matching STAFF_PAGE_WIDTH_CM/HEIGHT_CM below, the standalone page).
+STAFF_SHEET_CARD_WIDTH_CM = 8.2
+STAFF_SHEET_CARD_HEIGHT_CM = 11.5
 
 
 def staff_sheet_layout(base: SheetLayout) -> SheetLayout:
     """The Coach/Manager equivalent of a participant SheetLayout: same
-    physical page (width_cm/height_cm), but the card grows by
-    STAFF_SHEET_CARD_BUMP_CM on each dimension and cols/rows are
-    recomputed by floor division — the bigger card doesn't necessarily tile
-    the page into the same grid as the participant card did, and packing
-    stays edge-to-edge with zero gap/margin (see SheetLayout's own
+    physical page (width_cm/height_cm), but with the fixed staff card size
+    and cols/rows recomputed by floor division — the staff card doesn't
+    tile the page into the same grid as the participant card does, and
+    packing stays edge-to-edge with zero gap/margin (see SheetLayout's own
     docstring), so cols/rows are capped to whatever actually fits without
     overlapping. Used both for a pure Coach/Manager sheet (see
     routers/exports.py's export_blank_staff_idcards) and internally by
     build_pdf_sheets_with_staff_tail below."""
-    card_w = base.card_width_cm + STAFF_SHEET_CARD_BUMP_CM
-    card_h = base.card_height_cm + STAFF_SHEET_CARD_BUMP_CM
+    card_w = STAFF_SHEET_CARD_WIDTH_CM
+    card_h = STAFF_SHEET_CARD_HEIGHT_CM
     cols = max(1, int(base.width_cm // card_w))
     rows = max(1, int(base.height_cm // card_h))
     return SheetLayout(width_cm=base.width_cm, height_cm=base.height_cm, cols=cols, rows=rows, card_width_cm=card_w, card_height_cm=card_h)
@@ -237,12 +232,11 @@ def build_pdf_sheets_with_staff_tail(
     dpi: int = PRINT_DPI,
 ) -> bytes:
     """Like build_pdf_sheets, but `staff_cards` (Coach/Manager) are drawn at
-    layout's card size + STAFF_SHEET_CARD_BUMP_CM on each dimension instead
-    of layout's own participant card size, so they read as visibly bigger on
-    the page. They still keep filling whatever room is left below the last
+    the fixed staff card size (STAFF_SHEET_CARD_WIDTH_CM x
+    STAFF_SHEET_CARD_HEIGHT_CM) instead of layout's own participant card size. They still keep filling whatever room is left below the last
     participant row on the final participant page — rather than always
     forcing a fresh page — whenever that leftover space is tall enough for
-    at least one row of the bigger cards; any staff cards that don't fit
+    at least one row of the staff cards; any staff cards that don't fit
     there spill onto their own additional page(s), packed edge-to-edge at
     the bigger size with no participant cards on them.
 
@@ -305,7 +299,7 @@ def build_pdf_sheets_with_staff_tail(
 
     # Whatever staff cards didn't fit on the last participant page (or all
     # of them, if there were no participant cards at all) get their own
-    # page(s), packed at the bigger size only.
+    # page(s), packed at the staff size only.
     for start in range(0, len(remaining_staff), big.cards_per_sheet):
         _draw_big(remaining_staff[start : start + big.cards_per_sheet], 0)
         pdf.showPage()
@@ -490,7 +484,7 @@ def render_id_card(participant, team, photo_path: "Path | None" = None) -> Image
 
 
 def render_id_card_page(participant, team, photo_path: "Path | None" = None, dpi: int = PRINT_DPI) -> Image.Image:
-    """A single card filling its own full 7x10cm page — what the
+    """A single card filling its own full 6.6x11.5cm page — what the
     per-participant download uses."""
     return render_id_card(participant, team, photo_path).resize(_print_size_px(dpi), Image.LANCZOS)
 
@@ -528,9 +522,72 @@ def render_volunteer_id_card(volunteer, photo_path: "Path | None" = None) -> Ima
 
 
 def render_volunteer_id_card_page(volunteer, photo_path: "Path | None" = None, dpi: int = PRINT_DPI) -> Image.Image:
-    """A single volunteer card filling its own full 7x10cm page — what the
+    """A single volunteer card filling its own full 6.6x11.5cm page — what the
     per-volunteer download uses."""
     return render_volunteer_id_card(volunteer, photo_path).resize(_print_size_px(dpi), Image.LANCZOS)
+
+
+# --- Official ID cards (CBSE officials monitoring the game) -----------------
+# Its own designed template (backend/assets/templates/official_id_card_template
+# .png, 1024x1536 like the participant/volunteer one) with Name / Designation /
+# Organization / Official ID No. / Mobile No. filled in and Signature left
+# blank for physical signing. Printed at the Coach/Manager size
+# (STAFF_PAGE_WIDTH_CM x STAFF_PAGE_HEIGHT_CM, and tiled with
+# staff_sheet_layout on sheets), not the participant/volunteer size. Photo box
+# and underline rows measured off the template like everything above.
+OFFICIAL_TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "assets" / "templates" / "official_id_card_template.png"
+OFFICIAL_PHOTO_BOX = (370, 410, 654, 716)
+OFFICIAL_VALUE_X = 395
+OFFICIAL_VALUE_MAX_WIDTH = 555
+OFFICIAL_FIELD_LINES = [
+    ("full_name", [924]),
+    ("designation", [985]),
+    ("organization", [1048]),
+    ("official_id_no", [1113]),
+    ("phone", [1180]),
+]
+
+
+def render_official_id_card(official, photo_path: "Path | None" = None) -> Image.Image:
+    """Composites one official's card at the template's native resolution
+    (TEMPLATE_SIZE) — mirrors render_volunteer_id_card."""
+    card = Image.open(OFFICIAL_TEMPLATE_PATH).convert("RGB").resize(TEMPLATE_SIZE)
+    _paste_photo(card, photo_path, box=OFFICIAL_PHOTO_BOX)
+
+    draw = ImageDraw.Draw(card)
+    values = {
+        "full_name": official.full_name,
+        "designation": official.designation,
+        "organization": official.organization,
+        "official_id_no": official.official_id_no,
+        "phone": official.phone,
+    }
+    for key, baseline_ys in OFFICIAL_FIELD_LINES:
+        _draw_value(draw, baseline_ys, values.get(key), x=OFFICIAL_VALUE_X, max_width=OFFICIAL_VALUE_MAX_WIDTH)
+
+    return card
+
+
+def render_official_id_card_page(official, photo_path: "Path | None" = None, dpi: int = PRINT_DPI) -> Image.Image:
+    """A single official card filling its own full page at the Coach/Manager
+    size (STAFF_PAGE_WIDTH_CM x STAFF_PAGE_HEIGHT_CM)."""
+    return render_official_id_card(official, photo_path).resize(_staff_page_size_px(dpi), Image.LANCZOS)
+
+
+def render_blank_participant_card(kind: str) -> Image.Image:
+    """The bare Participant or Volunteer template — no photo, no text — at
+    native TEMPLATE_SIZE, for pre-printing blank card stock (see
+    routers/exports.py's blank-bulk download)."""
+    path = {"Volunteer": VOLUNTEER_TEMPLATE_PATH, "Official": OFFICIAL_TEMPLATE_PATH}.get(kind, TEMPLATE_PATH)
+    return Image.open(path).convert("RGB").resize(TEMPLATE_SIZE)
+
+
+def render_blank_participant_card_page(kind: str, dpi: int = PRINT_DPI) -> Image.Image:
+    """A single blank Participant/Volunteer card filling its own full 6.6x11.5cm
+    page — same page treatment as render_id_card_page. An Official card uses
+    the Coach/Manager page size instead, like render_official_id_card_page."""
+    size = _staff_page_size_px(dpi) if kind == "Official" else _print_size_px(dpi)
+    return render_blank_participant_card(kind).resize(size, Image.LANCZOS)
 
 
 def build_pdf(cards: list[Image.Image], dpi: int = PRINT_DPI) -> bytes:
@@ -569,14 +626,13 @@ STAFF_FIELD_LINES = [
 ]
 
 # Physical page size for a *single* Coach/Manager card download — a custom
-# small-badge size (not a fixed named paper size like A7; it started at A7's
-# 7.4 x 10.5cm and has grown in 5mm-per-dimension bumps since, currently
-# 7.9 x 11.0cm — change these two constants directly for any future resize).
-# The card art (STAFF_TEMPLATE_SIZE, ~0.8 aspect) is contain-fit and centered
-# on this page rather than stretched to match its own aspect, so nothing
-# distorts regardless of what this size is tuned to.
-STAFF_PAGE_WIDTH_CM = 7.9
-STAFF_PAGE_HEIGHT_CM = 11.0
+# small-badge size (not a fixed named paper size), currently 8.2 x 11.5cm —
+# change these two constants directly for any future resize. The card art
+# (STAFF_TEMPLATE_SIZE, 0.8 aspect vs. this page's ~0.713) is scaled to fill
+# the page exactly, a ~11% horizontal squeeze of the whole card, so it has no
+# blank margins and the layout stays proportionally intact.
+STAFF_PAGE_WIDTH_CM = 8.2
+STAFF_PAGE_HEIGHT_CM = 11.5
 
 
 def _staff_page_size_px(dpi: int) -> tuple[int, int]:
@@ -627,9 +683,7 @@ def render_staff_id_card(coach, team, photo_path: "Path | None" = None) -> Image
 def render_staff_id_card_page(coach, team, photo_path: "Path | None" = None, dpi: int = PRINT_DPI) -> Image.Image:
     """A single filled card centered on its own full page — what the
     per-coach/manager download uses (see STAFF_PAGE_WIDTH_CM/HEIGHT_CM)."""
-    card = render_staff_id_card(coach, team, photo_path)
-    page_w, page_h = _staff_page_size_px(dpi)
-    return _contain_fit_page(card, page_w, page_h)
+    return render_staff_id_card(coach, team, photo_path).resize(_staff_page_size_px(dpi), Image.LANCZOS)
 
 
 def render_blank_staff_card(role: str) -> Image.Image:
@@ -643,6 +697,4 @@ def render_blank_staff_card(role: str) -> Image.Image:
 def render_blank_staff_card_page(role: str, dpi: int = PRINT_DPI) -> Image.Image:
     """A single blank card centered on its own full page — the "one per
     page" bulk-blank option, same page treatment as render_staff_id_card_page."""
-    card = render_blank_staff_card(role)
-    page_w, page_h = _staff_page_size_px(dpi)
-    return _contain_fit_page(card, page_w, page_h)
+    return render_blank_staff_card(role).resize(_staff_page_size_px(dpi), Image.LANCZOS)
