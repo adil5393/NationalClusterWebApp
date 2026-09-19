@@ -38,6 +38,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/meta";
+import { MatchSlotEditor } from "@/components/admin/MatchSlotEditor";
 import { useModuleAccess, useMe, type Me } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
@@ -79,6 +80,7 @@ interface MatchT {
   mat_id?: number | null;
   mat_name?: string | null;
   scheduled_at?: string | null;
+  scheduled_end_at?: string | null;
   status: string;
   team_a_score: number;
   team_b_score: number;
@@ -233,6 +235,7 @@ function RoundMatchesList({
   onOpenConsole,
   onRemove,
   onAssignStaff,
+  onScheduleSaved,
 }: {
   matches: MatchT[];
   presentCounts: Record<number, { present: number; total: number }>;
@@ -241,6 +244,7 @@ function RoundMatchesList({
   onOpenConsole: (id: number) => void;
   onRemove: (id: number) => void;
   onAssignStaff: (m: MatchT) => void;
+  onScheduleSaved: () => void;
 }) {
   const me = useMe();
   return (
@@ -341,6 +345,12 @@ function RoundMatchesList({
               </span>
             </div>
 
+            {canEdit && (
+              <div className="border-t border-white/5 pt-2">
+                <MatchSlotEditor match={m} onSaved={onScheduleSaved} />
+              </div>
+            )}
+
             {m.winner_team_name && (
               <p className="text-xs text-emerald-400 font-heading font-bold pt-1">
                 Winner: {m.winner_team_name}
@@ -357,8 +367,7 @@ function RoundMatchesList({
             <TR>
               <TH>Match Fixture</TH>
               <TH>Squad Attendance</TH>
-              <TH>Court Venue</TH>
-              <TH>Scheduled Time</TH>
+              <TH className="min-w-[210px]">Court &amp; Schedule</TH>
               <TH>Status</TH>
               <TH>Score</TH>
               <TH className="text-right">Actions</TH>
@@ -397,12 +406,16 @@ function RoundMatchesList({
                     </div>
                   )}
                 </TD>
-                <TD className="text-slate-300 font-body text-xs">
-                  {m.venue_name ?? "—"}
-                  {m.mat_name && <span className="ml-1.5 text-emerald-400 font-bold">· {m.mat_name}</span>}
-                </TD>
-                <TD className="text-slate-400 font-mono text-xs">
-                  {m.scheduled_at ? formatDate(m.scheduled_at) : "—"}
+                <TD className="text-slate-300 font-body text-xs min-w-[210px]">
+                  {canEdit ? (
+                    <MatchSlotEditor match={m} onSaved={onScheduleSaved} />
+                  ) : (
+                    <>
+                      {m.venue_name ?? "—"}
+                      {m.mat_name && <span className="ml-1.5 text-emerald-400 font-bold">· {m.mat_name}</span>}
+                      <div className="text-slate-400 font-mono">{m.scheduled_at ? formatDate(m.scheduled_at) : "—"}</div>
+                    </>
+                  )}
                 </TD>
                 <TD>
                   <Badge tone={matchStatusTone(m)} size="sm">
@@ -1463,6 +1476,7 @@ export default function Matches() {
                                     onOpenConsole={setConsoleMatchId}
                                     onRemove={removeMatch}
                                     onAssignStaff={setAssignStaffMatch}
+                                    onScheduleSaved={() => selectedId && loadDetail(selectedId)}
                                   />
                                 );
                               }
@@ -1499,6 +1513,7 @@ export default function Matches() {
                                             onOpenConsole={setConsoleMatchId}
                                             onRemove={removeMatch}
                                             onAssignStaff={setAssignStaffMatch}
+                                            onScheduleSaved={() => selectedId && loadDetail(selectedId)}
                                           />
                                         )}
                                       </div>
@@ -4199,6 +4214,7 @@ function PoolDetailDialog({
                     <TR>
                       <TH className="w-10">#</TH>
                       <TH>Fixture</TH>
+                      {canEdit && <TH className="min-w-[210px]">Court &amp; Schedule</TH>}
                       <TH>Status</TH>
                       <TH>Score</TH>
                       <TH className="text-right">Actions</TH>
@@ -4214,6 +4230,11 @@ function PoolDetailDialog({
                         <TD className="font-heading font-bold text-white text-xs">
                           {m.team_a_name} vs {m.team_b_name}
                         </TD>
+                        {canEdit && (
+                          <TD className="min-w-[210px]">
+                            <MatchSlotEditor match={m} onSaved={() => load(true)} />
+                          </TD>
+                        )}
                         <TD>
                           <Badge tone={matchStatusTone(m)} size="sm">
                             {matchStatusLabel(m)}
