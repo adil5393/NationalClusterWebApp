@@ -41,6 +41,7 @@ const Staff = lazy(() => import("@/pages/admin/Staff"));
 const Volunteers = lazy(() => import("@/pages/admin/Volunteers"));
 const Officials = lazy(() => import("@/pages/admin/Officials"));
 const BlankIdCards = lazy(() => import("@/pages/admin/BlankIdCards"));
+const IdCardBacks = lazy(() => import("@/pages/admin/IdCardBacks"));
 const Duties = lazy(() => import("@/pages/admin/Duties"));
 const MyWork = lazy(() => import("@/pages/admin/MyWork"));
 const MyIdCard = lazy(() => import("@/pages/admin/MyIdCard"));
@@ -154,6 +155,7 @@ export default function App() {
           <Route path="/admin/volunteers" element={<Volunteers />} />
           <Route path="/admin/officials" element={<Officials />} />
           <Route path="/admin/blank-id-cards" element={<BlankIdCards />} />
+          <Route path="/admin/id-card-back" element={<IdCardBacks />} />
           <Route path="/admin/accommodation" element={<Accommodation />} />
           <Route path="/admin/room-map" element={<RoomMap />} />
           <Route path="/admin/food" element={<ComingSoon title="Food Planning" />} />

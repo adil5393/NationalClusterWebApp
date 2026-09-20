@@ -590,6 +590,26 @@ def render_blank_participant_card_page(kind: str, dpi: int = PRINT_DPI) -> Image
     return render_blank_participant_card(kind).resize(size, Image.LANCZOS)
 
 
+# --- ID card back (shared, static artwork) ----------------------------------
+# One 1024x1536 back-side graphic (backend/assets/templates/
+# id_card_back_template.png), no per-person data. Printed in two physical
+# sizes to match the fronts: "participant" (Participant/Volunteer,
+# CARD_WIDTH_CM x CARD_HEIGHT_CM) and "staff" (Coach/Manager/Official,
+# STAFF_PAGE_WIDTH_CM x STAFF_PAGE_HEIGHT_CM, with staff_sheet_layout grids).
+BACK_TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "assets" / "templates" / "id_card_back_template.png"
+
+
+def render_id_back() -> Image.Image:
+    return Image.open(BACK_TEMPLATE_PATH).convert("RGB").resize(TEMPLATE_SIZE)
+
+
+def render_id_back_page(size: str, dpi: int = PRINT_DPI) -> Image.Image:
+    """One back filling its own page at the front-card size for `size`
+    ("participant" or "staff")."""
+    px = _staff_page_size_px(dpi) if size == "staff" else _print_size_px(dpi)
+    return render_id_back().resize(px, Image.LANCZOS)
+
+
 def build_pdf(cards: list[Image.Image], dpi: int = PRINT_DPI) -> bytes:
     if not cards:
         raise ValueError("build_pdf requires at least one card")

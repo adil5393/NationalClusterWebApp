@@ -1807,6 +1807,27 @@ def export_blank_staff_idcards(
     return _pdf_response(pdf, f"blank-{role.lower()}-idcards-{sheet}.pdf")
 
 
+@router.get("/idcards/back.pdf", dependencies=[Depends(require_module("teams"))])
+def export_idcard_back(
+    size: str = Query("participant", pattern="^(participant|staff)$"),
+    count: int = Query(1, gt=0, le=500),
+    sheet: str = Query("a7", pattern="^(a4|12x18|a7)$"),
+):
+    """The shared ID card back (id_card.render_id_back), `count` copies, in
+    the size matching the fronts: "participant" (Participant/Volunteer,
+    6.6x11.5cm) or "staff" (Coach/Manager/Official, 8.2x11.5cm). "a7" = one
+    per page at that card size; "a4"/"12x18" tile onto the same grids the
+    fronts use (staff_sheet_layout for "staff")."""
+    if sheet == "a7":
+        pdf = id_card.build_pdf([id_card.render_id_back_page(size)] * count)
+    else:
+        layout = id_card.A4_SHEET if sheet == "a4" else id_card.SHEET_12X18
+        if size == "staff":
+            layout = id_card.staff_sheet_layout(layout)
+        pdf = id_card.build_pdf_sheets([[id_card.render_id_back()] * count], layout=layout, dpi=id_card.PRINT_DPI)
+    return _pdf_response(pdf, f"idcard-back-{size}-{sheet}.pdf")
+
+
 @router.get("/payments.xlsx", dependencies=[Depends(require_module("teams"))])
 def export_payments_xlsx(db: Session = Depends(get_db)):
     """Per-team registration-fee ledger — total billed, total paid (split
