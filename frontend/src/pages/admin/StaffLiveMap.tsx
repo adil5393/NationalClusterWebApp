@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Circle, useMap } from "react-leaflet";
 import MarkerClusterGroup from "react-leaflet-cluster";
 import type { Map as LeafletMap, Marker as LeafletMarker, MarkerClusterGroup as LeafletMarkerClusterGroup } from "leaflet";
 import L from "leaflet";
@@ -92,11 +92,57 @@ function freshnessDivIcon(freshness: Freshness) {
   });
 }
 
-// Roughly the geographic center of India — a reasonable default view before
-// any staff location has ever loaded; overridden the moment real data with
-// coordinates arrives (see the auto-fit effect below).
-const DEFAULT_CENTER: [number, number] = [22.9734, 78.6569];
-const DEFAULT_ZOOM = 5;
+// The two campuses the map is scoped to. Only devices within CAMPUS_RADIUS_M
+// of the selected campus's point are shown (and the map itself is locked to
+// that area) — never the wider region/country.
+const CAMPUSES = {
+  new: { label: "New Campus", center: [25.895018, 81.959751] as [number, number] },
+  old: { label: "Old Campus", center: [25.912844, 81.988178] as [number, number] },
+};
+type CampusKey = keyof typeof CAMPUSES;
+const CAMPUS_RADIUS_M = 200;
+
+function distanceMeters(a: [number, number], lat: number, lng: number): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat - a[0]);
+  const dLng = toRad(lng - a[1]);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a[0])) * Math.cos(toRad(lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function formatDistance(m: number): string {
+  return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`;
+}
+
+// The admin's own position — a blue dot with a white ring, distinct from the
+// freshness-coloured staff dots.
+const MY_LOCATION_ICON = L.divIcon({
+  className: "",
+  html: `<div style="width:18px;height:18px;border-radius:9999px;background:#3b82f6;border:3px solid white;box-shadow:0 0 0 4px rgba(59,130,246,0.35)"></div>`,
+  iconSize: [18, 18],
+  iconAnchor: [9, 9],
+  popupAnchor: [0, -12],
+});
+
+// Frames the selected campus's 200 m circle and locks panning/zooming-out to
+// just around it (react-leaflet's MapContainer props are initial-only, so
+// changing campus has to go through the map instance).
+function CampusView({ center }: { center: [number, number] }) {
+  const map = useMap();
+  useEffect(() => {
+    // LatLng.toBounds works without a map (a detached L.circle().getBounds()
+    // throws, since Circle needs a map to project its radius).
+    const bounds = L.latLng(center).toBounds(CAMPUS_RADIUS_M * 2);
+    map.setMinZoom(1);
+    map.setMaxBounds(undefined as any);
+    map.fitBounds(bounds, { padding: [20, 20], animate: false });
+    map.setMinZoom(map.getZoom() - 1);
+    map.setMaxBounds(bounds.pad(0.75));
+  }, [map, center]);
+  return null;
+}
+
 const POLL_MS = 60_000;
 
 export default function StaffLiveMap() {
@@ -109,11 +155,15 @@ export default function StaffLiveMap() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [freshnessFilter, setFreshnessFilter] = useState<"" | Freshness>("");
   const [panelOpen, setPanelOpen] = useState(true);
+  const [campus, setCampus] = useState<CampusKey>("new");
+  // The viewing admin's own position (browser geolocation), so every device
+  // can show how far it is from them. null until the browser reports one.
+  const [myPos, setMyPos] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
+  const [geoError, setGeoError] = useState<string | null>(null);
 
   const mapRef = useRef<LeafletMap | null>(null);
   const clusterRef = useRef<LeafletMarkerClusterGroup | null>(null);
   const markerRefs = useRef<Map<number, LeafletMarker>>(new Map());
-  const hasAutoFitted = useRef(false);
 
   useEffect(() => {
     // GET /staff-locations is admin-only server-side (see backend
@@ -148,41 +198,71 @@ export default function StaffLiveMap() {
     };
   }, [isAdmin]);
 
-  // Fit the map to whatever staff locations exist, but only once — every
-  // subsequent poll refresh must not yank the view out from under someone
-  // who's since panned/zoomed around the map themselves.
   useEffect(() => {
-    if (hasAutoFitted.current || !mapRef.current) return;
-    const withLoc = rows.filter((r) => r.latitude != null && r.longitude != null);
-    if (withLoc.length === 0) return;
-    hasAutoFitted.current = true;
-    const bounds = L.latLngBounds(withLoc.map((r) => [r.latitude as number, r.longitude as number]));
-    mapRef.current.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
-  }, [rows]);
+    if (!isAdmin) return;
+    if (!("geolocation" in navigator)) {
+      setGeoError("This browser doesn't support location.");
+      return;
+    }
+    const id = navigator.geolocation.watchPosition(
+      (pos) => {
+        setMyPos({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy });
+        setGeoError(null);
+      },
+      (err) =>
+        setGeoError(
+          err.code === err.PERMISSION_DENIED
+            ? "Location permission is blocked — allow it in the browser to see distances from you."
+            : "Couldn't get your location — distances from you are unavailable.",
+        ),
+      { enableHighAccuracy: true, maximumAge: 15_000, timeout: 20_000 },
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, [isAdmin]);
+
+  const distanceFromMe = (row: StaffLocationRow): number | null =>
+    myPos && row.latitude != null && row.longitude != null
+      ? distanceMeters([myPos.lat, myPos.lng], row.latitude, row.longitude)
+      : null;
+
+  // Only devices inside the selected campus's radius are shown anywhere on
+  // this page (map, list and counts) — a device elsewhere, or one that has
+  // never reported a location, isn't part of the campus view.
+  const campusCenter = CAMPUSES[campus].center;
+  const inRange = useMemo(
+    () =>
+      rows.filter(
+        (r) =>
+          r.latitude != null &&
+          r.longitude != null &&
+          distanceMeters(campusCenter, r.latitude, r.longitude) <= CAMPUS_RADIUS_M,
+      ),
+    [rows, campusCenter],
+  );
 
   const categories = useMemo(
-    () => [...new Set(rows.map((r) => r.category).filter((c): c is string => !!c))].sort(),
-    [rows],
+    () => [...new Set(inRange.map((r) => r.category).filter((c): c is string => !!c))].sort(),
+    [inRange],
   );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return rows.filter((r) => {
+    return inRange.filter((r) => {
       if (q && !r.staff_name.toLowerCase().includes(q)) return false;
       if (categoryFilter && r.category !== categoryFilter) return false;
       if (freshnessFilter && getFreshness(r.updated_at) !== freshnessFilter) return false;
       return true;
     });
-  }, [rows, search, categoryFilter, freshnessFilter]);
+  }, [inRange, search, categoryFilter, freshnessFilter]);
 
   const withLocation = filtered.filter((r) => r.latitude != null && r.longitude != null);
   const grouped = useMemo(() => groupStaffByCategory(filtered), [filtered]);
 
   const counts = useMemo(() => {
     const c: Record<Freshness, number> = { recent: 0, older: 0, stale: 0, very_stale: 0, unavailable: 0 };
-    for (const r of rows) c[getFreshness(r.updated_at)]++;
+    for (const r of inRange) c[getFreshness(r.updated_at)]++;
     return c;
-  }, [rows]);
+  }, [inRange]);
 
   const focusStaff = (row: StaffLocationRow) => {
     if (row.latitude == null || row.longitude == null) return;
@@ -226,6 +306,19 @@ export default function StaffLiveMap() {
         <h1 className="mt-1 flex items-center gap-2 font-heading text-2xl sm:text-3xl font-black tracking-tight text-white">
           <MapPinned className="h-6 w-6 text-gold" /> Staff Live Map
         </h1>
+        <p className="mt-1 text-xs text-slate-400 font-body" data-testid="staff-map-range-summary">
+          {CAMPUSES[campus].label}: showing {inRange.length} of {rows.length} staff devices within {CAMPUS_RADIUS_M} m of the campus.
+        </p>
+        <p className="mt-0.5 text-xs font-body" data-testid="staff-map-my-location">
+          {myPos ? (
+            <span className="text-blue-400">
+              Your location: {formatDistance(distanceMeters(campusCenter, myPos.lat, myPos.lng))} from the {CAMPUSES[campus].label}{" "}
+              centre — distances below are measured from you.
+            </span>
+          ) : (
+            <span className="text-slate-500">{geoError ?? "Locating you…"}</span>
+          )}
+        </p>
         <p className="mt-1.5 flex items-start gap-1.5 text-xs sm:text-sm text-slate-400 font-body">
           <ShieldAlert className="h-4 w-4 shrink-0 text-slate-500 mt-0.5" />
           Approximate location of staff accounts only — this is operational tracking for coordinating duty
@@ -241,6 +334,18 @@ export default function StaffLiveMap() {
 
       {/* FILTER BAR */}
       <div className="flex flex-wrap items-center gap-2.5">
+        <Select
+          value={campus}
+          onChange={(e) => setCampus(e.target.value as CampusKey)}
+          className="w-full sm:w-44"
+          data-testid="staff-map-campus-select"
+        >
+          {(Object.keys(CAMPUSES) as CampusKey[]).map((k) => (
+            <option key={k} value={k}>
+              {CAMPUSES[k].label}
+            </option>
+          ))}
+        </Select>
         <div className="w-full sm:w-64">
           <SearchInput
             placeholder="Search staff by name…"
@@ -288,10 +393,12 @@ export default function StaffLiveMap() {
 
       {/* MAP + STAFF SIDE PANEL */}
       <div className="flex min-h-[65vh] flex-1 gap-3">
-        <div className="relative min-w-0 flex-1 overflow-hidden rounded-xl border border-white/10">
+        {/* isolate + z-0: Leaflet's own panes/controls use z-index 400-1000, which
+            would otherwise paint over the fixed sidebar (z-50) and sticky header (z-30). */}
+        <div className="relative isolate z-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-white/10">
           <MapContainer
-            center={DEFAULT_CENTER}
-            zoom={DEFAULT_ZOOM}
+            center={campusCenter}
+            zoom={17}
             scrollWheelZoom
             style={{ height: "100%", width: "100%", minHeight: "65vh" }}
             ref={mapRef}
@@ -300,6 +407,22 @@ export default function StaffLiveMap() {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             />
+            <CampusView center={campusCenter} />
+            <Circle
+              center={campusCenter}
+              radius={CAMPUS_RADIUS_M}
+              pathOptions={{ color: "#d4a017", weight: 2, fillOpacity: 0.06, dashArray: "6 6" }}
+            />
+            {myPos && (
+              <Marker position={[myPos.lat, myPos.lng]} icon={MY_LOCATION_ICON} zIndexOffset={1000}>
+                <Popup>
+                  <div className="text-xs">
+                    <p className="font-bold text-sm">You</p>
+                    <p className="text-slate-500">~{Math.round(myPos.accuracy)}m accuracy</p>
+                  </div>
+                </Popup>
+              </Marker>
+            )}
             <MarkerClusterGroup ref={clusterRef} chunkedLoading>
               {withLocation.map((row) => {
                 const freshness = getFreshness(row.updated_at);
@@ -326,6 +449,9 @@ export default function StaffLiveMap() {
                         <p className="font-semibold" style={{ color: FRESHNESS_DOT[freshness] }}>
                           {timeAgoLabel(row.updated_at)}
                         </p>
+                        {distanceFromMe(row) != null && (
+                          <p className="font-semibold text-blue-600">{formatDistance(distanceFromMe(row)!)} from you</p>
+                        )}
                         <p className="text-slate-500">Approximate location</p>
                         {row.accuracy != null && (
                           <p className="text-slate-500">~{Math.round(row.accuracy)}m accuracy</p>
@@ -366,7 +492,14 @@ export default function StaffLiveMap() {
           {panelOpen && (
             <div className="flex-1 overflow-y-auto p-2.5 space-y-4">
               {filtered.length === 0 ? (
-                <EmptyState title="No staff match" hint="Try clearing search or filters." />
+                <EmptyState
+                  title={inRange.length === 0 ? "No devices in range" : "No staff match"}
+                  hint={
+                    inRange.length === 0
+                      ? `No staff device is within ${CAMPUS_RADIUS_M} m of the ${CAMPUSES[campus].label}.`
+                      : "Try clearing search or filters."
+                  }
+                />
               ) : (
                 grouped.map(([category, members]) => (
                   <div key={category} className="space-y-1.5">
@@ -401,6 +534,9 @@ export default function StaffLiveMap() {
                               </span>
                               <span className="block truncate text-[10px] text-slate-400">
                                 {timeAgoLabel(row.updated_at)}
+                                {distanceFromMe(row) != null && (
+                                  <span className="font-semibold text-blue-400"> · {formatDistance(distanceFromMe(row)!)} away</span>
+                                )}
                               </span>
                             </span>
                           </button>
@@ -419,7 +555,14 @@ export default function StaffLiveMap() {
       <div className="lg:hidden rounded-xl border border-white/10 bg-obsidian-900 p-3 space-y-3">
         <h2 className="font-heading text-xs font-bold uppercase tracking-wider text-white">Staff Locations</h2>
         {filtered.length === 0 ? (
-          <EmptyState title="No staff match" hint="Try clearing search or filters." />
+          <EmptyState
+            title={inRange.length === 0 ? "No devices in range" : "No staff match"}
+            hint={
+              inRange.length === 0
+                ? `No staff device is within ${CAMPUS_RADIUS_M} m of the ${CAMPUSES[campus].label}.`
+                : "Try clearing search or filters."
+            }
+          />
         ) : (
           grouped.map(([category, members]) => (
             <div key={category} className="space-y-1.5">
@@ -449,6 +592,9 @@ export default function StaffLiveMap() {
                         <span className="block truncate text-xs font-bold text-white">{row.staff_name}</span>
                         <span className="block truncate text-[10px] text-slate-400">
                           {timeAgoLabel(row.updated_at)}
+                          {distanceFromMe(row) != null && (
+                            <span className="font-semibold text-blue-400"> · {formatDistance(distanceFromMe(row)!)} away</span>
+                          )}
                         </span>
                       </span>
                     </button>
