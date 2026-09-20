@@ -787,11 +787,51 @@ class TransportAssignmentCreate(BaseModel):
 
 
 # --- Staff & Duties ---
+# --- Operational Categories (global shared functional tournament areas) ---
+class OperationalCategoryBase(BaseModel):
+    name: str
+    key: str
+    description: Optional[str] = None
+    icon: Optional[str] = None
+    display_order: int = 0
+    is_active: bool = True
+
+    _norm_key = field_validator("key", mode="before")(
+        lambda cls, v: str(v).strip().lower().replace(" ", "_") if v else v
+    )
+
+
+class OperationalCategoryCreate(OperationalCategoryBase):
+    pass
+
+
+class OperationalCategoryUpdate(BaseModel):
+    name: Optional[str] = None
+    key: Optional[str] = None
+    description: Optional[str] = None
+    icon: Optional[str] = None
+    display_order: Optional[int] = None
+    is_active: Optional[bool] = None
+
+    _norm_key = field_validator("key", mode="before")(
+        lambda cls, v: str(v).strip().lower().replace(" ", "_") if v is not None else None
+    )
+
+
+class OperationalCategoryRead(ORMModel, OperationalCategoryBase):
+    id: int
+    staff_count: Optional[int] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
 class StaffBase(BaseModel):
     full_name: str
+    designation: Optional[str] = None  # e.g. "Volunteer", "Teacher", "Coordinator", "Driver", "Doctor"
     phone: Optional[str] = None
     email: Optional[str] = None
-    category: Optional[str] = None
+    category: Optional[str] = None  # legacy fallback string (kept for backward compatibility)
+    category_ids: List[int] = []  # IDs of assigned OperationalCategory records
     notes: Optional[str] = None
     # Languages this person can communicate in (see STAFF_LANGUAGES).
     languages: List[str] = []
@@ -805,9 +845,11 @@ class StaffCreate(StaffBase):
 
 class StaffUpdate(BaseModel):
     full_name: Optional[str] = None
+    designation: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
     category: Optional[str] = None
+    category_ids: Optional[List[int]] = None
     notes: Optional[str] = None
     languages: Optional[List[str]] = None
 
@@ -818,10 +860,13 @@ class StaffUpdate(BaseModel):
 
 class StaffRead(ORMModel, StaffBase):
     id: int
+    categories: List[OperationalCategoryRead] = []
+    category_ids: List[int] = []
     # None until an organizer clicks "Create Credential" for this person (see
     # POST /staff/{id}/credential) — not settable directly, just reflects
     # whether a linked OrganizerUser login already exists.
     login_username: Optional[str] = None
+
 
 
 class StaffCredentialResult(BaseModel):
@@ -988,6 +1033,7 @@ class OperationalAreaRead(ORMModel, OperationalAreaBase):
     duty_count: Optional[int] = 0
 
 
+
 # One area's in-charge roster for one ShiftBlock (bulk-sync request shape).
 class ShiftAreaInchargeGroup(BaseModel):
     operational_area_id: int
@@ -1049,6 +1095,7 @@ ORGANIZER_MODULES = {
     "attendance": "Attendance",
     "volunteers": "Volunteers",
     "officials": "Officials",
+    "contacts": "Helpline & Contacts",
 }
 PERMISSION_LEVELS = ["view", "edit"]  # a module key missing from `permissions` means no access
 
@@ -1479,3 +1526,162 @@ class PaymentRead(ORMModel):
     discount: Optional[int] = None
     security_fee: Optional[int] = None
     created_at: datetime
+
+
+# --- Contacts & Helplines Schemas ---
+class ExternalContactBase(BaseModel):
+    name: str
+    role_label: Optional[str] = None
+    phone: str
+    email: Optional[str] = None
+    notes: Optional[str] = None
+    display_order: int = 0
+    is_active: bool = True
+
+
+class ExternalContactCreate(ExternalContactBase):
+    pass
+
+
+class ExternalContactUpdate(BaseModel):
+    name: Optional[str] = None
+    role_label: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    notes: Optional[str] = None
+    display_order: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class ExternalContactRead(ORMModel, ExternalContactBase):
+    id: int
+    contact_group_id: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class ContactGroupStaffAdd(BaseModel):
+    staff_id: int
+    custom_role_override: Optional[str] = None
+    role_override: Optional[str] = None  # Friendly alias for custom_role_override
+    display_order: int = 0
+    is_pinned: bool = False
+
+
+class ContactPersonDTO(BaseModel):
+    id: Optional[int] = None  # Staff ID if internal
+    name: str
+    phone: str = ""
+    email: Optional[str] = None
+    role: Optional[str] = None  # designation or custom label
+    languages: list[str] = []
+    is_staff: bool = False
+    is_on_duty: bool = False
+    is_external: bool = False
+
+
+class ContactGroupBase(BaseModel):
+    title: str
+    description: Optional[str] = None
+    category_name: Optional[str] = None
+    icon: Optional[str] = "Phone"
+    display_order: int = 0
+    is_active: bool = True
+    is_public: bool = True
+
+    # Primary Contact (Staff OR External)
+    primary_type: Optional[str] = None  # "staff" | "external"
+    primary_staff_id: Optional[int] = None
+    primary_name: Optional[str] = None
+    primary_phone: Optional[str] = None
+    primary_email: Optional[str] = None
+    primary_role: Optional[str] = None
+
+    # Backup Contact (Staff OR External OR None)
+    secondary_type: Optional[str] = None  # "none" | "staff" | "external"
+    secondary_staff_id: Optional[int] = None
+    secondary_name: Optional[str] = None
+    secondary_phone: Optional[str] = None
+    secondary_email: Optional[str] = None
+    secondary_role: Optional[str] = None
+
+    # Dynamic Current Shift Incharge
+    use_shift_incharge: Optional[bool] = None
+    operational_category_id: Optional[int] = None
+    operational_area_id: Optional[int] = None
+
+    # Backward compatibility aliases
+    lead_staff_id: Optional[int] = None
+    show_shift_incharges: Optional[bool] = None
+
+
+class ContactGroupCreate(ContactGroupBase):
+    pass
+
+
+class ContactGroupUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    category_name: Optional[str] = None
+    icon: Optional[str] = None
+    display_order: Optional[int] = None
+    is_active: Optional[bool] = None
+    is_public: Optional[bool] = None
+
+    primary_type: Optional[str] = None
+    primary_staff_id: Optional[int] = None
+    primary_name: Optional[str] = None
+    primary_phone: Optional[str] = None
+    primary_email: Optional[str] = None
+    primary_role: Optional[str] = None
+
+    secondary_type: Optional[str] = None
+    secondary_staff_id: Optional[int] = None
+    secondary_name: Optional[str] = None
+    secondary_phone: Optional[str] = None
+    secondary_email: Optional[str] = None
+    secondary_role: Optional[str] = None
+
+    use_shift_incharge: Optional[bool] = None
+    operational_category_id: Optional[int] = None
+    operational_area_id: Optional[int] = None
+
+    lead_staff_id: Optional[int] = None
+    show_shift_incharges: Optional[bool] = None
+
+
+class ResolvedContactPerson(BaseModel):
+    id: Optional[int] = None  # Staff ID if internal, None if external
+    name: str
+    role_label: str
+    phone: str
+    email: Optional[str] = None
+    languages: list[str] = []
+    is_incharge: bool = False
+    incharge_type: Optional[str] = None  # "ACTIVE_SHIFT_INCHARGE" | "DESIGNATED_LEAD" | "ADDITIONAL_STAFF" | "EXTERNAL" | "CATEGORY_MEMBER"
+    is_on_shift: bool = False
+    current_shift_name: Optional[str] = None
+    is_external: bool = False
+    display_order: int = 0
+    is_pinned: bool = False
+    priority: int = 3  # 1: DUTY_INCHARGE, 2: HEAD_INCHARGE, 3: ADDITIONAL_STAFF, 4: EXTERNAL, 5: CATEGORY_MEMBER
+
+
+class ContactGroupRead(ORMModel, ContactGroupBase):
+    id: int
+    operational_category_name: Optional[str] = None
+    operational_area_name: Optional[str] = None
+    lead_staff_name: Optional[str] = None
+
+    # Clean structured contacts
+    current_incharge: Optional[ContactPersonDTO] = None
+    primary_contact: Optional[ContactPersonDTO] = None
+    secondary_contact: Optional[ContactPersonDTO] = None
+
+    # Retained for backward compatibility
+    contacts: list[ResolvedContactPerson] = []
+    category_staff: list[ResolvedContactPerson] = []  # Internal reference for organizers/admins
+    created_at: datetime
+    updated_at: datetime
+
+

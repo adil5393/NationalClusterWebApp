@@ -3,6 +3,8 @@ import csv
 import io
 import itertools
 import zipfile
+from collections import defaultdict
+from datetime import datetime, timezone
 
 import openpyxl
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -1101,6 +1103,7 @@ def _live_detail_data(section: str, db: Session) -> dict:
             db.query(models.DutyAssignment)
             .options(
                 joinedload(models.DutyAssignment.staff),
+                joinedload(models.DutyAssignment.shift).joinedload(models.StaffShift.shift_block),
                 joinedload(models.DutyAssignment.location).joinedload(models.EventLocation.room).joinedload(models.Room.floor).joinedload(models.Floor.building),
                 joinedload(models.DutyAssignment.location).joinedload(models.EventLocation.building),
                 joinedload(models.DutyAssignment.location).joinedload(models.EventLocation.mat),
@@ -1109,11 +1112,20 @@ def _live_detail_data(section: str, db: Session) -> dict:
             .order_by(models.DutyAssignment.start_time.asc().nullslast())
             .all()
         )
+        tasks = db.query(models.Task).options(joinedload(models.Task.shift)).all()
+        tasks_map = defaultdict(list)
+        for t in tasks:
+            sb_id = t.shift.shift_block_id if t.shift else None
+            tasks_map[(t.assigned_staff_id, sb_id)].append(t)
+
         rows = []
         for a in duties:
             loc_name, bldg_name, room_name = resolve_duty_location_hierarchy(a)
             st = to_event_tz(a.start_time)
             et = to_event_tz(a.end_time)
+            sb_id = a.shift.shift_block_id if a.shift else None
+            d_tasks = tasks_map.get((a.staff_id, sb_id), [])
+            tasks_str = ", ".join(f"{t.title} [{t.status.upper()}]" for t in d_tasks) if d_tasks else "—"
             rows.append([
                 a.staff.full_name if a.staff else "—",
                 a.staff.category if a.staff else "—",
@@ -1123,9 +1135,10 @@ def _live_detail_data(section: str, db: Session) -> dict:
                 room_name,
                 st.strftime("%d-%b %H:%M") if st else "—",
                 et.strftime("%d-%b %H:%M") if et else "—",
+                tasks_str,
             ])
         return {
-            "columns": ["Staff Name", "Category", "Duty Type", "Location", "Building", "Room", "Start", "End"],
+            "columns": ["Staff Name", "Category", "Duty Type", "Location", "Building", "Room", "Start", "End", "Assigned Tasks"],
             "rows": rows,
         }
 
@@ -1276,6 +1289,7 @@ def export_duties_xlsx(db: Session = Depends(get_db)):
         db.query(models.DutyAssignment)
         .options(
             joinedload(models.DutyAssignment.staff),
+            joinedload(models.DutyAssignment.shift).joinedload(models.StaffShift.shift_block),
             joinedload(models.DutyAssignment.location).joinedload(models.EventLocation.room).joinedload(models.Room.floor).joinedload(models.Floor.building),
             joinedload(models.DutyAssignment.location).joinedload(models.EventLocation.building),
             joinedload(models.DutyAssignment.location).joinedload(models.EventLocation.mat),
@@ -1285,15 +1299,33 @@ def export_duties_xlsx(db: Session = Depends(get_db)):
         .all()
     )
 
+    tasks = (
+        db.query(models.Task)
+        .options(
+            joinedload(models.Task.assigned_staff),
+            joinedload(models.Task.shift).joinedload(models.StaffShift.shift_block),
+        )
+        .order_by(models.Task.due_date.asc().nullslast(), models.Task.id.desc())
+        .all()
+    )
+
+    tasks_by_staff_block = defaultdict(list)
+    for t in tasks:
+        sb_id = t.shift.shift_block_id if t.shift else None
+        tasks_by_staff_block[(t.assigned_staff_id, sb_id)].append(t)
+
     wb = openpyxl.Workbook()
+    # ---------------------------------------------------------
+    # SHEET 1: Duty Roster (with Assigned Tasks column)
+    # ---------------------------------------------------------
     ws = wb.active
     ws.title = "Duty Roster"
-    max_cols = 8
+    max_cols = 9
 
     next_row = style_header_banner(
         ws,
         tournament_name="STAFF DUTY REPORT",
-        subtitle="Duty Assignments Across Every Building, Floor & Room",
+        subtitle="Duty Assignments Across Every Building, Floor & Room with Integrated Task Roster",
         badge_text="OFFICIAL DUTY ROSTER EXPORT",
         max_col=max_cols,
         start_row=1,
@@ -1301,18 +1333,21 @@ def export_duties_xlsx(db: Session = Depends(get_db)):
 
     total_d = len(duties)
     unique_staff = len({d.staff_id for d in duties if d.staff_id})
-    unique_duty_types = len({d.duty_type for d in duties if d.duty_type})
     unique_buildings = len({
         bldg for d in duties
         for _, bldg, _ in [resolve_duty_location_hierarchy(d)]
         if bldg and bldg != "—"
     })
+    linked_tasks_count = sum(
+        len(tasks_by_staff_block.get((d.staff_id, d.shift.shift_block_id if d.shift else None), []))
+        for d in duties
+    )
 
     cards = [
         ("Total Assignments", total_d, "Duty Slots"),
         ("Staff Assigned", unique_staff, "Individuals"),
-        ("Duty Types", unique_duty_types, "Categories"),
         ("Buildings Covered", unique_buildings, "Locations"),
+        ("Linked Tasks", linked_tasks_count, "Task Items"),
     ]
     next_row = style_kpi_cards(ws, cards, start_row=next_row, card_width_cols=1)
 
@@ -1327,6 +1362,7 @@ def export_duties_xlsx(db: Session = Depends(get_db)):
         ("ROOM", 14, ALIGN_HEADER_CENTER),
         ("START", 18, ALIGN_HEADER_CENTER),
         ("END", 18, ALIGN_HEADER_CENTER),
+        ("ASSIGNED TASKS", 34, ALIGN_HEADER_LEFT),
     ]
 
     ws.row_dimensions[next_row].height = 22
@@ -1344,6 +1380,9 @@ def export_duties_xlsx(db: Session = Depends(get_db)):
         loc_name, bldg_name, room_name = resolve_duty_location_hierarchy(d)
         st = to_event_tz(d.start_time)
         et = to_event_tz(d.end_time)
+        sb_id = d.shift.shift_block_id if d.shift else None
+        d_tasks = tasks_by_staff_block.get((d.staff_id, sb_id), [])
+        tasks_text = ", ".join(f"{t.title} [{t.status.upper()}]" for t in d_tasks) if d_tasks else "—"
 
         row_data = [
             (d.staff.full_name if d.staff else "—", ALIGN_LEFT, FONT_TD_BOLD),
@@ -1354,6 +1393,7 @@ def export_duties_xlsx(db: Session = Depends(get_db)):
             (room_name, ALIGN_CENTER, FONT_TD),
             (st.strftime("%d %b %Y %H:%M") if st else "—", ALIGN_CENTER, FONT_TD),
             (et.strftime("%d %b %Y %H:%M") if et else "—", ALIGN_CENTER, FONT_TD),
+            (tasks_text, ALIGN_LEFT, FONT_TD),
         ]
 
         for col_idx, (val, align, font) in enumerate(row_data, start=1):
@@ -1370,6 +1410,108 @@ def export_duties_xlsx(db: Session = Depends(get_db)):
 
     auto_fit_columns(ws, min_width=8, max_width=45, extra_padding=3)
     enable_sheet_ergonomics(ws, freeze_pane="A7")
+
+    # ---------------------------------------------------------
+    # SHEET 2: Dedicated Task Report
+    # ---------------------------------------------------------
+    ws_tasks = wb.create_sheet(title="Task Report")
+    max_task_cols = 9
+
+    next_task_row = style_header_banner(
+        ws_tasks,
+        tournament_name="STAFF OPERATIONS TASK REPORT",
+        subtitle="Individual Task Allocations, Operational Categories, Priorities, Due Dates & Completion Status",
+        badge_text="OFFICIAL TASK REGISTER",
+        max_col=max_task_cols,
+        start_row=1,
+    )
+
+    now = datetime.now(timezone.utc)
+    total_tasks = len(tasks)
+    completed_tasks = sum(1 for t in tasks if t.status == "completed")
+    in_prog_tasks = sum(1 for t in tasks if t.status == "in_progress")
+    pending_tasks = sum(1 for t in tasks if t.status == "pending")
+    overdue_tasks = sum(
+        1 for t in tasks
+        if t.due_date and t.status != "completed"
+        and (t.due_date if t.due_date.tzinfo else t.due_date.replace(tzinfo=timezone.utc)) < now
+    )
+
+    task_cards = [
+        ("Total Tasks", total_tasks, "Operational Tasks"),
+        ("Completed", completed_tasks, "Finished"),
+        ("In Progress", in_prog_tasks, "Active"),
+        ("Pending", pending_tasks, "Queued"),
+        ("Overdue", overdue_tasks, "Needs Attention"),
+    ]
+    next_task_row = style_kpi_cards(ws_tasks, task_cards, start_row=next_task_row, card_width_cols=1)
+    next_task_row = style_section_bar(ws_tasks, "Operational Task Register", next_task_row, max_col=max_task_cols, icon="📋")
+
+    task_headers = [
+        ("TASK TITLE", 28, ALIGN_HEADER_LEFT),
+        ("ASSIGNED STAFF", 22, ALIGN_HEADER_LEFT),
+        ("STAFF CATEGORY", 16, ALIGN_HEADER_LEFT),
+        ("SHIFT LINK", 20, ALIGN_HEADER_LEFT),
+        ("TASK CATEGORY", 18, ALIGN_HEADER_LEFT),
+        ("PRIORITY", 14, ALIGN_HEADER_CENTER),
+        ("STATUS", 14, ALIGN_HEADER_CENTER),
+        ("DUE DATE", 16, ALIGN_HEADER_CENTER),
+        ("OVERDUE", 12, ALIGN_HEADER_CENTER),
+    ]
+
+    ws_tasks.row_dimensions[next_task_row].height = 22
+    for col_idx, (th_label, _, align) in enumerate(task_headers, start=1):
+        cell = ws_tasks.cell(row=next_task_row, column=col_idx, value=th_label)
+        cell.font = FONT_TH
+        cell.fill = FILL_TH_PRIMARY
+        cell.alignment = align
+        cell.border = BORDER_HEADER
+    next_task_row += 1
+
+    for idx, t in enumerate(tasks, start=1):
+        ws_tasks.row_dimensions[next_task_row].height = 20
+        fill = FILL_ZEBRA_EVEN if idx % 2 == 0 else FILL_ZEBRA_ODD
+        is_completed = (t.status == "completed")
+        is_overdue = False
+        if t.due_date and not is_completed:
+            dt = t.due_date if t.due_date.tzinfo else t.due_date.replace(tzinfo=timezone.utc)
+            if dt < now:
+                is_overdue = True
+
+        if is_overdue:
+            fill = PatternFill("solid", fgColor=CLR_AMBER_BG)
+
+        staff_name = t.assigned_staff.full_name if t.assigned_staff else "Unassigned"
+        staff_cat = t.assigned_staff.category if t.assigned_staff else "—"
+        shift_name = t.shift.shift_block.name if (t.shift and t.shift.shift_block) else "Shiftless / General"
+        due_str = to_event_tz(t.due_date).strftime("%d %b %Y %H:%M") if t.due_date else "No Due Date"
+
+        t_row_data = [
+            (t.title, ALIGN_LEFT, FONT_TD_BOLD),
+            (staff_name, ALIGN_LEFT, FONT_TD_BOLD if t.assigned_staff else FONT_TD),
+            (staff_cat, ALIGN_LEFT, FONT_TD),
+            (shift_name, ALIGN_LEFT, FONT_TD),
+            (t.category or "General", ALIGN_LEFT, FONT_TD),
+            ((t.priority or "normal").upper(), ALIGN_CENTER, FONT_TD),
+            ((t.status or "pending").upper(), ALIGN_CENTER, FONT_TD_BOLD),
+            (due_str, ALIGN_CENTER, FONT_TD),
+            ("OVERDUE" if is_overdue else "ON TIME", ALIGN_CENTER, FONT_TD_BOLD if is_overdue else FONT_TD),
+        ]
+
+        for col_idx, (val, align, font) in enumerate(t_row_data, start=1):
+            cell = ws_tasks.cell(row=next_task_row, column=col_idx, value=val)
+            cell.font = font
+            cell.alignment = align
+            cell.fill = fill
+            cell.border = BORDER_CELL
+        next_task_row += 1
+
+    ws_tasks.row_dimensions[next_task_row].height = 12
+    next_task_row += 1
+    style_footer(ws_tasks, next_task_row, max_col=max_task_cols)
+
+    auto_fit_columns(ws_tasks, min_width=8, max_width=45, extra_padding=3)
+    enable_sheet_ergonomics(ws_tasks, freeze_pane="A7")
 
     buf = io.BytesIO()
     wb.save(buf)

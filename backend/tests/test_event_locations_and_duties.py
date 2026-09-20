@@ -21,6 +21,8 @@ Q. Historical duty using deactivated EventLocation remains readable
 R. ShiftBlock deletion with operational work returns HTTP 409 (Phase 1 safety regression)
 """
 from datetime import datetime, timedelta, timezone
+import io
+import openpyxl
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -741,4 +743,119 @@ def test_s_duty_reports_populate_location_building_room_and_local_time(client, d
     sr_xlsx = client.get("/api/staff-reports/duties.xlsx")
     assert sr_xlsx.status_code == 200
     assert len(sr_xlsx.content) > 0
+
+
+# --- T. Task report integrated in Duty report (detail, xlsx multi-sheet, staff-reports) ---
+def test_t_task_report_in_duty_report_integration(client, db_session, sample_staff, sample_area):
+    # 1. Create building, room
+    bldg = models.Building(name="Tagore Bhavan")
+    db_session.add(bldg)
+    db_session.flush()
+
+    flr = models.Floor(name="Ground Floor", building_id=bldg.id)
+    db_session.add(flr)
+    db_session.flush()
+
+    rm = models.Room(name="Control Room 01", floor_id=flr.id, capacity=6)
+    db_session.add(rm)
+    db_session.flush()
+
+    # 2. Create Shift Block and Staff Shift
+    sb = models.ShiftBlock(
+        name="Morning Deployment",
+        start_time=datetime(2026, 9, 21, 6, 0, 0, tzinfo=timezone.utc),
+        end_time=datetime(2026, 9, 21, 14, 0, 0, tzinfo=timezone.utc),
+        status="ACTIVE",
+    )
+    db_session.add(sb)
+    db_session.flush()
+
+    staff_shift = models.StaffShift(
+        staff_id=sample_staff.id,
+        shift_block_id=sb.id,
+    )
+    db_session.add(staff_shift)
+    db_session.flush()
+
+    # 3. Create Duty Assignment for this staff and shift
+    duty = models.DutyAssignment(
+        staff_id=sample_staff.id,
+        shift_id=staff_shift.id,
+        operational_area_id=sample_area.id,
+        room_id=rm.id,
+        duty_type="Venue Incharge",
+        start_time=datetime(2026, 9, 21, 6, 0, 0, tzinfo=timezone.utc),
+        end_time=datetime(2026, 9, 21, 14, 0, 0, tzinfo=timezone.utc),
+    )
+    db_session.add(duty)
+    db_session.flush()
+
+    # 4. Create Tasks assigned to this staff member linked to this shift
+    task1 = models.Task(
+        title="Check Venue Perimeter & Gates",
+        category="Security",
+        priority="urgent",
+        status="pending",
+        assigned_staff_id=sample_staff.id,
+        shift_id=staff_shift.id,
+        due_date=datetime(2026, 9, 21, 7, 0, 0, tzinfo=timezone.utc),
+    )
+    task2 = models.Task(
+        title="Verify Water Refill Stations",
+        category="Logistics",
+        priority="normal",
+        status="completed",
+        assigned_staff_id=sample_staff.id,
+        shift_id=staff_shift.id,
+        due_date=datetime(2026, 9, 21, 8, 0, 0, tzinfo=timezone.utc),
+    )
+    db_session.add_all([task1, task2])
+    db_session.commit()
+
+    # A. Test Live Detail: GET /api/export/live-detail/duty
+    res_detail = client.get("/api/export/live-detail/duty")
+    assert res_detail.status_code == 200
+    detail_data = res_detail.json()
+    assert "Assigned Tasks" in detail_data["columns"]
+    task_col_idx = detail_data["columns"].index("Assigned Tasks")
+
+    matching_row = next(
+        (row for row in detail_data["rows"] if row[0] == sample_staff.full_name and "Venue Incharge" in row), None
+    )
+    assert matching_row is not None
+    tasks_text = matching_row[task_col_idx]
+    assert "Check Venue Perimeter & Gates" in tasks_text
+    assert "Verify Water Refill Stations" in tasks_text
+
+    # B. Test Excel: GET /api/export/duties.xlsx
+    res_xlsx = client.get("/api/export/duties.xlsx")
+    assert res_xlsx.status_code == 200
+    wb = openpyxl.load_workbook(io.BytesIO(res_xlsx.content))
+    assert "Duty Roster" in wb.sheetnames
+    assert "Task Report" in wb.sheetnames
+
+    ws_tasks = wb["Task Report"]
+    task_titles = [cell.value for row in ws_tasks.iter_rows(min_row=8) for cell in row if cell.value]
+    assert "Check Venue Perimeter & Gates" in task_titles
+    assert "Verify Water Refill Stations" in task_titles
+
+    # C. Test Staff Reports API: GET /api/staff-reports/duties
+    res_sr = client.get("/api/staff-reports/duties")
+    assert res_sr.status_code == 200
+    sr_data = res_sr.json()
+    assert "task_summary" in sr_data
+    assert sr_data["task_summary"]["total_linked_tasks"] >= 2
+    assert sr_data["task_summary"]["completed_tasks"] >= 1
+
+    sr_duty = next((r for r in sr_data["rows"] if r["id"] == duty.id), None)
+    assert sr_duty is not None
+    assert sr_duty["task_count"] == 2
+    assert any(t["title"] == "Check Venue Perimeter & Gates" for t in sr_duty["tasks"])
+
+    # D. Test Staff Reports Excel: GET /api/staff-reports/duties.xlsx
+    res_sr_xlsx = client.get("/api/staff-reports/duties.xlsx")
+    assert res_sr_xlsx.status_code == 200
+    wb_sr = openpyxl.load_workbook(io.BytesIO(res_sr_xlsx.content))
+    assert "Duty Assignments" in wb_sr.sheetnames
+    assert "Task Report" in wb_sr.sheetnames
 

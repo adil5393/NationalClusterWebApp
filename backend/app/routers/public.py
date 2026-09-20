@@ -738,3 +738,26 @@ async def upload_coach_photo(
     return {"photo_url": coach.photo_url}
 
 
+@router.get("/contacts", response_model=list[schemas.ContactGroupRead])
+def public_contacts(db: Session = Depends(get_db)):
+    """Public helpline and emergency contacts directory for visiting state delegations."""
+    from sqlalchemy.orm import joinedload
+    from .contacts import _serialize_group
+
+    groups = (
+        db.query(models.ContactGroup)
+        .options(
+            joinedload(models.ContactGroup.operational_category),
+            joinedload(models.ContactGroup.operational_area),
+            joinedload(models.ContactGroup.lead_staff),
+            joinedload(models.ContactGroup.staff_associations).joinedload(models.ContactGroupStaff.staff),
+            joinedload(models.ContactGroup.external_contacts),
+        )
+        .filter(models.ContactGroup.is_active == True, models.ContactGroup.is_public == True)
+        .order_by(models.ContactGroup.display_order, models.ContactGroup.id)
+        .all()
+    )
+    return [_serialize_group(g, db, include_category_staff=False) for g in groups]
+
+
+

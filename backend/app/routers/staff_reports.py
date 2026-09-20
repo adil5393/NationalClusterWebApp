@@ -165,16 +165,27 @@ def _get_tasks_by_staff_and_shift_block(db: Session) -> Dict[Tuple[Optional[int]
     a general to-do for that staff member and only surfaces on that staff's
     own shiftless duty rows, for the same reason — it isn't tied to any one
     of their shifts specifically."""
+    now = datetime.now(timezone.utc)
     tasks = db.query(models.Task).options(joinedload(models.Task.shift)).all()
     index: Dict[Tuple[Optional[int], Optional[int]], List[Dict[str, Any]]] = defaultdict(list)
     for t in tasks:
         shift_block_id = t.shift.shift_block_id if t.shift else None
+        is_completed = (t.status == "completed")
+        is_overdue = False
+        if t.due_date and not is_completed:
+            dt = t.due_date if t.due_date.tzinfo else t.due_date.replace(tzinfo=timezone.utc)
+            if dt < now:
+                is_overdue = True
+
         index[(t.assigned_staff_id, shift_block_id)].append({
             "id": t.id,
             "title": t.title,
             "status": t.status,
-            "priority": t.priority,
+            "priority": t.priority or "normal",
+            "category": t.category or "General",
+            "is_overdue": is_overdue,
             "due_date_display": _format_date(t.due_date) if t.due_date else "No Due Date",
+            "due_date_iso": t.due_date.isoformat() if t.due_date else None,
         })
     return index
 
@@ -1211,6 +1222,9 @@ def get_duty_assignments_report(
     category: Optional[str] = Query(None),
     operational_area_id: Optional[int] = Query(None),
     duty_type: Optional[str] = Query(None),
+    has_tasks: Optional[bool] = Query(None),
+    task_status: Optional[str] = Query(None),
+    task_priority: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
     rows = _query_duty_assignments(
@@ -1222,7 +1236,30 @@ def get_duty_assignments_report(
         operational_area_id=operational_area_id,
         duty_type=duty_type,
     )
-    return {"total": len(rows), "rows": rows}
+    if has_tasks is True:
+        rows = [r for r in rows if r["task_count"] > 0]
+    elif has_tasks is False:
+        rows = [r for r in rows if r["task_count"] == 0]
+    if task_status:
+        rows = [r for r in rows if any(t.get("status") == task_status for t in r["tasks"])]
+    if task_priority:
+        rows = [r for r in rows if any(t.get("priority") == task_priority for t in r["tasks"])]
+
+    total_tasks = sum(r["task_count"] for r in rows)
+    completed_tasks = sum(sum(1 for t in r["tasks"] if t["status"] == "completed") for r in rows)
+    overdue_tasks = sum(sum(1 for t in r["tasks"] if t.get("is_overdue")) for r in rows)
+
+    return {
+        "total": len(rows),
+        "rows": rows,
+        "task_summary": {
+            "total_linked_tasks": total_tasks,
+            "completed_tasks": completed_tasks,
+            "pending_tasks": total_tasks - completed_tasks,
+            "overdue_tasks": overdue_tasks,
+            "duties_with_tasks": sum(1 for r in rows if r["task_count"] > 0),
+        },
+    }
 
 
 @router.get("/duties.xlsx")
@@ -1342,6 +1379,89 @@ def export_duty_assignments_xlsx(
     style_footer(ws, next_row + 1, max_col=max_cols)
     auto_fit_columns(ws, min_width=10, max_width=45, extra_padding=3)
     enable_sheet_ergonomics(ws, freeze_pane="A7")
+
+    # ---------------------------------------------------------
+    # SHEET 2: Dedicated Task Report
+    # ---------------------------------------------------------
+    task_rows = _query_tasks_report(db, staff_id=staff_id, shift_block_id=shift_block_id)
+    ws_tasks = wb.create_sheet(title="Task Report")
+    max_task_cols = 9
+
+    next_task_row = style_header_banner(
+        ws_tasks,
+        tournament_name="STAFF OPERATIONS TASK REPORT",
+        subtitle="Individual Task Allocations, Operational Categories, Priorities, Due Dates & Completion Status",
+        badge_text="OFFICIAL TASK REGISTER",
+        max_col=max_task_cols,
+        start_row=1,
+    )
+
+    total_tasks = len(task_rows)
+    completed_tasks = sum(1 for t in task_rows if t["status"] == "completed")
+    in_prog_tasks = sum(1 for t in task_rows if t["status"] == "in_progress")
+    pending_tasks = sum(1 for t in task_rows if t["status"] == "pending")
+    overdue_tasks = sum(1 for t in task_rows if t.get("is_overdue"))
+
+    task_cards = [
+        ("Total Tasks", total_tasks, "Operational Tasks"),
+        ("Completed", completed_tasks, "Finished"),
+        ("In Progress", in_prog_tasks, "Active"),
+        ("Pending", pending_tasks, "Queued"),
+        ("Overdue", overdue_tasks, "Needs Attention"),
+    ]
+    next_task_row = style_kpi_cards(ws_tasks, task_cards, start_row=next_task_row, card_width_cols=1)
+    next_task_row = style_section_bar(ws_tasks, "Operational Task Register", next_task_row, max_col=max_task_cols, icon="📋")
+
+    task_headers = [
+        ("TASK TITLE", 28, ALIGN_HEADER_LEFT),
+        ("ASSIGNED STAFF", 22, ALIGN_HEADER_LEFT),
+        ("STAFF CATEGORY", 16, ALIGN_HEADER_LEFT),
+        ("SHIFT LINK", 20, ALIGN_HEADER_LEFT),
+        ("TASK CATEGORY", 18, ALIGN_HEADER_LEFT),
+        ("PRIORITY", 14, ALIGN_HEADER_CENTER),
+        ("STATUS", 14, ALIGN_HEADER_CENTER),
+        ("DUE DATE", 16, ALIGN_HEADER_CENTER),
+        ("OVERDUE", 12, ALIGN_HEADER_CENTER),
+    ]
+
+    ws_tasks.row_dimensions[next_task_row].height = 22
+    for col_idx, (th_label, _, align) in enumerate(task_headers, start=1):
+        cell = ws_tasks.cell(row=next_task_row, column=col_idx, value=th_label)
+        cell.font = FONT_TH
+        cell.fill = FILL_TH_PRIMARY
+        cell.alignment = align
+        cell.border = BORDER_HEADER
+    next_task_row += 1
+
+    for idx, t in enumerate(task_rows, start=1):
+        ws_tasks.row_dimensions[next_task_row].height = 20
+        fill = FILL_ZEBRA_EVEN if idx % 2 == 0 else FILL_ZEBRA_ODD
+        if t.get("is_overdue"):
+            fill = PatternFill("solid", fgColor=CLR_AMBER_BG)
+
+        t_row_data = [
+            (t["title"], ALIGN_LEFT, FONT_TD_BOLD),
+            (t["assigned_staff"], ALIGN_LEFT, FONT_TD_BOLD if t["assigned_staff"] != "Unassigned" else FONT_TD),
+            (t["staff_category"], ALIGN_LEFT, FONT_TD),
+            (t["shift_name"], ALIGN_LEFT, FONT_TD),
+            (t["category"], ALIGN_LEFT, FONT_TD),
+            (t["priority"].upper(), ALIGN_CENTER, FONT_TD),
+            (t["status"].upper(), ALIGN_CENTER, FONT_TD_BOLD),
+            (t["due_date_display"], ALIGN_CENTER, FONT_TD),
+            ("OVERDUE" if t.get("is_overdue") else "ON TIME", ALIGN_CENTER, FONT_TD_BOLD if t.get("is_overdue") else FONT_TD),
+        ]
+
+        for col_idx, (val, align, font) in enumerate(t_row_data, start=1):
+            cell = ws_tasks.cell(row=next_task_row, column=col_idx, value=val)
+            cell.font = font
+            cell.alignment = align
+            cell.fill = fill
+            cell.border = BORDER_CELL
+        next_task_row += 1
+
+    style_footer(ws_tasks, next_task_row + 1, max_col=max_task_cols)
+    auto_fit_columns(ws_tasks, min_width=10, max_width=45, extra_padding=3)
+    enable_sheet_ergonomics(ws_tasks, freeze_pane="A7")
 
     buf = io.BytesIO()
     wb.save(buf)

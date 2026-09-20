@@ -11,9 +11,27 @@ router = APIRouter(prefix="/api/staff", tags=["staff"])
 
 
 @router.get("/meta")
-def meta():
+def meta(db: Session = Depends(get_db)):
+    active_cats = (
+        db.query(models.OperationalCategory)
+        .filter(models.OperationalCategory.is_active == True)
+        .order_by(models.OperationalCategory.display_order, models.OperationalCategory.name)
+        .all()
+    )
     return {
         "duty_types": schemas.DUTY_TYPES,
+        "categories": [
+            {
+                "id": c.id,
+                "name": c.name,
+                "key": c.key,
+                "description": c.description,
+                "icon": c.icon,
+                "display_order": c.display_order,
+                "is_active": c.is_active,
+            }
+            for c in active_cats
+        ],
         "staff_categories": schemas.STAFF_CATEGORIES,
         "staff_languages": schemas.STAFF_LANGUAGES,
     }
@@ -21,8 +39,17 @@ def meta():
 
 # ---------- Staff members ----------
 @router.get("", response_model=list[schemas.StaffRead])
-def list_staff(db: Session = Depends(get_db)):
-    return db.query(models.StaffMember).order_by(models.StaffMember.full_name).all()
+def list_staff(
+    category_id: int | None = Query(None, description="Filter by operational category ID"),
+    category_key: str | None = Query(None, description="Filter by operational category key"),
+    db: Session = Depends(get_db),
+):
+    query = db.query(models.StaffMember)
+    if category_id is not None:
+        query = query.join(models.StaffMember.categories).filter(models.OperationalCategory.id == category_id)
+    elif category_key:
+        query = query.join(models.StaffMember.categories).filter(models.OperationalCategory.key == category_key.lower().strip())
+    return query.order_by(models.StaffMember.full_name).all()
 
 
 @router.post("", response_model=schemas.StaffRead, status_code=201)
@@ -30,7 +57,15 @@ def create_staff(payload: schemas.StaffCreate, db: Session = Depends(get_db)):
     """No login is created here — an organizer creates one on demand per
     staff member via POST /staff/{id}/credential, from a "Create Credential"
     button in the Staff admin page."""
-    staff = models.StaffMember(**payload.model_dump())
+    dump = payload.model_dump(exclude={"category_ids"})
+    staff = models.StaffMember(**dump)
+
+    if payload.category_ids:
+        cats = db.query(models.OperationalCategory).filter(models.OperationalCategory.id.in_(payload.category_ids)).all()
+        staff.categories = cats
+        if not staff.category and cats:
+            staff.category = cats[0].name
+
     db.add(staff)
     db.commit()
     db.refresh(staff)
@@ -65,8 +100,21 @@ def update_staff(staff_id: int, payload: schemas.StaffUpdate, db: Session = Depe
     staff = db.get(models.StaffMember, staff_id)
     if not staff:
         raise HTTPException(404, "Staff member not found")
-    for key, value in payload.model_dump(exclude_unset=True).items():
+
+    dump = payload.model_dump(exclude_unset=True)
+    category_ids = dump.pop("category_ids", None)
+
+    for key, value in dump.items():
         setattr(staff, key, value)
+
+    if category_ids is not None:
+        cats = db.query(models.OperationalCategory).filter(models.OperationalCategory.id.in_(category_ids)).all()
+        staff.categories = cats
+        if cats and not staff.category:
+            staff.category = cats[0].name
+        elif not cats and "category" not in dump:
+            staff.category = None
+
     db.commit()
     db.refresh(staff)
     return staff

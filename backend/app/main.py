@@ -15,6 +15,7 @@ from .routers import (
     auth,
     buckets,
     coaches,
+    contacts,
     dashboard,
     event_locations,
     exports,
@@ -28,6 +29,7 @@ from .routers import (
     mats,
     me,
     operational_areas,
+    operational_categories,
     organizer_users,
     participants,
     payments,
@@ -160,6 +162,7 @@ for router_module, module_key in (
     (attendance, "attendance"),
     (volunteers, "volunteers"),
     (officials, "officials"),
+    (contacts, "contacts"),
 ):
     app.include_router(router_module.router, dependencies=[Depends(require_module(module_key))])
 
@@ -171,7 +174,7 @@ for router_module, module_key in (
 # self-service staff login (an ordinary staff member's own account) must
 # never reach it, even though it's auto-granted "staff":"view" for other
 # modules' sake. See security.require_staff_operator.
-for router_module in (staff, event_locations, operational_areas, staff_reports):
+for router_module in (staff, operational_categories, event_locations, operational_areas, staff_reports):
     app.include_router(router_module.router, dependencies=[Depends(require_staff_operator)])
 
 # matches.py gets its own gate instead of the plain module check above — an

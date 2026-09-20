@@ -713,21 +713,76 @@ class Contact(TimestampMixin, Base):
     notes = Column(Text)
 
 
+staff_member_categories = Table(
+    "staff_member_categories",
+    Base.metadata,
+    Column(
+        "staff_member_id",
+        Integer,
+        ForeignKey("staff_members.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "category_id",
+        Integer,
+        ForeignKey("operational_categories.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("created_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
+)
+
+
+class OperationalCategory(TimestampMixin, Base):
+    """Global, reusable operational category for tournament operations (e.g. Transport,
+    Accommodation, Medical, Match Control, Food). Shared across Staff, Contacts, Duties, etc."""
+    __tablename__ = "operational_categories"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(120), nullable=False, unique=True)
+    key = Column(String(80), nullable=False, unique=True, index=True)
+    description = Column(Text)
+    icon = Column(String(60))
+    display_order = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True)
+
+    staff_members = relationship(
+        "StaffMember",
+        secondary=staff_member_categories,
+        back_populates="categories",
+        order_by="StaffMember.full_name",
+    )
+
+    @property
+    def active(self) -> bool:
+        return self.is_active
+
+
 class StaffMember(TimestampMixin, Base):
     __tablename__ = "staff_members"
     id = Column(Integer, primary_key=True)
     full_name = Column(String(160), nullable=False)
+    designation = Column(String(120))  # e.g. "Volunteer", "Teacher", "Coordinator", "Driver", "Doctor"
     phone = Column(String(60))
     email = Column(String(200))
-    category = Column(String(80))  # one of schemas.STAFF_CATEGORIES — who they are, not what duty they're on
+    category = Column(String(80))  # legacy fallback string (kept for backward compatibility with exports/reports)
     notes = Column(Text)
     # List of schemas.STAFF_LANGUAGES this person speaks — assigned in the
     # Staff directory; later drives which contacts the public site shows for
     # a visitor's preferred language.
     languages = Column(JSON, nullable=False, default=list, server_default="[]")
 
+    categories = relationship(
+        "OperationalCategory",
+        secondary=staff_member_categories,
+        back_populates="staff_members",
+        order_by="OperationalCategory.display_order",
+    )
     duties = relationship("DutyAssignment", back_populates="staff", cascade="all, delete-orphan")
     shifts = relationship("StaffShift", back_populates="staff", cascade="all, delete-orphan", order_by="StaffShift.id")
+
+    @property
+    def category_ids(self) -> list[int]:
+        return [c.id for c in self.categories]
 
     @property
     def login_username(self) -> "str | None":
@@ -900,6 +955,7 @@ class OperationalArea(TimestampMixin, Base):
 
     duties = relationship("DutyAssignment", back_populates="operational_area")
     incharges = relationship("ShiftOperationalIncharge", back_populates="operational_area", cascade="all, delete-orphan")
+
 
 
 class DutyAssignment(TimestampMixin, Base):
@@ -1386,3 +1442,101 @@ class Report(TimestampMixin, Base):
 
     tournament = relationship("Tournament")
     round = relationship("Round")
+
+
+class ContactGroup(TimestampMixin, Base):
+    """A configured contact entry/topic in the Event Helpline & Contacts directory (e.g.
+    'Accommodation Help', 'Transport Help', 'Medical Help', 'Match / Ground Help').
+    Links to a Primary Contact and optional Backup Contact (either from StaffMember or external),
+    with optional fallback to current shift incharge when available."""
+    __tablename__ = "contact_groups"
+    id = Column(Integer, primary_key=True)
+    title = Column(String(120), nullable=False)
+    description = Column(Text, nullable=True)
+    icon = Column(String(60), nullable=True)
+    category_name = Column(String(120), nullable=True)
+    display_order = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True)
+    is_public = Column(Boolean, nullable=False, default=True)  # visible on public site / team portal
+
+    # Optional dynamic current shift incharge routing
+    use_shift_incharge = Column(Boolean, nullable=False, default=False)
+    operational_category_id = Column(Integer, ForeignKey("operational_categories.id", ondelete="SET NULL"), nullable=True, index=True)
+    operational_area_id = Column(Integer, ForeignKey("operational_areas.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    # Primary Contact (Staff OR External)
+    primary_type = Column(String(20), nullable=True, default="staff")
+    primary_staff_id = Column(Integer, ForeignKey("staff_members.id", ondelete="SET NULL"), nullable=True, index=True)
+    primary_name = Column(String(160), nullable=True)
+    primary_phone = Column(String(60), nullable=True)
+    primary_email = Column(String(200), nullable=True)
+    primary_role = Column(String(120), nullable=True)
+
+    # Secondary / Backup Contact (Staff OR External)
+    secondary_type = Column(String(20), nullable=True, default="none")
+    secondary_staff_id = Column(Integer, ForeignKey("staff_members.id", ondelete="SET NULL"), nullable=True, index=True)
+    secondary_name = Column(String(160), nullable=True)
+    secondary_phone = Column(String(60), nullable=True)
+    secondary_email = Column(String(200), nullable=True)
+    secondary_role = Column(String(120), nullable=True)
+
+    # Backward compatibility columns
+    lead_staff_id = Column(Integer, ForeignKey("staff_members.id", ondelete="SET NULL"), nullable=True, index=True)
+    show_shift_incharges = Column(Boolean, nullable=False, default=False)
+
+    operational_category = relationship("OperationalCategory")
+    operational_area = relationship("OperationalArea")
+    lead_staff = relationship("StaffMember", foreign_keys=[lead_staff_id])
+    primary_staff = relationship("StaffMember", foreign_keys=[primary_staff_id])
+    secondary_staff = relationship("StaffMember", foreign_keys=[secondary_staff_id])
+
+    staff_associations = relationship(
+        "ContactGroupStaff",
+        back_populates="contact_group",
+        cascade="all, delete-orphan",
+        order_by="ContactGroupStaff.display_order",
+    )
+    external_contacts = relationship(
+        "ExternalContact",
+        back_populates="contact_group",
+        cascade="all, delete-orphan",
+        order_by="ExternalContact.display_order",
+    )
+
+
+
+class ContactGroupStaff(Base):
+    """Explicitly curated staff member pinned or assigned into a ContactGroup.
+    All personnel attributes (phone, email, languages, shift) resolve live from StaffMember."""
+    __tablename__ = "contact_group_staff"
+    __table_args__ = (
+        UniqueConstraint("contact_group_id", "staff_id", name="uq_contact_group_staff"),
+    )
+    id = Column(Integer, primary_key=True)
+    contact_group_id = Column(Integer, ForeignKey("contact_groups.id", ondelete="CASCADE"), nullable=False, index=True)
+    staff_id = Column(Integer, ForeignKey("staff_members.id", ondelete="CASCADE"), nullable=False, index=True)
+    custom_role_override = Column(String(100), nullable=True)  # if null, falls back to StaffMember.designation
+    display_order = Column(Integer, nullable=False, default=0)
+    is_pinned = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    contact_group = relationship("ContactGroup", back_populates="staff_associations")
+    staff = relationship("StaffMember")
+
+
+class ExternalContact(TimestampMixin, Base):
+    """External helpline numbers that do not belong to internal tournament staff
+    (e.g., Police Emergency 100, Ambulance 108, City Hospital Emergency Desk)."""
+    __tablename__ = "external_contacts"
+    id = Column(Integer, primary_key=True)
+    contact_group_id = Column(Integer, ForeignKey("contact_groups.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(120), nullable=False)
+    role_label = Column(String(100), nullable=False, default="Emergency Contact")
+    phone = Column(String(60), nullable=False)
+    email = Column(String(200), nullable=True)
+    notes = Column(Text, nullable=True)
+    display_order = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True)
+
+    contact_group = relationship("ContactGroup", back_populates="external_contacts")
+
