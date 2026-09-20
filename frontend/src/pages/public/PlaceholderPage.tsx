@@ -21,6 +21,11 @@ import {
   Mail,
   Phone,
   FileText,
+  Zap,
+  Crown,
+  Globe,
+  MessageSquare,
+  Search,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -354,66 +359,293 @@ function TransportSection() {
 /* ========================================================================== */
 /* CONTACTS SECTION                                                          */
 /* ========================================================================== */
+interface ContactPersonDTO {
+  id?: number | null;
+  name: string;
+  phone?: string;
+  email?: string | null;
+  role?: string | null;
+  languages?: string[];
+  is_staff?: boolean;
+  is_on_duty?: boolean;
+  is_external?: boolean;
+}
+
+interface PublicContactGroup {
+  id: number;
+  title: string;
+  description?: string;
+  category_name?: string;
+  icon?: string;
+  operational_category_name?: string;
+  primary_contact?: ContactPersonDTO | null;
+  secondary_contact?: ContactPersonDTO | null;
+  current_incharge?: ContactPersonDTO | null;
+  contacts?: Array<{
+    name: string;
+    phone?: string;
+    email?: string | null;
+    role_label?: string | null;
+    is_on_shift?: boolean;
+    is_external?: boolean;
+  }>;
+}
+
 function ContactsSection() {
-  const CONTACTS = [
-    { role: "Organizing Secretary", name: "Principal / Sports Director", phone: "+91 98765 00001", email: "organizer@kabaddinationalscluster.info", priority: true },
-    { role: "Chief Medical Officer", name: "Dr. A. Sharma (Campus Clinic)", phone: "+91 98765 00002", email: "medical@kabaddinationalscluster.info", priority: true },
+  const [groups, setGroups] = useState<PublicContactGroup[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+
+  const FALLBACK_CONTACTS = [
+    { role: "Organizing Secretary", name: "Principal / Sports Director", phone: "+91 98765 00001", email: "organizer@kabaddinationalscluster.info" },
+    { role: "Chief Medical Officer", name: "Dr. A. Sharma (Campus Clinic)", phone: "+91 98765 00002", email: "medical@kabaddinationalscluster.info" },
     { role: "Chief Technical Official", name: "AKFI National Referee Panel", phone: "+91 98765 00003", email: "referees@kabaddinationalscluster.info" },
     { role: "Transport & Logistics Head", name: "Mr. R. Verma", phone: "+91 98765 00004", email: "transport@kabaddinationalscluster.info" },
     { role: "Accommodation Coordinator", name: "Hostel Warden Office", phone: "+91 98765 00005", email: "hostels@kabaddinationalscluster.info" },
     { role: "Security & Control Room", name: "Campus Security Desk", phone: "+91 98765 00006", email: "security@kabaddinationalscluster.info" },
   ];
 
+  useEffect(() => {
+    api
+      .get<PublicContactGroup[]>("/public/contacts")
+      .then((res) => {
+        if (res.data && res.data.length > 0) {
+          setGroups(res.data);
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to fetch public contacts, falling back:", err);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filteredGroups = groups.filter((g) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    const primaryName = g.primary_contact?.name || "";
+    const inchargeName = g.current_incharge?.name || "";
+    const secondaryName = g.secondary_contact?.name || "";
+    const catName = g.category_name || g.operational_category_name || "";
+    return (
+      g.title.toLowerCase().includes(q) ||
+      (g.description && g.description.toLowerCase().includes(q)) ||
+      catName.toLowerCase().includes(q) ||
+      primaryName.toLowerCase().includes(q) ||
+      inchargeName.toLowerCase().includes(q) ||
+      secondaryName.toLowerCase().includes(q)
+    );
+  });
+
   return (
     <div className="space-y-8">
-      <div className="border-b border-white/10 pb-6">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-heading font-extrabold uppercase tracking-widest text-coral">
-            24/7 HELPDESK
-          </span>
-        </div>
-        <h1 className="mt-2 font-heading text-3xl sm:text-4xl lg:text-5xl font-black text-white">
-          Emergency & Important Contacts
-        </h1>
-        <p className="mt-2 text-sm sm:text-base text-slate-400 font-body">
-          Direct helpline numbers for emergency medical support, security, and organizing officials.
-        </p>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {CONTACTS.map((c, i) => (
-          <div
-            key={i}
-            className={`rounded-xl border p-5 space-y-3 ${
-              c.priority
-                ? "border-coral/40 bg-gradient-to-br from-coral/10 via-obsidian-900 to-obsidian"
-                : "border-white/10 bg-obsidian-900"
-            }`}
-          >
-            <div>
-              <span className="text-[10px] font-heading font-bold uppercase tracking-wider text-gold">
-                {c.role}
-              </span>
-              <h3 className="font-heading text-base font-bold text-white mt-1">{c.name}</h3>
-            </div>
-
-            <div className="pt-2 border-t border-white/10 space-y-2 text-xs font-mono">
-              <a
-                href={`tel:${c.phone}`}
-                className="flex items-center gap-2 text-slate-200 hover:text-gold transition-colors font-bold"
-              >
-                <Phone className="h-3.5 w-3.5 text-gold" /> {c.phone}
-              </a>
-              <a
-                href={`mailto:${c.email}`}
-                className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-[11px]"
-              >
-                <Mail className="h-3.5 w-3.5 text-slate-500" /> {c.email}
-              </a>
-            </div>
+      {/* Header & Question */}
+      <div className="border-b border-white/10 pb-6 space-y-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-heading font-extrabold uppercase tracking-widest text-coral">
+              24/7 HELPDESK & TOURNAMENT DIRECTORY
+            </span>
+            <span className="rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-mono">
+              VERIFIED CONTACTS
+            </span>
           </div>
-        ))}
+          <h1 className="mt-2 font-heading text-3xl sm:text-4xl lg:text-5xl font-black text-white">
+            What do you need help with?
+          </h1>
+          <p className="mt-2 text-sm sm:text-base text-slate-400 font-body">
+            Direct helpline numbers for accommodation, transport, medical response, food, and tournament administration.
+          </p>
+        </div>
+
+        {/* Search Bar */}
+        <div className="relative max-w-lg">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search accommodation, transport, doctor, admin..."
+            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-white/15 bg-obsidian-900 text-white placeholder-slate-400 text-sm focus:outline-none focus:border-gold/50 transition-colors"
+          />
+        </div>
       </div>
+
+      {loading ? (
+        <div className="p-12 text-center text-slate-400 text-xs font-mono">
+          Loading operational contacts...
+        </div>
+      ) : filteredGroups.length > 0 ? (
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {filteredGroups.map((group) => {
+            // Determine active/primary contact: current incharge takes precedence if available
+            const activeContact = group.current_incharge || group.primary_contact;
+            const hasInchargePreceded = Boolean(group.current_incharge && group.primary_contact && group.current_incharge.name !== group.primary_contact.name);
+            const backupContact = hasInchargePreceded ? group.primary_contact : group.secondary_contact;
+            const categoryBadge = group.category_name || group.operational_category_name;
+
+            // Fallback to legacy contacts list if new primary_contact is missing
+            const legacyList = !activeContact && group.contacts ? group.contacts : [];
+
+            return (
+              <div
+                key={group.id}
+                className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.04] to-transparent p-6 flex flex-col justify-between space-y-5 hover:border-gold/35 transition-all shadow-lg backdrop-blur-sm"
+              >
+                {/* Card Top: Category & Title */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <h2 className="font-heading text-xl font-bold text-white tracking-tight">
+                      {group.title}
+                    </h2>
+                    {categoryBadge && (
+                      <span className="text-[10px] font-mono text-gold bg-gold/10 border border-gold/20 px-2 py-0.5 rounded-full shrink-0">
+                        {categoryBadge}
+                      </span>
+                    )}
+                  </div>
+                  {group.description && (
+                    <p className="text-xs text-slate-400 line-clamp-2">
+                      {group.description}
+                    </p>
+                  )}
+                </div>
+
+                {/* Primary / Active Contact Section */}
+                {activeContact ? (
+                  <div className="rounded-xl bg-obsidian-900/90 border border-white/10 p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-heading text-base font-bold text-white">
+                            {activeContact.name}
+                          </span>
+                          {(group.current_incharge || activeContact.is_on_duty) && (
+                            <span className="inline-flex items-center gap-1 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 text-[9px] font-bold uppercase">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                              On Duty
+                            </span>
+                          )}
+                        </div>
+                        {activeContact.role && (
+                          <p className="text-xs text-slate-400 mt-0.5 font-medium">
+                            {activeContact.role}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Action Buttons: Call & WhatsApp */}
+                    {activeContact.phone ? (
+                      <div className="flex items-center gap-2 pt-1">
+                        <a
+                          href={`tel:${activeContact.phone}`}
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-gold hover:bg-gold-400 text-obsidian font-bold text-xs transition-colors shadow-sm"
+                        >
+                          <Phone className="h-3.5 w-3.5" />
+                          <span>Call</span>
+                        </a>
+                        <a
+                          href={`https://wa.me/${activeContact.phone.replace(/[^0-9]/g, "")}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 font-bold text-xs transition-colors"
+                          title="Message on WhatsApp"
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" />
+                          <span>WhatsApp</span>
+                        </a>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-slate-500 italic">No direct phone configured</span>
+                    )}
+                  </div>
+                ) : legacyList.length > 0 ? (
+                  <div className="space-y-2">
+                    {legacyList.slice(0, 2).map((c, i) => (
+                      <div key={i} className="rounded-xl bg-obsidian-900 border border-white/10 p-3 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-white text-sm">{c.name}</span>
+                          {c.role_label && (
+                            <span className="text-[10px] text-gold">{c.role_label}</span>
+                          )}
+                        </div>
+                        {c.phone && (
+                          <a
+                            href={`tel:${c.phone}`}
+                            className="inline-flex items-center gap-1.5 text-xs text-gold font-mono hover:underline"
+                          >
+                            <Phone className="h-3 w-3" />
+                            {c.phone}
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-lg bg-white/5 p-3 text-center text-xs text-slate-500 italic">
+                    Contact details will be announced shortly.
+                  </div>
+                )}
+
+                {/* Backup Contact Line */}
+                {backupContact && backupContact.name && (
+                  <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs text-slate-400">
+                    <span className="truncate">
+                      <strong className="text-slate-300">Backup:</strong> {backupContact.name}
+                    </span>
+                    {backupContact.phone && (
+                      <a
+                        href={`tel:${backupContact.phone}`}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white font-mono text-[11px] shrink-0 transition-colors"
+                      >
+                        <Phone className="h-3 w-3 text-gold" />
+                        Call
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : groups.length === 0 ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {FALLBACK_CONTACTS.map((c, i) => (
+            <div
+              key={i}
+              className="rounded-xl border border-white/10 bg-obsidian-900 p-5 space-y-3"
+            >
+              <div>
+                <span className="text-[10px] font-heading font-bold uppercase tracking-wider text-gold">
+                  {c.role}
+                </span>
+                <h3 className="font-heading text-base font-bold text-white mt-1">{c.name}</h3>
+              </div>
+
+              <div className="pt-2 border-t border-white/10 space-y-2 text-xs font-mono">
+                <a
+                  href={`tel:${c.phone}`}
+                  className="flex items-center gap-2 text-slate-200 hover:text-gold transition-colors font-bold"
+                >
+                  <Phone className="h-3.5 w-3.5 text-gold" /> {c.phone}
+                </a>
+                {c.email && (
+                  <a
+                    href={`mailto:${c.email}`}
+                    className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-[11px]"
+                  >
+                    <Mail className="h-3.5 w-3.5" /> {c.email}
+                  </a>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="p-12 text-center text-slate-400 text-sm">
+          No contacts matched &quot;{search}&quot;. Try a different search term.
+        </div>
+      )}
     </div>
   );
 }

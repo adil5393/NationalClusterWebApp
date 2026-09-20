@@ -85,6 +85,7 @@ export function StaffOperationsReportsPanel() {
   const [taskPriority, setTaskPriority] = useState<string>("");
   const [taskCategory, setTaskCategory] = useState<string>("");
   const [overdueOnly, setOverdueOnly] = useState<boolean>(false);
+  const [onlyWithTasks, setOnlyWithTasks] = useState<boolean>(false);
   const [issueType, setIssueType] = useState<string>("");
 
   // Report Data
@@ -113,10 +114,17 @@ export function StaffOperationsReportsPanel() {
     if (dateTo) params.append("date_to", dateTo);
     if (targetDate) params.append("date", targetDate);
     if (dutyType) params.append("duty_type", dutyType);
-    if (taskStatus) params.append("status", taskStatus);
-    if (taskPriority) params.append("priority", taskPriority);
-    if (taskCategory) params.append("category", taskCategory);
-    if (overdueOnly) params.append("overdue_only", "true");
+
+    if (activeReport === "duties") {
+      if (taskStatus) params.append("task_status", taskStatus);
+      if (taskPriority) params.append("task_priority", taskPriority);
+      if (onlyWithTasks) params.append("has_tasks", "true");
+    } else {
+      if (taskStatus) params.append("status", taskStatus);
+      if (taskPriority) params.append("priority", taskPriority);
+      if (taskCategory) params.append("category", taskCategory);
+      if (overdueOnly) params.append("overdue_only", "true");
+    }
     if (issueType) params.append("issue_type", issueType);
     return params;
   };
@@ -168,6 +176,7 @@ export function StaffOperationsReportsPanel() {
     setTaskPriority("");
     setTaskCategory("");
     setOverdueOnly(false);
+    setOnlyWithTasks(false);
     setIssueType("");
   };
 
@@ -465,17 +474,61 @@ export function StaffOperationsReportsPanel() {
             </div>
           )}
 
-          {/* Specific Duty search for Duty Assignments */}
+          {/* Specific Duty & Task filters for Duty Assignments */}
           {activeReport === "duties" && (
-            <div>
-              <Label className="text-[11px] text-slate-400 font-heading">Duty Type</Label>
-              <Input
-                placeholder="e.g. Match Control"
-                value={dutyType}
-                onChange={(e) => setDutyType(e.target.value)}
-                className="mt-1 h-8 text-xs bg-obsidian-900"
-              />
-            </div>
+            <>
+              <div>
+                <Label className="text-[11px] text-slate-400 font-heading">Duty Type</Label>
+                <Input
+                  placeholder="e.g. Match Control"
+                  value={dutyType}
+                  onChange={(e) => setDutyType(e.target.value)}
+                  className="mt-1 h-8 text-xs bg-obsidian-900"
+                />
+              </div>
+              <div>
+                <Label className="text-[11px] text-slate-400 font-heading">Linked Task Status</Label>
+                <select
+                  value={taskStatus}
+                  onChange={(e) => setTaskStatus(e.target.value)}
+                  className="w-full mt-1 rounded-lg border border-white/10 bg-obsidian-900 px-2.5 py-1.5 text-xs text-white focus:border-gold/50 focus:outline-none"
+                >
+                  <option value="">All Statuses</option>
+                  {meta?.task_statuses?.map((s) => (
+                    <option key={s} value={s}>
+                      {s.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label className="text-[11px] text-slate-400 font-heading">Linked Task Priority</Label>
+                <select
+                  value={taskPriority}
+                  onChange={(e) => setTaskPriority(e.target.value)}
+                  className="w-full mt-1 rounded-lg border border-white/10 bg-obsidian-900 px-2.5 py-1.5 text-xs text-white focus:border-gold/50 focus:outline-none"
+                >
+                  <option value="">All Priorities</option>
+                  {meta?.task_priorities?.map((p) => (
+                    <option key={p} value={p}>
+                      {p.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-2 pt-6">
+                <input
+                  type="checkbox"
+                  id="onlyWithTasks"
+                  checked={onlyWithTasks}
+                  onChange={(e) => setOnlyWithTasks(e.target.checked)}
+                  className="rounded border-white/20 bg-obsidian-900 text-gold focus:ring-0"
+                />
+                <Label htmlFor="onlyWithTasks" className="text-xs text-slate-300 font-medium cursor-pointer">
+                  With Tasks Only
+                </Label>
+              </div>
+            </>
           )}
 
           {/* Task Filters */}
@@ -911,99 +964,180 @@ export function StaffOperationsReportsPanel() {
 
           {/* 5. DUTY ASSIGNMENTS REPORT */}
           {activeReport === "duties" && (
-            <div className="rounded-xl border border-white/10 bg-obsidian-950 overflow-hidden">
-              <div className="p-3 border-b border-white/10 flex items-center justify-between">
-                <span className="text-xs font-heading font-bold text-white uppercase tracking-wider">
-                  Duty Assignments Register ({reportData.total} Assignments)
-                </span>
-                <span className="text-[11px] font-mono text-slate-400">
-                  {reportData.rows?.filter((r: any) => r.task_count > 0).length ?? 0} with linked tasks
-                </span>
-              </div>
-              {reportData.rows?.length === 0 ? (
-                <div className="py-12 text-center text-slate-400 text-xs">No duty assignment records found.</div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <THead>
-                      <TR>
-                        <TH>Staff Name</TH>
-                        <TH>Date & Shift</TH>
-                        <TH>Operational Area</TH>
-                        <TH>Specific Duty</TH>
-                        <TH>Location</TH>
-                        <TH>Time & Duration</TH>
-                        <TH>In-Charge(s)</TH>
-                        <TH>Shift Compliance</TH>
-                        <TH>Assigned Tasks</TH>
-                      </TR>
-                    </THead>
-                    <TBody>
-                      {reportData.rows?.map((r: any) => (
-                        <TR key={r.id} data-testid={`duty-row-${r.id}`}>
-                          <TD className="text-xs">
-                            <div className="font-heading font-bold text-white">{r.staff_name}</div>
-                            <div className="text-slate-500 text-[11px]">{r.category}</div>
-                          </TD>
-                          <TD className="text-xs text-slate-300">
-                            <div>{r.shift_name}</div>
-                            <div className="text-[11px] text-slate-500">{r.date}</div>
-                          </TD>
-                          <TD className="text-xs text-slate-300 font-medium">{r.operational_area}</TD>
-                          <TD className="text-xs text-white font-medium">{r.specific_duty}</TD>
-                          <TD className="text-xs text-slate-300">
-                            <div className="font-medium text-white">{r.location}</div>
-                            {((r.building && r.building !== "—") || (r.room && r.room !== "—")) && (
-                              <div className="text-[11px] text-slate-400">
-                                {[
-                                  r.building && r.building !== "—" ? `Bldg: ${r.building}` : null,
-                                  r.room && r.room !== "—" ? `Room: ${r.room}` : null,
-                                ]
-                                  .filter(Boolean)
-                                  .join(" · ")}
-                              </div>
-                            )}
-                          </TD>
-                          <TD className="text-xs font-mono text-slate-300">
-                            <div>{r.duty_time_span}</div>
-                            <div className="text-[10px] text-slate-500">{r.duration}</div>
-                          </TD>
-                          <TD className="text-xs text-slate-300">{r.incharges}</TD>
-                          <TD className="text-xs">
-                            {r.outside_shift ? (
-                              <Badge tone="red" size="sm">
-                                +{r.overflow_minutes}m Outside Shift
-                              </Badge>
-                            ) : (
-                              <Badge tone="green" size="sm">
-                                Within Shift
-                              </Badge>
-                            )}
-                          </TD>
-                          <TD className="text-xs">
-                            {r.tasks?.length ? (
-                              <div className="space-y-1">
-                                {r.tasks.map((t: any) => (
-                                  <div key={t.id} className="flex items-center gap-1.5">
-                                    <Badge tone={t.status === "completed" ? "green" : "blue"} size="sm">
-                                      {t.status?.toUpperCase()}
-                                    </Badge>
-                                    <span className="text-slate-300 truncate max-w-[160px]" title={t.title}>
-                                      {t.title}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-slate-500">—</span>
-                            )}
-                          </TD>
-                        </TR>
-                      ))}
-                    </TBody>
-                  </Table>
+            <div className="space-y-4">
+              {/* Task Report KPI Summary Cards for Duty Assignments */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                <div className="rounded-xl border border-white/10 bg-obsidian-950 p-3">
+                  <div className="text-[11px] text-slate-400 font-heading">Total Duties</div>
+                  <div className="text-lg font-heading font-black text-white">{reportData?.total ?? 0}</div>
+                  <div className="text-[10px] text-slate-500">Duty assignments</div>
                 </div>
-              )}
+                <div className="rounded-xl border border-white/10 bg-obsidian-950 p-3">
+                  <div className="text-[11px] text-slate-400 font-heading">With Tasks</div>
+                  <div className="text-lg font-heading font-black text-gold">
+                    {reportData?.task_summary?.duties_with_tasks ?? reportData?.rows?.filter((r: any) => r.task_count > 0).length ?? 0}
+                  </div>
+                  <div className="text-[10px] text-slate-500">Duties with task links</div>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-obsidian-950 p-3">
+                  <div className="text-[11px] text-slate-400 font-heading">Linked Tasks</div>
+                  <div className="text-lg font-heading font-black text-blue-400">
+                    {reportData?.task_summary?.total_linked_tasks ?? 0}
+                  </div>
+                  <div className="text-[10px] text-slate-500">Total task items</div>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-obsidian-950 p-3">
+                  <div className="text-[11px] text-slate-400 font-heading">Tasks Completed</div>
+                  <div className="text-lg font-heading font-black text-emerald-400">
+                    {reportData?.task_summary?.completed_tasks ?? 0}
+                  </div>
+                  <div className="text-[10px] text-slate-500">Finished tasks</div>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-obsidian-950 p-3">
+                  <div className="text-[11px] text-slate-400 font-heading">Tasks Overdue</div>
+                  <div className={cn(
+                    "text-lg font-heading font-black",
+                    (reportData?.task_summary?.overdue_tasks ?? 0) > 0 ? "text-red-400" : "text-slate-400"
+                  )}>
+                    {reportData?.task_summary?.overdue_tasks ?? 0}
+                  </div>
+                  <div className="text-[10px] text-slate-500">Need attention</div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-obsidian-950 overflow-hidden">
+                <div className="p-3 border-b border-white/10 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-heading font-bold text-white uppercase tracking-wider">
+                    Duty Assignments Register ({reportData?.total ?? 0} Assignments)
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[11px] font-mono text-slate-400">
+                      {reportData?.task_summary?.duties_with_tasks ?? reportData?.rows?.filter((r: any) => r.task_count > 0).length ?? 0} with linked tasks ({reportData?.task_summary?.total_linked_tasks ?? 0} tasks)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveReport("tasks")}
+                      className="inline-flex items-center gap-1 text-[11px] font-heading font-bold text-gold hover:text-white bg-gold/10 hover:bg-gold/20 px-2 py-1 rounded transition-colors"
+                      data-testid="jump-to-tasks-btn"
+                    >
+                      <CheckSquare2 className="h-3 w-3" />
+                      <span>Open Full Task Audit</span>
+                    </button>
+                  </div>
+                </div>
+                {reportData?.rows?.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 text-xs">No duty assignment records found.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <THead>
+                        <TR>
+                          <TH>Staff Name</TH>
+                          <TH>Date & Shift</TH>
+                          <TH>Operational Area</TH>
+                          <TH>Specific Duty</TH>
+                          <TH>Location</TH>
+                          <TH>Time & Duration</TH>
+                          <TH>In-Charge(s)</TH>
+                          <TH>Shift Compliance</TH>
+                          <TH className="min-w-[220px]">Assigned Tasks & Progress</TH>
+                        </TR>
+                      </THead>
+                      <TBody>
+                        {reportData?.rows?.map((r: any) => (
+                          <TR key={r.id} data-testid={`duty-row-${r.id}`}>
+                            <TD className="text-xs">
+                              <div className="font-heading font-bold text-white">{r.staff_name}</div>
+                              <div className="text-slate-500 text-[11px]">{r.category}</div>
+                            </TD>
+                            <TD className="text-xs text-slate-300">
+                              <div>{r.shift_name}</div>
+                              <div className="text-[11px] text-slate-500">{r.date}</div>
+                            </TD>
+                            <TD className="text-xs text-slate-300 font-medium">{r.operational_area}</TD>
+                            <TD className="text-xs text-white font-medium">{r.specific_duty}</TD>
+                            <TD className="text-xs text-slate-300">
+                              <div className="font-medium text-white">{r.location}</div>
+                              {((r.building && r.building !== "—") || (r.room && r.room !== "—")) && (
+                                <div className="text-[11px] text-slate-400">
+                                  {[
+                                    r.building && r.building !== "—" ? `Bldg: ${r.building}` : null,
+                                    r.room && r.room !== "—" ? `Room: ${r.room}` : null,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" · ")}
+                                </div>
+                              )}
+                            </TD>
+                            <TD className="text-xs font-mono text-slate-300">
+                              <div>{r.duty_time_span}</div>
+                              <div className="text-[10px] text-slate-500">{r.duration}</div>
+                            </TD>
+                            <TD className="text-xs text-slate-300">{r.incharges}</TD>
+                            <TD className="text-xs">
+                              {r.outside_shift ? (
+                                <Badge tone="red" size="sm">
+                                  +{r.overflow_minutes}m Outside Shift
+                                </Badge>
+                              ) : (
+                                <Badge tone="green" size="sm">
+                                  Within Shift
+                                </Badge>
+                              )}
+                            </TD>
+                            <TD className="text-xs">
+                              {r.tasks?.length ? (
+                                <div className="space-y-1.5">
+                                  {r.tasks.map((t: any) => (
+                                    <div
+                                      key={t.id}
+                                      className="p-1.5 rounded-lg border border-white/5 bg-white/[0.02] space-y-1"
+                                    >
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <Badge
+                                          tone={
+                                            t.status === "completed"
+                                              ? "green"
+                                              : t.status === "in_progress"
+                                              ? "blue"
+                                              : "slate"
+                                          }
+                                          size="sm"
+                                        >
+                                          {t.status?.toUpperCase()}
+                                        </Badge>
+                                        {t.is_overdue && (
+                                          <Badge tone="red" size="sm">
+                                            OVERDUE
+                                          </Badge>
+                                        )}
+                                        {(t.priority === "urgent" || t.priority === "high") && (
+                                          <Badge tone={t.priority === "urgent" ? "red" : "amber"} size="sm">
+                                            {t.priority?.toUpperCase()}
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <div className="text-white font-medium truncate max-w-[200px]" title={t.title}>
+                                        {t.title}
+                                      </div>
+                                      <div className="text-[10px] text-slate-400 flex items-center justify-between gap-1 font-mono">
+                                        <span>{t.category || "General"}</span>
+                                        <span>{t.due_date_display || "No Due Date"}</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-slate-500">—</span>
+                              )}
+                            </TD>
+                          </TR>
+                        ))}
+                      </TBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

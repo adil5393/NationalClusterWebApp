@@ -18,6 +18,7 @@ import { useModuleAccess } from "@/lib/permissions";
 
 import {
   StaffMember,
+  OperationalCategoryItem,
   ShiftBlockItem,
   StaffShiftItem,
   StaffDutyItem,
@@ -56,6 +57,7 @@ export default function Staff() {
   const [tasks, setTasks] = useState<StaffTaskItem[]>([]);
   const [dutyTypes, setDutyTypes] = useState<string[]>([]);
   const [staffCategories, setStaffCategories] = useState<string[]>([]);
+  const [operationalCategories, setOperationalCategories] = useState<OperationalCategoryItem[]>([]);
   const [staffLanguages, setStaffLanguages] = useState<string[]>([]);
   const [operationalAreas, setOperationalAreas] = useState<OperationalAreaItem[]>([]);
   const [availableLocations, setAvailableLocations] = useState<AvailableLocationOption[]>([]);
@@ -114,11 +116,19 @@ export default function Staff() {
       api.get<StaffShiftItem[]>("/staff/shifts"),
       api.get<StaffDutyItem[]>("/staff/duties"),
       api.get<StaffTaskItem[]>("/tasks"),
-      api.get<{ duty_types: string[]; staff_categories: string[]; staff_languages: string[] }>("/staff/meta"),
+      api.get<{
+        duty_types: string[];
+        staff_categories: string[];
+        staff_languages: string[];
+        operational_categories?: OperationalCategoryItem[];
+      }>("/staff/meta"),
       api.get<OperationalAreaItem[]>("/operational-areas"),
       api.get<AvailableLocationOption[]>("/event-locations/available"),
+      api
+        .get<OperationalCategoryItem[]>("/operational-categories")
+        .catch(() => ({ data: [] as OperationalCategoryItem[] })),
     ])
-      .then(([s, sb, sh, d, t, m, oa, avail]) => {
+      .then(([s, sb, sh, d, t, m, oa, avail, opCats]) => {
         setStaff(s.data);
         setShiftBlocks(sb.data);
         setShifts(sh.data);
@@ -127,6 +137,11 @@ export default function Staff() {
         setDutyTypes(m.data.duty_types);
         setStaffCategories(m.data.staff_categories);
         setStaffLanguages(m.data.staff_languages ?? []);
+        const categoriesList =
+          opCats?.data && opCats.data.length > 0
+            ? opCats.data
+            : m.data.operational_categories ?? [];
+        setOperationalCategories(categoriesList);
         setOperationalAreas(oa.data);
         setAvailableLocations(avail.data);
       })
@@ -493,6 +508,7 @@ export default function Staff() {
         <StaffDirectoryTab
           staff={staff}
           staffCategories={staffCategories}
+          operationalCategories={operationalCategories}
           activeNowCount={activeNowCount}
           canEdit={canEdit}
           onOpenAdd={() => {
@@ -643,6 +659,7 @@ export default function Staff() {
         onClose={() => setOpenMemberModal(false)}
         staffMember={editingMember}
         staffCategories={staffCategories}
+        operationalCategories={operationalCategories}
         staffLanguages={staffLanguages}
         onSuccess={load}
       />

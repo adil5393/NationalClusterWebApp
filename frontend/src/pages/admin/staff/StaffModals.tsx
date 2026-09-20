@@ -8,6 +8,7 @@ import { StaffSelector, MultiStaffSelector, StaffOption } from "@/components/adm
 import { toDateTimeLocal } from "@/lib/meta";
 import {
   StaffMember,
+  OperationalCategoryItem,
   ShiftBlockItem,
   OperationalAreaItem,
   AvailableLocationOption,
@@ -24,6 +25,7 @@ interface MemberFormDialogProps {
   onClose: () => void;
   staffMember: StaffMember | null;
   staffCategories: string[];
+  operationalCategories?: OperationalCategoryItem[];
   staffLanguages: string[];
   onSuccess: () => void;
 }
@@ -33,6 +35,7 @@ export function MemberFormDialog({
   onClose,
   staffMember,
   staffCategories,
+  operationalCategories = [],
   staffLanguages,
   onSuccess,
 }: MemberFormDialogProps) {
@@ -40,7 +43,9 @@ export function MemberFormDialog({
     full_name: "",
     phone: "",
     email: "",
+    designation: "",
     category: "",
+    category_ids: [] as number[],
     notes: "",
     languages: [] as string[],
   });
@@ -48,18 +53,38 @@ export function MemberFormDialog({
 
   useEffect(() => {
     if (staffMember) {
+      const selectedIds = staffMember.categories?.map((c) => c.id) ?? staffMember.category_ids ?? [];
+      let finalIds = [...selectedIds];
+      if (finalIds.length === 0 && staffMember.category && operationalCategories.length > 0) {
+        const matched = operationalCategories.find(
+          (c) => c.name.toLowerCase() === (staffMember.category || "").toLowerCase()
+        );
+        if (matched) finalIds.push(matched.id);
+      }
+
       setForm({
         full_name: staffMember.full_name || "",
         phone: staffMember.phone || "",
         email: staffMember.email || "",
+        designation: staffMember.designation || "",
         category: staffMember.category || "",
+        category_ids: finalIds,
         notes: staffMember.notes || "",
         languages: staffMember.languages ?? [],
       });
     } else {
-      setForm({ full_name: "", phone: "", email: "", category: "", notes: "", languages: [] });
+      setForm({
+        full_name: "",
+        phone: "",
+        email: "",
+        designation: "",
+        category: "",
+        category_ids: [],
+        notes: "",
+        languages: [],
+      });
     }
-  }, [staffMember, open]);
+  }, [staffMember, open, operationalCategories]);
 
   const handleSubmit = async () => {
     if (!form.full_name.trim()) return toast.error("Staff name is required");
@@ -68,7 +93,9 @@ export function MemberFormDialog({
       full_name: form.full_name.trim(),
       phone: form.phone.trim() || null,
       email: form.email.trim() || null,
+      designation: form.designation.trim() || null,
       category: form.category.trim() || null,
+      category_ids: form.category_ids,
       notes: form.notes.trim() || null,
       languages: form.languages,
     };
@@ -110,19 +137,13 @@ export function MemberFormDialog({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <Label>Category / Role</Label>
+            <Label>Designation / Role Title</Label>
             <Input
-              placeholder="e.g. Referees, Medical, Technical"
-              list="staff-category-options"
-              value={form.category}
-              onChange={(e) => setForm((m) => ({ ...m, category: e.target.value }))}
-              data-testid="staff-category-input"
+              placeholder="e.g. Coordinator, Driver, Doctor, Volunteer"
+              value={form.designation}
+              onChange={(e) => setForm((m) => ({ ...m, designation: e.target.value }))}
+              data-testid="staff-designation-input"
             />
-            <datalist id="staff-category-options">
-              {staffCategories.map((c) => (
-                <option key={c} value={c} />
-              ))}
-            </datalist>
           </div>
 
           <div>
@@ -144,6 +165,67 @@ export function MemberFormDialog({
             value={form.email}
             onChange={(e) => setForm((m) => ({ ...m, email: e.target.value }))}
           />
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <Label className="mb-0">
+              Operational Categories ({form.category_ids.length} selected)
+            </Label>
+            <span className="text-[10px] text-slate-400 font-mono">Functional operational areas</span>
+          </div>
+          {operationalCategories && operationalCategories.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5 p-2 rounded-lg bg-black/20 border border-white/10" data-testid="staff-categories-picker">
+              {operationalCategories.map((cat) => {
+                const isSelected = form.category_ids.includes(cat.id);
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    aria-pressed={isSelected}
+                    onClick={() => {
+                      const next = isSelected
+                        ? form.category_ids.filter((id) => id !== cat.id)
+                        : [...form.category_ids, cat.id];
+                      const primaryCat = operationalCategories.find((c) =>
+                        isSelected ? c.id !== cat.id && next.includes(c.id) : c.id === cat.id
+                      );
+                      setForm((m) => ({
+                        ...m,
+                        category_ids: next,
+                        category: primaryCat ? primaryCat.name : m.category,
+                      }));
+                    }}
+                    data-testid={`staff-category-pill-${cat.key}`}
+                    className={
+                      "rounded-lg border px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 transition-colors " +
+                      (isSelected
+                        ? "border-gold/60 bg-gold/20 text-gold font-bold shadow-xs"
+                        : "border-white/10 bg-white/[0.03] text-slate-300 hover:border-white/20 hover:text-white")
+                    }
+                  >
+                    <span>{cat.name}</span>
+                    {isSelected && <span className="text-gold text-[10px]">✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <>
+              <Input
+                placeholder="e.g. Transport, Medical, Match Control"
+                list="staff-category-options"
+                value={form.category}
+                onChange={(e) => setForm((m) => ({ ...m, category: e.target.value }))}
+                data-testid="staff-category-input"
+              />
+              <datalist id="staff-category-options">
+                {staffCategories.map((c) => (
+                  <option key={c} value={c} />
+                ))}
+              </datalist>
+            </>
+          )}
         </div>
 
         <div>

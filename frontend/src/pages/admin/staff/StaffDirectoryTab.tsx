@@ -17,11 +17,12 @@ import { Input, Select } from "@/components/ui/input";
 import { Table, THead, TH, TR, TD, TBody } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
-import { StaffMember } from "./types";
+import { StaffMember, OperationalCategoryItem } from "./types";
 
 interface StaffDirectoryTabProps {
   staff: StaffMember[];
   staffCategories: string[];
+  operationalCategories?: OperationalCategoryItem[];
   activeNowCount: number;
   canEdit: boolean;
   onOpenAdd: () => void;
@@ -37,6 +38,7 @@ const PAGE_SIZE = 15;
 export function StaffDirectoryTab({
   staff,
   staffCategories,
+  operationalCategories = [],
   activeNowCount,
   canEdit,
   onOpenAdd,
@@ -59,11 +61,20 @@ export function StaffDirectoryTab({
         s.full_name.toLowerCase().includes(q) ||
         (s.phone && s.phone.toLowerCase().includes(q)) ||
         (s.email && s.email.toLowerCase().includes(q)) ||
+        (s.designation && s.designation.toLowerCase().includes(q)) ||
         (s.category && s.category.toLowerCase().includes(q)) ||
+        (s.categories && s.categories.some((c) => c.name.toLowerCase().includes(q))) ||
         (s.languages ?? []).some((l) => l.toLowerCase().includes(q));
 
       const matchesCat =
-        selectedCategory === "ALL" || (s.category || "").toLowerCase() === selectedCategory.toLowerCase();
+        selectedCategory === "ALL" ||
+        (s.category || "").toLowerCase() === selectedCategory.toLowerCase() ||
+        (s.categories &&
+          s.categories.some(
+            (c) =>
+              c.name.toLowerCase() === selectedCategory.toLowerCase() ||
+              c.key.toLowerCase() === selectedCategory.toLowerCase()
+          ));
 
       const matchesLogin =
         loginFilter === "ALL" ||
@@ -136,11 +147,17 @@ export function StaffDirectoryTab({
             className="h-9 text-xs sm:w-48"
           >
             <option value="ALL">All Categories</option>
-            {staffCategories.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
+            {operationalCategories && operationalCategories.length > 0
+              ? operationalCategories.map((c) => (
+                  <option key={c.id} value={c.name}>
+                    {c.name}
+                  </option>
+                ))
+              : staffCategories.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
           </Select>
 
           <Select
@@ -253,15 +270,35 @@ export function StaffDirectoryTab({
                     </div>
                   </TD>
 
-                  {/* CATEGORY */}
+                  {/* ROLE / CATEGORY */}
                   <TD>
-                    {s.category ? (
-                      <Badge tone="gold" className="text-[10px] uppercase tracking-wider">
-                        {s.category}
-                      </Badge>
-                    ) : (
-                      <span className="text-[11px] text-slate-500 italic font-mono">—</span>
-                    )}
+                    <div className="space-y-1">
+                      {s.designation && (
+                        <div className="font-heading font-bold text-xs text-sky-300">
+                          {s.designation}
+                        </div>
+                      )}
+                      {s.categories && s.categories.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {s.categories.map((c) => (
+                            <Badge
+                              key={c.id}
+                              tone="gold"
+                              size="sm"
+                              className="text-[10px] uppercase tracking-wider"
+                            >
+                              {c.name}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : s.category ? (
+                        <Badge tone="gold" size="sm" className="text-[10px] uppercase tracking-wider">
+                          {s.category}
+                        </Badge>
+                      ) : !s.designation ? (
+                        <span className="text-[11px] text-slate-500 italic font-mono">—</span>
+                      ) : null}
+                    </div>
                   </TD>
 
                   {/* LANGUAGES */}

@@ -278,7 +278,7 @@ export default function Reports() {
               <ReportDownloadCard
                 icon={ShieldCheck}
                 title="Duty Report"
-                description="Staff duty assignments across every building & room."
+                description="Staff duty assignments and integrated task roster across every building & room."
                 href={`${BACKEND}/api/export/duties.xlsx`}
                 testId="download-duty-report-btn"
                 onView={() => openViewReport("duty", `${BACKEND}/api/export/duties.xlsx`, "Download Duties .xlsx")}

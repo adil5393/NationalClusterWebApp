@@ -19,13 +19,27 @@ import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/meta";
 import { cn } from "@/lib/utils";
 
+export interface OperationalCategoryItem {
+  id: number;
+  name: string;
+  key: string;
+  description?: string | null;
+  icon?: string | null;
+  display_order?: number;
+  is_active?: boolean;
+}
+
 export interface StaffDetailMember {
   id: number;
   full_name: string;
   phone?: string | null;
   email?: string | null;
+  designation?: string | null;
   category?: string | null;
+  categories?: OperationalCategoryItem[];
+  category_ids?: number[];
   notes?: string | null;
+  languages?: string[];
   login_username?: string | null;
 }
 
@@ -157,15 +171,29 @@ export function StaffDetailDrawer({
                   {staff.full_name.slice(0, 1).toUpperCase()}
                 </div>
                 <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
                     <h2 className="font-heading text-lg font-black tracking-tight text-white truncate">
                       {staff.full_name}
                     </h2>
-                    {staff.category && (
+                    {staff.designation && (
+                      <span className="rounded bg-sky-500/20 border border-sky-500/40 px-2 py-0.5 text-[10px] font-heading font-bold text-sky-300 uppercase tracking-wider">
+                        {staff.designation}
+                      </span>
+                    )}
+                    {staff.categories && staff.categories.length > 0 ? (
+                      staff.categories.map((c) => (
+                        <span
+                          key={c.id}
+                          className="rounded bg-gold/20 border border-gold/40 px-2 py-0.5 text-[10px] font-heading font-bold text-gold uppercase tracking-wider"
+                        >
+                          {c.name}
+                        </span>
+                      ))
+                    ) : staff.category ? (
                       <span className="rounded bg-gold/20 border border-gold/40 px-2 py-0.5 text-[10px] font-heading font-bold text-gold uppercase tracking-wider">
                         {staff.category}
                       </span>
-                    )}
+                    ) : null}
                   </div>
 
                   <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-300 font-body">
@@ -267,8 +295,25 @@ export function StaffDetailDrawer({
                       <span className="font-heading font-bold text-white">{staff.full_name}</span>
                     </div>
                     <div>
-                      <span className="text-slate-500 font-mono text-[10px] block">Role / Category</span>
-                      <span className="text-gold font-bold">{staff.category || "General"}</span>
+                      <span className="text-slate-500 font-mono text-[10px] block">Designation / Role</span>
+                      <span className="text-sky-300 font-bold">{staff.designation || "Staff"}</span>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-slate-500 font-mono text-[10px] block">Operational Categories</span>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {staff.categories && staff.categories.length > 0 ? (
+                          staff.categories.map((c) => (
+                            <span
+                              key={c.id}
+                              className="rounded bg-gold/15 border border-gold/30 px-2 py-0.5 text-[11px] font-medium text-gold"
+                            >
+                              {c.name}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-gold font-bold">{staff.category || "General"}</span>
+                        )}
+                      </div>
                     </div>
                     <div>
                       <span className="text-slate-500 font-mono text-[10px] block">Phone</span>
@@ -278,6 +323,21 @@ export function StaffDetailDrawer({
                       <span className="text-slate-500 font-mono text-[10px] block">Email</span>
                       <span className="text-slate-200 truncate block">{staff.email || "—"}</span>
                     </div>
+                    {staff.languages && staff.languages.length > 0 && (
+                      <div className="col-span-2">
+                        <span className="text-slate-500 font-mono text-[10px] block">Languages Spoken</span>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {staff.languages.map((l) => (
+                            <span
+                              key={l}
+                              className="rounded bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] text-slate-300"
+                            >
+                              {l}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 

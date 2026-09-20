@@ -6,11 +6,27 @@
   :root {
     --background: 222 47% 4%;
     --foreground: 210 40% 98%;
+    color-scheme: dark;
   }
 
   body {
     @apply bg-obsidian text-slate-100 antialiased selection:bg-gold selection:text-obsidian;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  select {
+    color-scheme: dark;
+  }
+
+  select option,
+  select optgroup {
+    background-color: #0e131b !important;
+    color: #f8fafc !important;
+  }
+
+  input,
+  textarea {
+    color-scheme: dark;
   }
 
   /* Custom subtle scrollbar */

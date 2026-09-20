@@ -4,17 +4,21 @@ import {
   StaffShiftItem,
   StaffDutyItem,
   StaffTaskItem,
+  OperationalCategoryItem,
 } from "@/components/admin/StaffDetailDrawer";
 
 export type { AvailableLocationOption, OperationalAreaItem };
-export type { StaffDetailMember, StaffShiftItem, StaffDutyItem, StaffTaskItem };
+export type { StaffDetailMember, StaffShiftItem, StaffDutyItem, StaffTaskItem, OperationalCategoryItem };
 
 export interface StaffMember {
   id: number;
   full_name: string;
   phone?: string | null;
   email?: string | null;
+  designation?: string | null;
   category?: string | null;
+  categories?: OperationalCategoryItem[];
+  category_ids?: number[];
   notes?: string | null;
   languages?: string[];
   login_username?: string | null;
