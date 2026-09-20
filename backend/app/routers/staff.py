@@ -12,7 +12,11 @@ router = APIRouter(prefix="/api/staff", tags=["staff"])
 
 @router.get("/meta")
 def meta():
-    return {"duty_types": schemas.DUTY_TYPES, "staff_categories": schemas.STAFF_CATEGORIES}
+    return {
+        "duty_types": schemas.DUTY_TYPES,
+        "staff_categories": schemas.STAFF_CATEGORIES,
+        "staff_languages": schemas.STAFF_LANGUAGES,
+    }
 
 
 # ---------- Staff members ----------

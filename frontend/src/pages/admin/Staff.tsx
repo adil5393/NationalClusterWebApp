@@ -56,6 +56,7 @@ export default function Staff() {
   const [tasks, setTasks] = useState<StaffTaskItem[]>([]);
   const [dutyTypes, setDutyTypes] = useState<string[]>([]);
   const [staffCategories, setStaffCategories] = useState<string[]>([]);
+  const [staffLanguages, setStaffLanguages] = useState<string[]>([]);
   const [operationalAreas, setOperationalAreas] = useState<OperationalAreaItem[]>([]);
   const [availableLocations, setAvailableLocations] = useState<AvailableLocationOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -113,7 +114,7 @@ export default function Staff() {
       api.get<StaffShiftItem[]>("/staff/shifts"),
       api.get<StaffDutyItem[]>("/staff/duties"),
       api.get<StaffTaskItem[]>("/tasks"),
-      api.get<{ duty_types: string[]; staff_categories: string[] }>("/staff/meta"),
+      api.get<{ duty_types: string[]; staff_categories: string[]; staff_languages: string[] }>("/staff/meta"),
       api.get<OperationalAreaItem[]>("/operational-areas"),
       api.get<AvailableLocationOption[]>("/event-locations/available"),
     ])
@@ -125,6 +126,7 @@ export default function Staff() {
         setTasks(t.data);
         setDutyTypes(m.data.duty_types);
         setStaffCategories(m.data.staff_categories);
+        setStaffLanguages(m.data.staff_languages ?? []);
         setOperationalAreas(oa.data);
         setAvailableLocations(avail.data);
       })
@@ -641,6 +643,7 @@ export default function Staff() {
         onClose={() => setOpenMemberModal(false)}
         staffMember={editingMember}
         staffCategories={staffCategories}
+        staffLanguages={staffLanguages}
         onSuccess={load}
       />
 

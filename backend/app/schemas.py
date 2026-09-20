@@ -54,6 +54,27 @@ DUTY_TYPES = [
 # allotment time, not when the person is added.
 STAFF_CATEGORIES = ["Academic & Administrative", "Support & Housekeeping", "Transport", "Observer", "Game Manager"]
 SHIFT_STATUSES = ["SCHEDULED", "CANCELLED"]
+# Languages a staff member can be assigned (StaffMember.languages) — a fixed
+# catalog so the values stay consistent for the later contact-by-language
+# filtering on the public site. Stored as these exact spellings.
+STAFF_LANGUAGES = ["English", "Hindi"]
+_STAFF_LANGUAGES_BY_KEY = {lang.lower(): lang for lang in STAFF_LANGUAGES}
+
+
+def _normalize_languages(v):
+    """Accepts any casing, drops blanks/dupes, keeps catalog order, and rejects
+    anything outside STAFF_LANGUAGES (422) so free-text typos can't creep in."""
+    if v is None:
+        return []
+    picked = set()
+    for item in v:
+        key = str(item).strip().lower()
+        if not key:
+            continue
+        if key not in _STAFF_LANGUAGES_BY_KEY:
+            raise ValueError(f"Unknown language: {item}")
+        picked.add(_STAFF_LANGUAGES_BY_KEY[key])
+    return [lang for lang in STAFF_LANGUAGES if lang in picked]
 
 
 class ORMModel(BaseModel):
@@ -772,6 +793,10 @@ class StaffBase(BaseModel):
     email: Optional[str] = None
     category: Optional[str] = None
     notes: Optional[str] = None
+    # Languages this person can communicate in (see STAFF_LANGUAGES).
+    languages: List[str] = []
+
+    _norm_languages = field_validator("languages", mode="before")(lambda cls, v: _normalize_languages(v))
 
 
 class StaffCreate(StaffBase):
@@ -784,6 +809,11 @@ class StaffUpdate(BaseModel):
     email: Optional[str] = None
     category: Optional[str] = None
     notes: Optional[str] = None
+    languages: Optional[List[str]] = None
+
+    _norm_languages = field_validator("languages", mode="before")(
+        lambda cls, v: None if v is None else _normalize_languages(v)
+    )
 
 
 class StaffRead(ORMModel, StaffBase):

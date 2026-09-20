@@ -24,6 +24,7 @@ interface MemberFormDialogProps {
   onClose: () => void;
   staffMember: StaffMember | null;
   staffCategories: string[];
+  staffLanguages: string[];
   onSuccess: () => void;
 }
 
@@ -32,6 +33,7 @@ export function MemberFormDialog({
   onClose,
   staffMember,
   staffCategories,
+  staffLanguages,
   onSuccess,
 }: MemberFormDialogProps) {
   const [form, setForm] = useState({
@@ -40,6 +42,7 @@ export function MemberFormDialog({
     email: "",
     category: "",
     notes: "",
+    languages: [] as string[],
   });
   const [saving, setSaving] = useState(false);
 
@@ -51,9 +54,10 @@ export function MemberFormDialog({
         email: staffMember.email || "",
         category: staffMember.category || "",
         notes: staffMember.notes || "",
+        languages: staffMember.languages ?? [],
       });
     } else {
-      setForm({ full_name: "", phone: "", email: "", category: "", notes: "" });
+      setForm({ full_name: "", phone: "", email: "", category: "", notes: "", languages: [] });
     }
   }, [staffMember, open]);
 
@@ -66,6 +70,7 @@ export function MemberFormDialog({
       email: form.email.trim() || null,
       category: form.category.trim() || null,
       notes: form.notes.trim() || null,
+      languages: form.languages,
     };
     try {
       if (staffMember) {
@@ -139,6 +144,37 @@ export function MemberFormDialog({
             value={form.email}
             onChange={(e) => setForm((m) => ({ ...m, email: e.target.value }))}
           />
+        </div>
+
+        <div>
+          <Label>Languages Spoken</Label>
+          <div className="flex flex-wrap gap-1.5" data-testid="staff-languages-picker">
+            {staffLanguages.map((lang) => {
+              const on = form.languages.includes(lang);
+              return (
+                <button
+                  key={lang}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() =>
+                    setForm((m) => ({
+                      ...m,
+                      languages: on ? m.languages.filter((l) => l !== lang) : [...m.languages, lang],
+                    }))
+                  }
+                  data-testid={`staff-language-${lang}`}
+                  className={
+                    "rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors " +
+                    (on
+                      ? "border-gold/60 bg-gold/15 text-gold"
+                      : "border-white/10 bg-white/[0.03] text-slate-400 hover:border-white/25 hover:text-white")
+                  }
+                >
+                  {lang}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div>

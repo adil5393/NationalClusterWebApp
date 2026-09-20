@@ -40,6 +40,16 @@ export const priorityTone = (p: string): Tone => {
 export const formatDate = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
 
+/** "29 Sep 2026, 09:30 am" — date AND time, in the viewer's local zone. */
+export const formatDateTime = (iso?: string | null) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const date = d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  const time = d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+  return `${date}, ${time}`;
+};
+
 // Compact "+1h" / "+45m" / "+1h 30m" style for a duty's outside-shift-window
 // overflow (backend's DutyAssignment `outside_shift_minutes` — see
 // routers/staff.py `_duty_shift_overflow_minutes`). Shared by the organizer

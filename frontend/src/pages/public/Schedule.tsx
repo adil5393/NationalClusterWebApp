@@ -67,7 +67,11 @@ function groupByDay<T extends { start_time?: string | null }>(rows: T[]): Day<T>
   const unscheduled = rows.filter((r) => !r.start_time);
   const byKey = new Map<string, T[]>();
   for (const r of scheduled) {
-    const key = r.start_time!.slice(0, 10);
+    // Local calendar day (not the ISO string's UTC date — an event at 00:30 IST
+    // is still the previous day in UTC and would land under the wrong heading).
+    const d = new Date(r.start_time!);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const key = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     if (!byKey.has(key)) byKey.set(key, []);
     byKey.get(key)!.push(r);
   }

@@ -721,6 +721,10 @@ class StaffMember(TimestampMixin, Base):
     email = Column(String(200))
     category = Column(String(80))  # one of schemas.STAFF_CATEGORIES — who they are, not what duty they're on
     notes = Column(Text)
+    # List of schemas.STAFF_LANGUAGES this person speaks — assigned in the
+    # Staff directory; later drives which contacts the public site shows for
+    # a visitor's preferred language.
+    languages = Column(JSON, nullable=False, default=list, server_default="[]")
 
     duties = relationship("DutyAssignment", back_populates="staff", cascade="all, delete-orphan")
     shifts = relationship("StaffShift", back_populates="staff", cascade="all, delete-orphan", order_by="StaffShift.id")

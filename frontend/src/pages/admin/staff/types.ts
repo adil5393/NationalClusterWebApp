@@ -16,6 +16,7 @@ export interface StaffMember {
   email?: string | null;
   category?: string | null;
   notes?: string | null;
+  languages?: string[];
   login_username?: string | null;
 }
 

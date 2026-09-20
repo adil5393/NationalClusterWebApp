@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Trash2, Calendar, MapPin, Clock, Users } from "lucide-react";
+import { Plus, Trash2, Pencil, MapPin, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,7 @@ import { Table, THead, TH, TR, TD, TBody } from "@/components/ui/table";
 import { Dialog } from "@/components/ui/dialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
-import { formatDate } from "@/lib/meta";
+import { formatDateTime, toDateTimeLocal } from "@/lib/meta";
 import { useModuleAccess } from "@/lib/permissions";
 
 interface Team {
@@ -22,8 +22,9 @@ interface Venue {
 interface Event {
   id: number;
   title: string;
-  team_id?: number;
+  team_id?: number | null;
   team_name?: string;
+  venue_id?: number | null;
   venue_name?: string;
   start_time?: string;
   end_time?: string;
@@ -40,6 +41,7 @@ export default function Schedule() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Record<string, string>>(empty);
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -55,21 +57,32 @@ export default function Schedule() {
 
   const save = async () => {
     if (!form.title.trim()) return toast.error("Title is required");
+    // datetime-local gives a zone-less "YYYY-MM-DDTHH:mm" meant in the
+    // organizer's local time; sending it as-is makes the server read it as UTC
+    // and shifts every time by the zone offset. toISOString() pins the instant.
+    const toIso = (v: string) => (v ? new Date(v).toISOString() : null);
+    if (form.start_time && form.end_time && new Date(form.end_time) <= new Date(form.start_time)) {
+      return toast.error("End time must be after the start time");
+    }
+    const payload = {
+      title: form.title.trim(),
+      team_id: form.team_id ? Number(form.team_id) : null,
+      venue_id: form.venue_id ? Number(form.venue_id) : null,
+      start_time: toIso(form.start_time),
+      end_time: toIso(form.end_time),
+      description: form.description.trim() || null,
+    };
     try {
-      await api.post("/schedule", {
-        title: form.title,
-        team_id: form.team_id ? Number(form.team_id) : null,
-        venue_id: form.venue_id ? Number(form.venue_id) : null,
-        start_time: form.start_time || null,
-        end_time: form.end_time || null,
-        description: form.description || null,
-      });
-      toast.success("Event added");
+      if (editingId) await api.put(`/schedule/${editingId}`, payload);
+      else await api.post("/schedule", payload);
+      toast.success(editingId ? "Event updated" : "Event added");
       setForm(empty);
+      setEditingId(null);
       setOpen(false);
       load();
-    } catch {
-      toast.error("Could not save event");
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Could not save event");
     }
   };
 
@@ -81,6 +94,25 @@ export default function Schedule() {
   };
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  const openAdd = () => {
+    setEditingId(null);
+    setForm(empty);
+    setOpen(true);
+  };
+
+  const openEdit = (e: Event) => {
+    setEditingId(e.id);
+    setForm({
+      title: e.title,
+      team_id: e.team_id ? String(e.team_id) : "",
+      venue_id: e.venue_id ? String(e.venue_id) : "",
+      start_time: toDateTimeLocal(e.start_time),
+      end_time: toDateTimeLocal(e.end_time),
+      description: e.description ?? "",
+    });
+    setOpen(true);
+  };
 
   return (
     <div data-testid="admin-schedule" className="space-y-6">
@@ -101,10 +133,7 @@ export default function Schedule() {
           <Button
             variant="gold"
             size="sm"
-            onClick={() => {
-              setForm(empty);
-              setOpen(true);
-            }}
+            onClick={openAdd}
             data-testid="add-event-btn"
             className="text-xs font-extrabold"
           >
@@ -142,14 +171,20 @@ export default function Schedule() {
                       </p>
                     </div>
                     {canEdit && (
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        className="h-7 text-xs shrink-0"
-                        onClick={() => remove(e.id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" /> Remove
-                      </Button>
+                      <div className="flex shrink-0 gap-1.5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => openEdit(e)}
+                          data-testid={`edit-event-card-${e.id}`}
+                        >
+                          <Pencil className="h-3.5 w-3.5" /> Edit
+                        </Button>
+                        <Button variant="danger" size="sm" className="h-7 text-xs" onClick={() => remove(e.id)}>
+                          <Trash2 className="h-3.5 w-3.5" /> Remove
+                        </Button>
+                      </div>
                     )}
                   </div>
 
@@ -165,7 +200,8 @@ export default function Schedule() {
                     )}
                     <span className="text-slate-400 font-mono flex items-center gap-1">
                       <Clock className="h-3 w-3 text-slate-500" />
-                      {e.start_time ? formatDate(e.start_time) : "No start time"}
+                      {e.start_time ? formatDateTime(e.start_time) : "No start time"}
+                      {e.end_time ? ` – ${formatDateTime(e.end_time)}` : ""}
                     </span>
                   </div>
 
@@ -213,22 +249,33 @@ export default function Schedule() {
                       </TD>
                       <TD className="text-slate-300 font-body text-xs">{e.venue_name || "—"}</TD>
                       <TD className="text-slate-300 font-mono text-xs">
-                        {e.start_time ? formatDate(e.start_time) : "—"}
+                        {e.start_time ? formatDateTime(e.start_time) : "—"}
                       </TD>
                       <TD className="text-slate-300 font-mono text-xs">
-                        {e.end_time ? formatDate(e.end_time) : "—"}
+                        {e.end_time ? formatDateTime(e.end_time) : "—"}
                       </TD>
                       <TD className="text-right">
                         {canEdit && (
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => remove(e.id)}
-                            data-testid={`delete-event-${e.id}`}
-                            title="Delete Event"
-                          >
-                            <Trash2 className="h-3.5 w-3.5 text-red-400" />
-                          </Button>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => openEdit(e)}
+                              data-testid={`edit-event-${e.id}`}
+                              title="Edit Event"
+                            >
+                              <Pencil className="h-3.5 w-3.5 text-slate-300" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => remove(e.id)}
+                              data-testid={`delete-event-${e.id}`}
+                              title="Delete Event"
+                            >
+                              <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                            </Button>
+                          </div>
                         )}
                       </TD>
                     </TR>
@@ -244,7 +291,7 @@ export default function Schedule() {
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
-        title="Schedule Event / Match Ceremony"
+        title={editingId ? "Edit Event" : "Schedule Event / Match Ceremony"}
         testId="event-dialog"
       >
         <div className="space-y-4">
@@ -318,7 +365,7 @@ export default function Schedule() {
               Cancel
             </Button>
             <Button variant="gold" size="sm" onClick={save} data-testid="save-event-btn">
-              Save Event
+              {editingId ? "Update Event" : "Save Event"}
             </Button>
           </div>
         </div>

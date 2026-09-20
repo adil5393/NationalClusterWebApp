@@ -59,7 +59,8 @@ export function StaffDirectoryTab({
         s.full_name.toLowerCase().includes(q) ||
         (s.phone && s.phone.toLowerCase().includes(q)) ||
         (s.email && s.email.toLowerCase().includes(q)) ||
-        (s.category && s.category.toLowerCase().includes(q));
+        (s.category && s.category.toLowerCase().includes(q)) ||
+        (s.languages ?? []).some((l) => l.toLowerCase().includes(q));
 
       const matchesCat =
         selectedCategory === "ALL" || (s.category || "").toLowerCase() === selectedCategory.toLowerCase();
@@ -121,7 +122,7 @@ export function StaffDirectoryTab({
           <div className="relative flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
             <Input
-              placeholder="Search by name, phone, email, or role category…"
+              placeholder="Search by name, phone, email, role category, or language…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9 h-9 text-xs"
@@ -219,6 +220,7 @@ export function StaffDirectoryTab({
               <TR>
                 <TH>Staff Member</TH>
                 <TH>Role / Category</TH>
+                <TH>Languages</TH>
                 <TH>Contact</TH>
                 <TH>Account Status</TH>
                 <TH className="text-right">Actions</TH>
@@ -257,6 +259,21 @@ export function StaffDirectoryTab({
                       <Badge tone="gold" className="text-[10px] uppercase tracking-wider">
                         {s.category}
                       </Badge>
+                    ) : (
+                      <span className="text-[11px] text-slate-500 italic font-mono">—</span>
+                    )}
+                  </TD>
+
+                  {/* LANGUAGES */}
+                  <TD>
+                    {s.languages && s.languages.length > 0 ? (
+                      <div className="flex max-w-[180px] flex-wrap gap-1">
+                        {s.languages.map((lang) => (
+                          <Badge key={lang} tone="neutral" size="sm">
+                            {lang}
+                          </Badge>
+                        ))}
+                      </div>
                     ) : (
                       <span className="text-[11px] text-slate-500 italic font-mono">—</span>
                     )}
