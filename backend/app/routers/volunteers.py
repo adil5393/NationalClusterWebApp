@@ -150,6 +150,8 @@ def _val(row: dict, key: str) -> "str | None":
     v = row.get(key)
     if v is None or (isinstance(v, float) and pd.isna(v)):
         return None
+    if isinstance(v, float) and v.is_integer():
+        v = int(v)  # numeric cells (phones, ids) must not become "9876543210.0"
     s = str(v).strip()
     return s or None
 
