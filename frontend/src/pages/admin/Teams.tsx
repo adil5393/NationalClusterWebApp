@@ -868,7 +868,7 @@ export default function AdminTeams() {
 
                       {/* Primary status badges */}
                       <div className="shrink-0 flex flex-col items-end gap-1">
-                        <ActiveCell team={t} canEdit={canEdit} onToggle={toggleActive} />
+                        <ActiveCell team={t} canEdit={canEdit && canToggleActive} onToggle={toggleActive} />
                         <ArrivedCell team={t} canEdit={canEdit && t.is_active !== false} onToggle={toggleArrived} />
                       </div>
                     </div>
@@ -1204,7 +1204,7 @@ export default function AdminTeams() {
                           </div>
                         </TD>
                         <TD className="px-1.5 py-2 text-center w-16">
-                          <ActiveCell team={t} canEdit={canEdit} onToggle={toggleActive} />
+                          <ActiveCell team={t} canEdit={canEdit && canToggleActive} onToggle={toggleActive} />
                         </TD>
                         <TD className="px-1.5 py-2 text-center w-20">
                           <ArrivedCell team={t} canEdit={canEdit && t.is_active !== false} onToggle={toggleArrived} />

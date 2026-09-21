@@ -335,10 +335,14 @@ def _replace_last_year_awards(db: Session, team: models.Team, awards: list[schem
 
 
 @router.put("/{team_id}", response_model=schemas.TeamRead)
-def update_team(team_id: int, payload: schemas.TeamUpdate, db: Session = Depends(get_db)):
+def update_team(team_id: int, payload: schemas.TeamUpdate, db: Session = Depends(get_db), user: models.OrganizerUser = Depends(require_auth)):
     team = db.get(models.Team, team_id)
     if not team:
         raise HTTPException(404, "Team not found")
+    if "is_active" in payload.model_fields_set and not (
+        user.is_admin or (user.permissions or {}).get("team_activation") == "edit"
+    ):
+        raise HTTPException(403, "Only administrators (or accounts granted this permission) can activate/deactivate teams")
     data = payload.model_dump(exclude_unset=True)
     # An inactive team can't have its arrival status or awards changed
     # (unless this same request reactivates it).

@@ -1108,6 +1108,9 @@ ORGANIZER_MODULES = {
     "volunteers": "Volunteers",
     "officials": "Officials",
     "contacts": "Helpline & Contacts",
+    # Not a page — gates only the Team Active/Inactive toggle on the Teams page.
+    # Admin-only unless an admin grants "edit" here (no useful "view" level).
+    "team_activation": "Team Active/Inactive Toggle",
 }
 PERMISSION_LEVELS = ["view", "edit"]  # a module key missing from `permissions` means no access
 
@@ -1115,7 +1118,7 @@ PERMISSION_LEVELS = ["view", "edit"]  # a module key missing from `permissions` 
 # every operational module — everything staff would need to see day-to-day — but
 # not Procurement (vendor pricing) or Knowledge Base (internal decisions/notes),
 # which stay admin/explicitly-granted only.
-STAFF_BASE_PERMISSIONS = {k: "view" for k in ORGANIZER_MODULES if k not in ("procurement", "knowledge")}
+STAFF_BASE_PERMISSIONS = {k: "view" for k in ORGANIZER_MODULES if k not in ("procurement", "knowledge", "team_activation")}
 
 # Auto-provisioned volunteer logins (routers/volunteers.py create_volunteer_credential)
 # get view access to just "teams" and "venues" — not the broad

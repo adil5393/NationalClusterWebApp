@@ -57,3 +57,17 @@ def test_inactive_team_blocks_weight_and_presence(client, db_session):
     assert client.post(f"/api/participants/{p.id}/attendance", json={"present": True}).status_code == 400
     assert client.post(f"/api/participants/{p.id}/weight", json={"weight": 41}).status_code == 400
 
+
+def test_team_active_toggle_needs_admin_or_grant(client, db_session):
+    from app.auth_utils import hash_password
+    t, p, c = _seed(db_session)
+    db_session.add(models.OrganizerUser(username="U", password_hash=hash_password("userpass1234"), is_active=True, is_admin=False, permissions={"teams": "edit"}))
+    db_session.commit()
+    client.post("/api/auth/logout")
+    assert client.post("/api/auth/login", json={"username": "U", "password": "userpass1234"}).status_code == 200
+    assert client.put(f"/api/teams/{t.id}", json={"notes": "x"}).status_code == 200  # other edits fine
+    assert client.put(f"/api/teams/{t.id}", json={"is_active": False, "admin_password": "x"}).status_code == 403
+    u = db_session.query(models.OrganizerUser).filter_by(username="U").one()
+    u.permissions = {"teams": "edit", "team_activation": "edit"}
+    db_session.commit()
+    assert client.put(f"/api/teams/{t.id}", json={"is_active": False}).status_code != 403
