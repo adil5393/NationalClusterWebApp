@@ -13,6 +13,8 @@ import {
   Printer,
   FileArchive,
   KeyRound,
+  Phone,
+  Mail,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
@@ -222,73 +224,107 @@ export default function Volunteers() {
           }
         />
       ) : (
-        <Table>
-          <THead>
-            <TR>
-              <TH>#</TH>
-              <TH>Photo</TH>
-              <TH>Full Name</TH>
-              <TH>Class</TH>
-              <TH>Gender</TH>
-              <TH>Phone</TH>
-              <TH>Email</TH>
-              <TH>Account</TH>
-              <TH className="text-right">Actions</TH>
-            </TR>
-          </THead>
-          <TBody>
+        <>
+          {/* MOBILE: CARD LIST */}
+          <div className="grid gap-2.5 sm:gap-3 lg:hidden">
             {filtered.map((v, i) => (
-              <TR key={v.id} data-testid={`volunteer-row-${v.id}`}>
-                <TD className="text-slate-500 font-mono text-xs">{i + 1}</TD>
-                <TD>
-                  {v.photo_url ? (
-                    <img
-                      src={`${BASE_URL}${v.photo_url}`}
-                      alt={v.full_name}
-                      className="h-9 w-9 rounded-full object-cover border border-white/10"
-                    />
-                  ) : (
-                    <div className="h-9 w-9 rounded-full bg-white/5 border border-white/10 grid place-items-center text-slate-500">
-                      <HeartHandshake className="h-4 w-4" />
+              <div
+                key={v.id}
+                data-testid={`volunteer-card-${v.id}`}
+                className="rounded-xl border border-white/10 bg-obsidian-900/90 p-3.5 space-y-2.5 shadow-sm"
+              >
+                {/* ROW 1: IDENTITY & AVATAR */}
+                <div className="flex items-start justify-between gap-2.5">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="relative shrink-0">
+                      {v.photo_url ? (
+                        <img
+                          src={`${BASE_URL}${v.photo_url}`}
+                          alt={v.full_name}
+                          className="h-11 w-11 rounded-full object-cover border border-white/10"
+                        />
+                      ) : (
+                        <div className="h-11 w-11 rounded-full bg-white/5 border border-white/10 grid place-items-center text-slate-400 font-heading font-black text-xs">
+                          <HeartHandshake className="h-5 w-5 text-gold" />
+                        </div>
+                      )}
+                      <span className="absolute -bottom-1 -right-1 rounded bg-obsidian-950 border border-white/15 px-1 text-[9px] font-mono font-bold text-slate-400">
+                        #{i + 1}
+                      </span>
                     </div>
-                  )}
-                </TD>
-                <TD className="font-bold text-white text-sm">{v.full_name}</TD>
-                <TD className="text-slate-300 font-body text-xs">{v.student_class || "—"}</TD>
-                <TD className="text-slate-300 font-body text-xs">{v.gender || "—"}</TD>
-                <TD className="font-mono text-xs text-slate-400">{v.phone || "—"}</TD>
-                <TD className="font-mono text-xs text-slate-400">{v.email || "—"}</TD>
-                <TD>
-                  {v.login_username ? (
-                    <div className="flex items-center gap-1.5">
-                      <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 shadow-emerald-400/50 shadow-xs" />
-                      <span className="font-mono text-xs text-emerald-400 font-bold">{v.login_username}</span>
+                    <div className="min-w-0">
+                      <h3 className="font-heading font-bold text-white text-sm truncate">{v.full_name}</h3>
+                      <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400 mt-0.5">
+                        {v.student_class && (
+                          <span className="rounded bg-white/5 px-1.5 py-0.2 text-slate-300 font-medium">
+                            Class: {v.student_class}
+                          </span>
+                        )}
+                        {v.gender && (
+                          <span className="rounded bg-white/5 px-1.5 py-0.2 text-slate-300">
+                            {v.gender}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  ) : (
-                    <span className="text-[11px] font-mono text-slate-500">No login</span>
-                  )}
-                </TD>
-                <TD className="text-right">
-                  <div className="flex items-center justify-end gap-1">
-                    {canEdit && !v.login_username && (
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => createCredential(v)}
-                        disabled={creatingCredentialId === v.id}
-                        data-testid={`create-credential-${v.id}`}
-                        title="Create Portal Login"
-                      >
-                        <KeyRound className="h-3.5 w-3.5 text-gold" />
-                      </Button>
+                  </div>
+
+                  {/* LOGIN ACCOUNT STATUS BADGE */}
+                  <div className="shrink-0">
+                    {v.login_username ? (
+                      <div className="inline-flex items-center gap-1.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 text-xs font-mono font-bold text-emerald-400">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                        {v.login_username}
+                      </div>
+                    ) : (
+                      <span className="rounded bg-white/5 px-2 py-0.5 text-[10px] font-mono text-slate-500">
+                        No login
+                      </span>
                     )}
+                  </div>
+                </div>
+
+                {/* ROW 2: CONTACT INFORMATION */}
+                {(v.phone || v.email) && (
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs pt-0.5">
+                    {v.phone && (
+                      <a
+                        href={`tel:${v.phone}`}
+                        className="inline-flex items-center gap-1 text-slate-300 hover:text-gold font-mono text-[11px] transition-colors"
+                      >
+                        <Phone className="h-3 w-3 text-gold" />
+                        {v.phone}
+                      </a>
+                    )}
+                    {v.email && (
+                      <a
+                        href={`mailto:${v.email}`}
+                        className="inline-flex items-center gap-1 text-slate-400 hover:text-gold font-mono text-[11px] transition-colors"
+                      >
+                        <Mail className="h-3 w-3 text-slate-500" />
+                        {v.email}
+                      </a>
+                    )}
+                  </div>
+                )}
+
+                {v.notes && (
+                  <p className="text-[11px] text-slate-400 italic font-body">
+                    {v.notes}
+                  </p>
+                )}
+
+                {/* ROW 3: MOBILE ACTION BUTTONS */}
+                <div className="border-t border-white/10 pt-2 flex flex-wrap items-center justify-between gap-1.5">
+                  <div className="flex items-center gap-1.5">
                     {canEdit && (
                       <label
-                        className="inline-flex items-center justify-center gap-2 rounded-md font-body tracking-wide transition-colors h-8 w-8 p-0 cursor-pointer text-slate-300 hover:bg-white/10 hover:text-white"
+                        className="inline-flex items-center justify-center gap-1 rounded-md border border-white/10 bg-white/5 hover:bg-white/10 text-slate-200 text-xs font-semibold h-8 px-2.5 cursor-pointer transition-colors"
                         title="Upload Photo"
-                        data-testid={`upload-photo-${v.id}`}
+                        data-testid={`upload-photo-mobile-${v.id}`}
                       >
-                        <Camera className="h-3.5 w-3.5" />
+                        <Camera className="h-3.5 w-3.5 text-slate-300" />
+                        <span>Photo</span>
                         <input
                           type="file"
                           accept=".jpg,.jpeg,.png,.webp"
@@ -301,61 +337,220 @@ export default function Volunteers() {
                         />
                       </label>
                     )}
+
                     <a
                       href={`${BASE_URL}/api/volunteers/${v.id}/idcard.pdf`}
                       className={cn(
-                        "inline-flex items-center justify-center gap-2 rounded-md font-body tracking-wide transition-colors h-8 w-8 p-0",
+                        "inline-flex items-center justify-center gap-1 rounded-md border text-xs font-semibold h-8 px-2.5 transition-colors",
                         v.photo_url
-                          ? "text-emerald-500 hover:bg-emerald-500/10 hover:text-emerald-400"
-                          : "text-red-500 hover:bg-red-500/10 hover:text-red-400",
+                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+                          : "border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20",
                       )}
-                      data-testid={`download-idcard-${v.id}`}
-                      title={v.photo_url ? "Download ID Card (PDF) — photo uploaded" : "Download ID Card (PDF) — photo not uploaded"}
+                      data-testid={`download-idcard-mobile-${v.id}`}
+                      title={v.photo_url ? "Download ID Card (PDF)" : "Download ID Card (Photo missing)"}
                     >
                       <IdCard className="h-3.5 w-3.5" />
+                      <span>ID Card</span>
                     </a>
+
                     {canEdit && v.photo_url && (
                       <Button
-                        variant="ghost"
+                        variant="outline"
                         size="icon-sm"
+                        className="h-8 w-8"
                         onClick={() => removePhoto(v)}
-                        data-testid={`remove-photo-${v.id}`}
-                        title="Remove Uploaded Photo"
+                        data-testid={`remove-photo-mobile-${v.id}`}
+                        title="Remove Photo"
                       >
                         <ImageOff className="h-3.5 w-3.5 text-red-400" />
                       </Button>
                     )}
-                    {canEdit && (
+
+                    {canEdit && !v.login_username && (
                       <Button
-                        variant="ghost"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-2 text-xs font-bold"
+                        onClick={() => createCredential(v)}
+                        disabled={creatingCredentialId === v.id}
+                        data-testid={`create-credential-mobile-${v.id}`}
+                        title="Create Portal Login"
+                      >
+                        <KeyRound className="h-3.5 w-3.5 text-gold mr-1" /> Login
+                      </Button>
+                    )}
+                  </div>
+
+                  {canEdit && (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
                         size="icon-sm"
+                        className="h-8 w-8"
                         onClick={() => {
                           setForm(v);
                           setOpen(true);
                         }}
-                        data-testid={`edit-volunteer-${v.id}`}
+                        data-testid={`edit-volunteer-mobile-${v.id}`}
                         title="Edit Volunteer"
                       >
                         <Pencil className="h-3.5 w-3.5 text-slate-300" />
                       </Button>
-                    )}
-                    {canEdit && (
                       <Button
-                        variant="ghost"
+                        variant="danger"
                         size="icon-sm"
+                        className="h-8 w-8"
                         onClick={() => remove(v.id)}
-                        data-testid={`delete-volunteer-${v.id}`}
+                        data-testid={`delete-volunteer-mobile-${v.id}`}
                         title="Delete Volunteer"
                       >
-                        <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                        <Trash2 className="h-3.5 w-3.5" />
                       </Button>
-                    )}
-                  </div>
-                </TD>
-              </TR>
+                    </div>
+                  )}
+                </div>
+              </div>
             ))}
-          </TBody>
-        </Table>
+          </div>
+
+          {/* DESKTOP: TABLE */}
+          <div className="hidden lg:block">
+            <Table>
+              <THead>
+                <TR>
+                  <TH>#</TH>
+                  <TH>Photo</TH>
+                  <TH>Full Name</TH>
+                  <TH>Class</TH>
+                  <TH>Gender</TH>
+                  <TH>Phone</TH>
+                  <TH>Email</TH>
+                  <TH>Account</TH>
+                  <TH className="text-right">Actions</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {filtered.map((v, i) => (
+                  <TR key={v.id} data-testid={`volunteer-row-${v.id}`}>
+                    <TD className="text-slate-500 font-mono text-xs">{i + 1}</TD>
+                    <TD>
+                      {v.photo_url ? (
+                        <img
+                          src={`${BASE_URL}${v.photo_url}`}
+                          alt={v.full_name}
+                          className="h-9 w-9 rounded-full object-cover border border-white/10"
+                        />
+                      ) : (
+                        <div className="h-9 w-9 rounded-full bg-white/5 border border-white/10 grid place-items-center text-slate-500">
+                          <HeartHandshake className="h-4 w-4" />
+                        </div>
+                      )}
+                    </TD>
+                    <TD className="font-bold text-white text-sm">{v.full_name}</TD>
+                    <TD className="text-slate-300 font-body text-xs">{v.student_class || "—"}</TD>
+                    <TD className="text-slate-300 font-body text-xs">{v.gender || "—"}</TD>
+                    <TD className="font-mono text-xs text-slate-400">{v.phone || "—"}</TD>
+                    <TD className="font-mono text-xs text-slate-400">{v.email || "—"}</TD>
+                    <TD>
+                      {v.login_username ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 shadow-emerald-400/50 shadow-xs" />
+                          <span className="font-mono text-xs text-emerald-400 font-bold">{v.login_username}</span>
+                        </div>
+                      ) : (
+                        <span className="text-[11px] font-mono text-slate-500">No login</span>
+                      )}
+                    </TD>
+                    <TD className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {canEdit && !v.login_username && (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => createCredential(v)}
+                            disabled={creatingCredentialId === v.id}
+                            data-testid={`create-credential-${v.id}`}
+                            title="Create Portal Login"
+                          >
+                            <KeyRound className="h-3.5 w-3.5 text-gold" />
+                          </Button>
+                        )}
+                        {canEdit && (
+                          <label
+                            className="inline-flex items-center justify-center gap-2 rounded-md font-body tracking-wide transition-colors h-8 w-8 p-0 cursor-pointer text-slate-300 hover:bg-white/10 hover:text-white"
+                            title="Upload Photo"
+                            data-testid={`upload-photo-${v.id}`}
+                          >
+                            <Camera className="h-3.5 w-3.5" />
+                            <input
+                              type="file"
+                              accept=".jpg,.jpeg,.png,.webp"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) uploadPhoto(v, file);
+                                e.target.value = "";
+                              }}
+                            />
+                          </label>
+                        )}
+                        <a
+                          href={`${BASE_URL}/api/volunteers/${v.id}/idcard.pdf`}
+                          className={cn(
+                            "inline-flex items-center justify-center gap-2 rounded-md font-body tracking-wide transition-colors h-8 w-8 p-0",
+                            v.photo_url
+                              ? "text-emerald-500 hover:bg-emerald-500/10 hover:text-emerald-400"
+                              : "text-red-500 hover:bg-red-500/10 hover:text-red-400",
+                          )}
+                          data-testid={`download-idcard-${v.id}`}
+                          title={v.photo_url ? "Download ID Card (PDF) — photo uploaded" : "Download ID Card (PDF) — photo not uploaded"}
+                        >
+                          <IdCard className="h-3.5 w-3.5" />
+                        </a>
+                        {canEdit && v.photo_url && (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => removePhoto(v)}
+                            data-testid={`remove-photo-${v.id}`}
+                            title="Remove Uploaded Photo"
+                          >
+                            <ImageOff className="h-3.5 w-3.5 text-red-400" />
+                          </Button>
+                        )}
+                        {canEdit && (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => {
+                              setForm(v);
+                              setOpen(true);
+                            }}
+                            data-testid={`edit-volunteer-${v.id}`}
+                            title="Edit Volunteer"
+                          >
+                            <Pencil className="h-3.5 w-3.5 text-slate-300" />
+                          </Button>
+                        )}
+                        {canEdit && (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => remove(v.id)}
+                            data-testid={`delete-volunteer-${v.id}`}
+                            title="Delete Volunteer"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                          </Button>
+                        )}
+                      </div>
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          </div>
+        </>
       )}
 
       {/* ADD / EDIT DIALOG */}

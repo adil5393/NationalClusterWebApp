@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Pencil, Trash2, QrCode, Upload, Trophy, X, Shield, Users, Search, ImageIcon, IdCard, Receipt, Printer, FileArchive, Bus, Lock, Unlock } from "lucide-react";
+import { Plus, Pencil, Trash2, QrCode, Upload, Trophy, X, Shield, Users, Search, ImageIcon, IdCard, Receipt, Printer, FileArchive, Bus, Lock, Unlock, Phone, Mail, Calendar, Clock, MapPin } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -61,7 +61,8 @@ interface Team {
   all_photos_uploaded?: boolean;
   is_active?: boolean;
   has_arrived?: boolean;
-  photo_uploads_locked?: boolean;
+  photo_uploads_locked?: boolean | null;
+  photo_uploads_locked_effective?: boolean;
   arrival_date?: string | null;
   arrival_time?: string | null;
   arrival_location?: string | null;
@@ -512,12 +513,25 @@ export default function AdminTeams() {
       .catch(() => {});
   }, []);
 
+  const toggleTeamPhotoLock = (t: Team) => {
+    api
+      .put<Team>(`/teams/${t.id}`, { photo_uploads_locked: !t.photo_uploads_locked_effective })
+      .then((r) => {
+        setTeams((rows) => rows.map((x) => (x.id === t.id ? { ...x, photo_uploads_locked: r.data.photo_uploads_locked, photo_uploads_locked_effective: r.data.photo_uploads_locked_effective } : x)));
+        toast.success(r.data.photo_uploads_locked_effective ? `Photo uploads locked for ${t.name}` : `Photo uploads unlocked for ${t.name}`);
+      })
+      .catch((e: any) => toast.error(e?.response?.data?.detail ?? "Could not update photo upload lock"));
+  };
+
   const toggleGlobalPhotoLock = () => {
     const locking = !globalPhotoLock;
     setGlobalPhotoLockBusy(true);
     api
       .put<{ locked: boolean }>("/teams/photo-uploads-lock", { locked: locking })
-      .then((r) => setGlobalPhotoLock(r.data.locked))
+      .then((r) => {
+        setGlobalPhotoLock(r.data.locked);
+        load();
+      })
       .catch((e: any) => toast.error(e?.response?.data?.detail ?? "Could not update global photo upload lock"))
       .finally(() => setGlobalPhotoLockBusy(false));
   };
@@ -879,22 +893,72 @@ export default function AdminTeams() {
                           Stay: <strong className="text-white font-semibold">{t.stay}</strong>
                         </span>
                       )}
-                      {t.contact_name && (
-                        <span className="rounded bg-white/5 px-2 py-0.5 text-[10px] font-body text-slate-300 truncate max-w-[170px]" title={t.contact_name}>
-                          Contact: <strong className="text-white font-semibold">{t.contact_name}</strong>
-                        </span>
-                      )}
-                      {t.photos && t.photos.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setPhotosTeam(t)}
-                          className="inline-flex items-center gap-1 rounded bg-white/5 hover:bg-white/10 px-2 py-0.5 text-[10px] font-mono text-slate-300 transition-colors"
-                          title="View/Manage Team Photos"
-                        >
-                          <ImageIcon className="h-3 w-3 text-gold" /> {t.photos.length} photos
-                        </button>
-                      )}
                     </div>
+
+                    {/* ROW 2B: ACCOMMODATION ROOMS & LOCATIONS */}
+                    {t.accommodation_locations && t.accommodation_locations.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1 text-[11px] text-slate-300">
+                        <span className="text-[10px] text-slate-400 font-medium">Rooms:</span>
+                        {t.accommodation_locations.map((loc, idx) => (
+                          <span key={idx} className="rounded bg-white/5 border border-white/10 px-1.5 py-0.5 text-[10px] font-mono">
+                            <strong className="text-white font-semibold">{loc.room ?? "Room"}</strong>
+                            {loc.building && <span className="text-slate-400"> · {loc.building}</span>}
+                            {!loc.whole_team && <span className="text-slate-500 font-mono"> ({loc.count})</span>}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* ROW 2C: CONTACT DETAILS & ARRIVAL INFO */}
+                    {(t.contact_name || t.contact_phone || t.contact_email || t.arrival_date || t.arrival_time || t.arrival_location) && (
+                      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs pt-0.5">
+                        {t.contact_name && (
+                          <span className="text-slate-300 text-[11px]">
+                            Contact: <strong className="text-white font-semibold">{t.contact_name}</strong>
+                          </span>
+                        )}
+                        {t.contact_phone && (
+                          <a
+                            href={`tel:${t.contact_phone}`}
+                            className="inline-flex items-center gap-1 rounded bg-white/5 hover:bg-white/10 px-1.5 py-0.5 font-mono text-[10px] text-gold transition-colors"
+                            title="Call Contact"
+                          >
+                            <Phone className="h-2.5 w-2.5" />
+                            {t.contact_phone}
+                          </a>
+                        )}
+                        {t.contact_email && (
+                          <a
+                            href={`mailto:${t.contact_email}`}
+                            className="inline-flex items-center gap-1 rounded bg-white/5 hover:bg-white/10 px-1.5 py-0.5 text-[10px] text-slate-300 transition-colors"
+                            title="Email Contact"
+                          >
+                            <Mail className="h-2.5 w-2.5 text-slate-400" />
+                            {t.contact_email}
+                          </a>
+                        )}
+                        {(t.arrival_date || t.arrival_time || t.arrival_location) && (
+                          <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono text-slate-400 pl-1 border-l border-white/10">
+                            <span className="text-slate-500">Arrival:</span>
+                            {t.arrival_date && (
+                              <span className="inline-flex items-center gap-1 text-slate-300">
+                                <Calendar className="h-2.5 w-2.5 text-slate-400" /> {t.arrival_date}
+                              </span>
+                            )}
+                            {t.arrival_time && (
+                              <span className="inline-flex items-center gap-1 text-gold">
+                                <Clock className="h-2.5 w-2.5" /> {t.arrival_time}
+                              </span>
+                            )}
+                            {t.arrival_location && (
+                              <span className="inline-flex items-center gap-1 text-slate-300">
+                                <MapPin className="h-2.5 w-2.5 text-slate-400" /> {t.arrival_location}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* ROW 3: CONSOLIDATED AGE GROUPS, SQUAD SIZES & AWARDS */}
                     <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
@@ -982,41 +1046,105 @@ export default function AdminTeams() {
                       )}
                     </div>
 
-                    {/* ROW 4: COMPACT ACTION BUTTONS */}
-                    <div className={cn("grid gap-1.5 border-t border-white/10 pt-2.5 min-w-0", canEdit ? "grid-cols-3" : "grid-cols-1")}>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 text-xs min-w-0 px-2 font-heading font-bold"
-                        onClick={() => setQrTeam({ id: t.id, name: t.name })}
-                        data-testid={`qr-team-mobile-${t.id}`}
-                      >
-                        <QrCode className="h-3.5 w-3.5 text-gold shrink-0 mr-1" /> <span className="truncate">QR</span>
-                      </Button>
-                      {canEdit && (
+                    {/* ROW 4: COMPLETE OPERATIONS ACTION BUTTONS */}
+                    <div className="space-y-1.5 border-t border-white/10 pt-2.5 min-w-0">
+                      {/* Operational tools */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                         <Button
                           variant="outline"
                           size="sm"
                           className="h-8 text-xs min-w-0 px-2 font-heading font-bold"
-                          onClick={() => {
-                            setForm(t);
-                            setOpen(true);
-                          }}
-                          data-testid={`edit-team-mobile-${t.id}`}
+                          onClick={() => setIdCardTeam(t)}
+                          data-testid={`download-team-idcards-mobile-${t.id}`}
+                          title="Team ID Cards"
                         >
-                          <Pencil className="h-3.5 w-3.5 shrink-0 mr-1 text-slate-300" /> <span className="truncate">Edit</span>
+                          <IdCard className={cn(
+                            "h-3.5 w-3.5 shrink-0 mr-1",
+                            t.all_photos_uploaded
+                              ? "text-emerald-400"
+                              : (t.participants_with_photo_count ?? 0) >= 1
+                              ? "text-red-400"
+                              : "text-slate-400"
+                          )} />
+                          <span className="truncate">ID Cards</span>
                         </Button>
-                      )}
-                      {canEdit && (
                         <Button
-                          variant="danger"
+                          variant="outline"
                           size="sm"
                           className="h-8 text-xs min-w-0 px-2 font-heading font-bold"
-                          onClick={() => remove(t.id)}
-                          data-testid={`delete-team-mobile-${t.id}`}
+                          onClick={() => setPhotosTeam(t)}
+                          data-testid={`manage-photos-mobile-${t.id}`}
+                          title={`Manage Photos (${t.photos?.length ?? 0})`}
                         >
-                          <Trash2 className="h-3.5 w-3.5 shrink-0 mr-1" /> <span className="truncate">Delete</span>
+                          <ImageIcon className="h-3.5 w-3.5 text-gold shrink-0 mr-1" />
+                          <span className="truncate">Photos ({t.photos?.length ?? 0})</span>
                         </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs min-w-0 px-2 font-heading font-bold"
+                          onClick={() => setQrTeam({ id: t.id, name: t.name })}
+                          data-testid={`qr-team-mobile-${t.id}`}
+                        >
+                          <QrCode className="h-3.5 w-3.5 text-gold shrink-0 mr-1" /> <span className="truncate">QR</span>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs min-w-0 px-2 font-heading font-bold"
+                          onClick={() => setReceiptTeam({ id: t.id, name: t.name })}
+                          data-testid={`receipt-team-mobile-${t.id}`}
+                          title="Billing & Receipts"
+                        >
+                          <Receipt className="h-3.5 w-3.5 text-slate-300 shrink-0 mr-1" /> <span className="truncate">Billing</span>
+                        </Button>
+                      </div>
+
+                      {/* Photo lock & Admin actions */}
+                      {canEdit && (
+                        <div className="grid grid-cols-3 gap-1.5">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs min-w-0 px-2 font-heading font-bold"
+                            onClick={() => toggleTeamPhotoLock(t)}
+                            data-testid={`team-photo-lock-mobile-${t.id}`}
+                            title={t.photo_uploads_locked_effective ? "Unlock photo uploads" : "Lock photo uploads"}
+                          >
+                            {t.photo_uploads_locked_effective ? (
+                              <>
+                                <Lock className="h-3.5 w-3.5 text-amber-400 shrink-0 mr-1" />
+                                <span className="truncate text-amber-400">Locked</span>
+                              </>
+                            ) : (
+                              <>
+                                <Unlock className="h-3.5 w-3.5 text-slate-300 shrink-0 mr-1" />
+                                <span className="truncate">Lockable</span>
+                              </>
+                            )}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs min-w-0 px-2 font-heading font-bold"
+                            onClick={() => {
+                              setForm(t);
+                              setOpen(true);
+                            }}
+                            data-testid={`edit-team-mobile-${t.id}`}
+                          >
+                            <Pencil className="h-3.5 w-3.5 shrink-0 mr-1 text-slate-300" /> <span className="truncate">Edit</span>
+                          </Button>
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            className="h-8 text-xs min-w-0 px-2 font-heading font-bold"
+                            onClick={() => remove(t.id)}
+                            data-testid={`delete-team-mobile-${t.id}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5 shrink-0 mr-1" /> <span className="truncate">Delete</span>
+                          </Button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -1117,6 +1245,17 @@ export default function AdminTeams() {
                             >
                               <QrCode className="h-3.5 w-3.5 text-gold" />
                             </Button>
+                            {canEdit && (
+                              <Button
+                                variant="ghost"
+                                className="h-7 w-7 p-0 shrink-0"
+                                onClick={() => toggleTeamPhotoLock(t)}
+                                data-testid={`team-photo-lock-${t.id}`}
+                                title={t.photo_uploads_locked_effective ? "Photo uploads locked for this team — click to unlock" : "Lock photo uploads for this team"}
+                              >
+                                {t.photo_uploads_locked_effective ? <Lock className="h-3.5 w-3.5 text-amber-400" /> : <Unlock className="h-3.5 w-3.5 text-slate-300" />}
+                              </Button>
+                            )}
                             <Button
                               variant="ghost"
                               className="h-7 w-7 p-0 shrink-0 relative"

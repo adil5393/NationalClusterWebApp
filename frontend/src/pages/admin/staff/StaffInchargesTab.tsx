@@ -152,87 +152,171 @@ export function StaffInchargesTab({
           />
         </div>
       ) : (
-        <div className="rounded-xl border border-white/10 bg-obsidian-900 overflow-hidden">
-          <table className="w-full text-left text-xs">
-            <thead className="border-b border-white/10 bg-white/5 font-heading uppercase text-[10px] tracking-wider text-slate-400">
-              <tr>
-                <th className="px-4 py-3">Operational Area</th>
-                <th className="px-4 py-3">Code</th>
-                <th className="px-4 py-3">Assigned In-Charge(s)</th>
-                <th className="px-4 py-3">Coverage Status</th>
-                {canEdit && <th className="px-4 py-3 text-right">Actions</th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5 font-body">
-              {activeAreas.map((area) => {
-                const incharges = areaIncharges.get(area.id) || [];
-                const hasIncharge = incharges.length > 0;
+        <>
+          {/* MOBILE: CARD LIST */}
+          <div className="grid gap-2.5 sm:gap-3 lg:hidden">
+            {activeAreas.map((area) => {
+              const incharges = areaIncharges.get(area.id) || [];
+              const hasIncharge = incharges.length > 0;
 
-                return (
-                  <tr key={area.id} className="hover:bg-white/[0.01]">
-                    <td className="px-4 py-3.5">
-                      <span className="font-heading font-black text-white text-sm block">
-                        {area.name}
-                      </span>
+              return (
+                <div
+                  key={area.id}
+                  data-testid={`incharges-area-card-${area.id}`}
+                  className="rounded-xl border border-white/10 bg-obsidian-900/90 p-3.5 space-y-2.5 shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-2.5">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-gold text-xs font-bold rounded bg-gold/10 border border-gold/20 px-1.5 py-0.5">
+                          {area.code}
+                        </span>
+                        <h3 className="font-heading font-black text-white text-sm truncate">
+                          {area.name}
+                        </h3>
+                      </div>
                       {area.description && (
-                        <span className="text-[11px] text-slate-400 font-body">
+                        <p className="text-[11px] text-slate-400 font-body mt-1">
                           {area.description}
-                        </span>
+                        </p>
                       )}
-                    </td>
+                    </div>
 
-                    <td className="px-4 py-3.5 font-mono text-gold text-xs font-bold">
-                      {area.code}
-                    </td>
-
-                    <td className="px-4 py-3.5">
+                    <div className="shrink-0">
                       {hasIncharge ? (
-                        <div className="flex flex-wrap gap-1.5">
-                          {incharges.map((s) => (
-                            <span
-                              key={s.id}
-                              className="rounded bg-gold/15 border border-gold/30 px-2 py-0.5 text-xs font-heading font-bold text-gold"
-                            >
-                              {s.full_name}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-slate-500 italic font-mono">—</span>
-                      )}
-                    </td>
-
-                    <td className="px-4 py-3.5">
-                      {hasIncharge ? (
-                        <span className="inline-flex items-center gap-1 text-emerald-400 font-bold font-mono text-[11px]">
-                          <Check className="h-3.5 w-3.5 stroke-[3]" /> Assigned
+                        <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 text-[11px] font-bold font-mono text-emerald-400">
+                          <Check className="h-3 w-3 stroke-[3]" /> Covered
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-amber-400 font-bold font-mono text-[11px]">
-                          <AlertTriangle className="h-3.5 w-3.5" /> ⚠ Not Assigned
+                        <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 text-[11px] font-bold font-mono text-amber-400">
+                          <AlertTriangle className="h-3 w-3" /> Unassigned
                         </span>
                       )}
-                    </td>
+                    </div>
+                  </div>
 
-                    {canEdit && (
-                      <td className="px-4 py-3.5 text-right">
-                        <Button
-                          variant={hasIncharge ? "outline" : "gold"}
-                          size="sm"
-                          onClick={() => onOpenManageIncharges(selectedShiftBlock)}
-                          data-testid={`incharges-assign-btn-${area.id}`}
-                          className="h-7 text-xs font-bold"
-                        >
-                          {hasIncharge ? "Edit" : "Assign"}
-                        </Button>
-                      </td>
+                  {/* INCHARGES LIST */}
+                  <div className="pt-0.5">
+                    <p className="text-[10px] uppercase tracking-wider font-heading font-bold text-slate-400 mb-1">
+                      Assigned In-Charge:
+                    </p>
+                    {hasIncharge ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {incharges.map((s) => (
+                          <span
+                            key={s.id}
+                            className="rounded bg-gold/15 border border-gold/30 px-2 py-0.5 text-xs font-heading font-bold text-gold"
+                          >
+                            {s.full_name}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-slate-500 text-xs italic font-mono">No personnel assigned</span>
                     )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                  </div>
+
+                  {canEdit && (
+                    <div className="border-t border-white/10 pt-2 flex justify-end">
+                      <Button
+                        variant={hasIncharge ? "outline" : "gold"}
+                        size="sm"
+                        onClick={() => onOpenManageIncharges(selectedShiftBlock)}
+                        data-testid={`incharges-assign-btn-mobile-${area.id}`}
+                        className="h-8 text-xs font-bold"
+                      >
+                        {hasIncharge ? "Edit Leadership" : "Assign In-Charge"}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* DESKTOP TABLE */}
+          <div className="hidden lg:block rounded-xl border border-white/10 bg-obsidian-900 overflow-hidden">
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-white/10 bg-white/5 font-heading uppercase text-[10px] tracking-wider text-slate-400">
+                <tr>
+                  <th className="px-4 py-3">Operational Area</th>
+                  <th className="px-4 py-3">Code</th>
+                  <th className="px-4 py-3">Assigned In-Charge(s)</th>
+                  <th className="px-4 py-3">Coverage Status</th>
+                  {canEdit && <th className="px-4 py-3 text-right">Actions</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5 font-body">
+                {activeAreas.map((area) => {
+                  const incharges = areaIncharges.get(area.id) || [];
+                  const hasIncharge = incharges.length > 0;
+
+                  return (
+                    <tr key={area.id} className="hover:bg-white/[0.01]">
+                      <td className="px-4 py-3.5">
+                        <span className="font-heading font-black text-white text-sm block">
+                          {area.name}
+                        </span>
+                        {area.description && (
+                          <span className="text-[11px] text-slate-400 font-body">
+                            {area.description}
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3.5 font-mono text-gold text-xs font-bold">
+                        {area.code}
+                      </td>
+
+                      <td className="px-4 py-3.5">
+                        {hasIncharge ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {incharges.map((s) => (
+                              <span
+                                key={s.id}
+                                className="rounded bg-gold/15 border border-gold/30 px-2 py-0.5 text-xs font-heading font-bold text-gold"
+                              >
+                                {s.full_name}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-slate-500 italic font-mono">—</span>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3.5">
+                        {hasIncharge ? (
+                          <span className="inline-flex items-center gap-1 text-emerald-400 font-bold font-mono text-[11px]">
+                            <Check className="h-3.5 w-3.5 stroke-[3]" /> Assigned
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-amber-400 font-bold font-mono text-[11px]">
+                            <AlertTriangle className="h-3.5 w-3.5" /> ⚠ Not Assigned
+                          </span>
+                        )}
+                      </td>
+
+                      {canEdit && (
+                        <td className="px-4 py-3.5 text-right">
+                          <Button
+                            variant={hasIncharge ? "outline" : "gold"}
+                            size="sm"
+                            onClick={() => onOpenManageIncharges(selectedShiftBlock)}
+                            data-testid={`incharges-assign-btn-${area.id}`}
+                            className="h-7 text-xs font-bold"
+                          >
+                            {hasIncharge ? "Edit" : "Assign"}
+                          </Button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

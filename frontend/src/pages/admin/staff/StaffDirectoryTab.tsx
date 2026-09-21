@@ -231,188 +231,347 @@ export function StaffDirectoryTab({
           />
         </div>
       ) : (
-        <div className="rounded-xl border border-white/10 bg-obsidian-900 overflow-hidden">
-          <Table>
-            <THead>
-              <TR>
-                <TH>Staff Member</TH>
-                <TH>Role / Category</TH>
-                <TH>Languages</TH>
-                <TH>Contact</TH>
-                <TH>Account Status</TH>
-                <TH className="text-right">Actions</TH>
-              </TR>
-            </THead>
-            <TBody>
-              {pagedStaff.map((s) => (
-                <TR key={s.id} className="hover:bg-white/[0.02] transition-colors">
-                  {/* NAME + DETAILS TRIGGER */}
-                  <TD>
-                    <div className="flex items-center gap-3">
-                      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-gold/30 bg-gold/10 font-heading font-black text-xs text-gold">
-                        {s.full_name.slice(0, 1).toUpperCase()}
-                      </div>
-                      <div className="min-w-0">
-                        <button
-                          type="button"
-                          onClick={() => onOpenDrawer(s)}
-                          className="font-heading font-bold text-white text-xs hover:text-gold transition-colors truncate block text-left"
-                          data-testid={`staff-row-name-${s.id}`}
-                        >
-                          {s.full_name}
-                        </button>
-                        {s.notes && (
-                          <p className="text-[11px] text-slate-400 font-body truncate max-w-xs">
-                            {s.notes}
-                          </p>
-                        )}
-                      </div>
+        <div className="space-y-3">
+          {/* MOBILE: HIGH-DENSITY CARD LIST */}
+          <div className="grid gap-2.5 sm:gap-3 lg:hidden">
+            {pagedStaff.map((s) => (
+              <div
+                key={s.id}
+                data-testid={`staff-card-${s.id}`}
+                className="rounded-xl border border-white/10 bg-obsidian-900/90 p-3.5 space-y-2.5 shadow-sm"
+              >
+                {/* ROW 1: IDENTITY & AVATAR */}
+                <div className="flex items-start justify-between gap-2.5">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-gold/30 bg-gold/10 font-heading font-black text-sm text-gold shadow-sm">
+                      {s.full_name.slice(0, 1).toUpperCase()}
                     </div>
-                  </TD>
-
-                  {/* ROLE / CATEGORY */}
-                  <TD>
-                    <div className="space-y-1">
+                    <div className="min-w-0">
+                      <button
+                        type="button"
+                        onClick={() => onOpenDrawer(s)}
+                        className="font-heading font-bold text-white text-sm hover:text-gold transition-colors truncate block text-left"
+                        data-testid={`staff-card-name-${s.id}`}
+                      >
+                        {s.full_name}
+                      </button>
                       {s.designation && (
-                        <div className="font-heading font-bold text-xs text-sky-300">
+                        <p className="text-xs text-sky-300 font-heading font-semibold truncate">
                           {s.designation}
-                        </div>
+                        </p>
                       )}
-                      {s.categories && s.categories.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {s.categories.map((c) => (
-                            <Badge
-                              key={c.id}
-                              tone="gold"
-                              size="sm"
-                              className="text-[10px] uppercase tracking-wider"
-                            >
-                              {c.name}
+                    </div>
+                  </div>
+
+                  {/* ACCOUNT STATUS */}
+                  <div className="shrink-0">
+                    {s.login_username ? (
+                      <div className="inline-flex items-center gap-1.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 text-xs font-mono font-bold text-emerald-400">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                        {s.login_username}
+                      </div>
+                    ) : (
+                      <span className="rounded bg-white/5 px-2 py-0.5 text-[10px] font-mono text-slate-500">
+                        No login
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* ROW 2: CATEGORIES & LANGUAGES */}
+                {((s.categories && s.categories.length > 0) || s.category || (s.languages && s.languages.length > 0)) && (
+                  <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                    {s.categories && s.categories.length > 0 ? (
+                      s.categories.map((c) => (
+                        <Badge key={c.id} tone="gold" size="sm" className="text-[10px] uppercase tracking-wider">
+                          {c.name}
+                        </Badge>
+                      ))
+                    ) : s.category ? (
+                      <Badge tone="gold" size="sm" className="text-[10px] uppercase tracking-wider">
+                        {s.category}
+                      </Badge>
+                    ) : null}
+
+                    {s.languages && s.languages.map((lang) => (
+                      <Badge key={lang} tone="neutral" size="sm" className="text-[10px]">
+                        {lang}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+
+                {/* ROW 3: CONTACT INFORMATION */}
+                {(s.phone || s.email) && (
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs pt-0.5">
+                    {s.phone && (
+                      <a
+                        href={`tel:${s.phone}`}
+                        className="inline-flex items-center gap-1 text-slate-300 hover:text-gold font-mono text-[11px] transition-colors"
+                      >
+                        <Phone className="h-3 w-3 text-gold/80" />
+                        {s.phone}
+                      </a>
+                    )}
+                    {s.email && (
+                      <a
+                        href={`mailto:${s.email}`}
+                        className="inline-flex items-center gap-1 text-slate-400 hover:text-gold font-mono text-[11px] transition-colors"
+                      >
+                        <Mail className="h-3 w-3 text-slate-500" />
+                        {s.email}
+                      </a>
+                    )}
+                  </div>
+                )}
+
+                {s.notes && (
+                  <p className="text-[11px] text-slate-400 italic font-body">
+                    {s.notes}
+                  </p>
+                )}
+
+                {/* ROW 4: COMPACT ACTION BUTTONS */}
+                <div className="border-t border-white/10 pt-2 flex items-center justify-between gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onOpenDrawer(s)}
+                    data-testid={`view-staff-mobile-${s.id}`}
+                    className="h-8 text-xs font-heading font-bold"
+                  >
+                    <Eye className="h-3.5 w-3.5 mr-1 text-slate-300" /> Profile
+                  </Button>
+
+                  <div className="flex items-center gap-1">
+                    {canEdit && !s.login_username && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onCreateCredential(s)}
+                        disabled={creatingCredentialId === s.id}
+                        data-testid={`create-credential-mobile-${s.id}`}
+                        className="h-8 text-xs font-bold"
+                        title="Create Portal Login"
+                      >
+                        <KeyRound className="h-3.5 w-3.5 text-gold mr-1" /> Login
+                      </Button>
+                    )}
+
+                    {canEdit && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="icon-sm"
+                          className="h-8 w-8"
+                          onClick={() => onOpenEdit(s)}
+                          data-testid={`edit-staff-mobile-${s.id}`}
+                          title="Edit Staff"
+                        >
+                          <Pencil className="h-3.5 w-3.5 text-slate-300" />
+                        </Button>
+                        <Button
+                          variant="danger"
+                          size="icon-sm"
+                          className="h-8 w-8"
+                          onClick={() => onDelete(s.id)}
+                          data-testid={`delete-staff-mobile-${s.id}`}
+                          title="Delete Staff"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* DESKTOP TABLE */}
+          <div className="hidden lg:block rounded-xl border border-white/10 bg-obsidian-900 overflow-hidden">
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Staff Member</TH>
+                  <TH>Role / Category</TH>
+                  <TH>Languages</TH>
+                  <TH>Contact</TH>
+                  <TH>Account Status</TH>
+                  <TH className="text-right">Actions</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {pagedStaff.map((s) => (
+                  <TR key={s.id} className="hover:bg-white/[0.02] transition-colors">
+                    {/* NAME + DETAILS TRIGGER */}
+                    <TD>
+                      <div className="flex items-center gap-3">
+                        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-gold/30 bg-gold/10 font-heading font-black text-xs text-gold">
+                          {s.full_name.slice(0, 1).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <button
+                            type="button"
+                            onClick={() => onOpenDrawer(s)}
+                            className="font-heading font-bold text-white text-xs hover:text-gold transition-colors truncate block text-left"
+                            data-testid={`staff-row-name-${s.id}`}
+                          >
+                            {s.full_name}
+                          </button>
+                          {s.notes && (
+                            <p className="text-[11px] text-slate-400 font-body truncate max-w-xs">
+                              {s.notes}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </TD>
+
+                    {/* ROLE / CATEGORY */}
+                    <TD>
+                      <div className="space-y-1">
+                        {s.designation && (
+                          <div className="font-heading font-bold text-xs text-sky-300">
+                            {s.designation}
+                          </div>
+                        )}
+                        {s.categories && s.categories.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {s.categories.map((c) => (
+                              <Badge
+                                key={c.id}
+                                tone="gold"
+                                size="sm"
+                                className="text-[10px] uppercase tracking-wider"
+                              >
+                                {c.name}
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : s.category ? (
+                          <Badge tone="gold" size="sm" className="text-[10px] uppercase tracking-wider">
+                            {s.category}
+                          </Badge>
+                        ) : !s.designation ? (
+                          <span className="text-[11px] text-slate-500 italic font-mono">—</span>
+                        ) : null}
+                      </div>
+                    </TD>
+
+                    {/* LANGUAGES */}
+                    <TD>
+                      {s.languages && s.languages.length > 0 ? (
+                        <div className="flex max-w-[180px] flex-wrap gap-1">
+                          {s.languages.map((lang) => (
+                            <Badge key={lang} tone="neutral" size="sm">
+                              {lang}
                             </Badge>
                           ))}
                         </div>
-                      ) : s.category ? (
-                        <Badge tone="gold" size="sm" className="text-[10px] uppercase tracking-wider">
-                          {s.category}
-                        </Badge>
-                      ) : !s.designation ? (
-                        <span className="text-[11px] text-slate-500 italic font-mono">—</span>
-                      ) : null}
-                    </div>
-                  </TD>
-
-                  {/* LANGUAGES */}
-                  <TD>
-                    {s.languages && s.languages.length > 0 ? (
-                      <div className="flex max-w-[180px] flex-wrap gap-1">
-                        {s.languages.map((lang) => (
-                          <Badge key={lang} tone="neutral" size="sm">
-                            {lang}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-[11px] text-slate-500 italic font-mono">—</span>
-                    )}
-                  </TD>
-
-                  {/* CONTACT */}
-                  <TD>
-                    <div className="space-y-0.5 text-xs font-mono">
-                      {s.phone ? (
-                        <a
-                          href={`tel:${s.phone}`}
-                          className="flex items-center gap-1 text-slate-300 hover:text-gold transition-colors"
-                        >
-                          <Phone className="h-3 w-3 text-gold/70" />
-                          {s.phone}
-                        </a>
                       ) : (
-                        <span className="text-slate-600 block">—</span>
+                        <span className="text-[11px] text-slate-500 italic font-mono">—</span>
                       )}
-                      {s.email && (
-                        <a
-                          href={`mailto:${s.email}`}
-                          className="flex items-center gap-1 text-slate-400 hover:text-gold transition-colors font-sans text-[11px]"
-                        >
-                          <Mail className="h-3 w-3 text-slate-500" />
-                          {s.email}
-                        </a>
-                      )}
-                    </div>
-                  </TD>
+                    </TD>
 
-                  {/* ACCOUNT STATUS */}
-                  <TD>
-                    {s.login_username ? (
-                      <div className="flex items-center gap-1.5">
-                        <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 shadow-emerald-400/50 shadow-xs" />
-                        <span className="font-mono text-xs text-emerald-400 font-bold">
-                          {s.login_username}
-                        </span>
+                    {/* CONTACT */}
+                    <TD>
+                      <div className="space-y-0.5 text-xs font-mono">
+                        {s.phone ? (
+                          <a
+                            href={`tel:${s.phone}`}
+                            className="flex items-center gap-1 text-slate-300 hover:text-gold transition-colors"
+                          >
+                            <Phone className="h-3 w-3 text-gold/70" />
+                            {s.phone}
+                          </a>
+                        ) : (
+                          <span className="text-slate-600 block">—</span>
+                        )}
+                        {s.email && (
+                          <a
+                            href={`mailto:${s.email}`}
+                            className="flex items-center gap-1 text-slate-400 hover:text-gold transition-colors font-sans text-[11px]"
+                          >
+                            <Mail className="h-3 w-3 text-slate-500" />
+                            {s.email}
+                          </a>
+                        )}
                       </div>
-                    ) : (
-                      <span className="text-[11px] font-mono text-slate-500">No login created</span>
-                    )}
-                  </TD>
+                    </TD>
 
-                  {/* ACTIONS */}
-                  <TD className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => onOpenDrawer(s)}
-                        data-testid={`view-staff-${s.id}`}
-                        title="View Profile Details"
-                      >
-                        <Eye className="h-3.5 w-3.5 text-slate-300" />
-                      </Button>
+                    {/* ACCOUNT STATUS */}
+                    <TD>
+                      {s.login_username ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 shadow-emerald-400/50 shadow-xs" />
+                          <span className="font-mono text-xs text-emerald-400 font-bold">
+                            {s.login_username}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-[11px] font-mono text-slate-500">No login created</span>
+                      )}
+                    </TD>
 
-                      {canEdit && (
-                        <>
-                          {!s.login_username && (
+                    {/* ACTIONS */}
+                    <TD className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => onOpenDrawer(s)}
+                          data-testid={`view-staff-${s.id}`}
+                          title="View Profile Details"
+                        >
+                          <Eye className="h-3.5 w-3.5 text-slate-300" />
+                        </Button>
+
+                        {canEdit && (
+                          <>
+                            {!s.login_username && (
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() => onCreateCredential(s)}
+                                disabled={creatingCredentialId === s.id}
+                                data-testid={`create-credential-${s.id}`}
+                                title="Create Portal Login"
+                              >
+                                <KeyRound className="h-3.5 w-3.5 text-gold" />
+                              </Button>
+                            )}
                             <Button
                               variant="ghost"
                               size="icon-sm"
-                              onClick={() => onCreateCredential(s)}
-                              disabled={creatingCredentialId === s.id}
-                              data-testid={`create-credential-${s.id}`}
-                              title="Create Portal Login"
+                              onClick={() => onOpenEdit(s)}
+                              data-testid={`edit-staff-${s.id}`}
+                              title="Edit Staff"
                             >
-                              <KeyRound className="h-3.5 w-3.5 text-gold" />
+                              <Pencil className="h-3.5 w-3.5 text-slate-300" />
                             </Button>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => onOpenEdit(s)}
-                            data-testid={`edit-staff-${s.id}`}
-                            title="Edit Staff"
-                          >
-                            <Pencil className="h-3.5 w-3.5 text-slate-300" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => onDelete(s.id)}
-                            data-testid={`delete-staff-${s.id}`}
-                            title="Delete Staff"
-                          >
-                            <Trash2 className="h-3.5 w-3.5 text-red-400" />
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </TD>
-                </TR>
-              ))}
-            </TBody>
-          </Table>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => onDelete(s.id)}
+                              data-testid={`delete-staff-${s.id}`}
+                              title="Delete Staff"
+                            >
+                              <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          </div>
 
           {/* PAGINATION */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between border-t border-white/10 px-4 py-3 text-xs text-slate-400 font-mono">
+            <div className="rounded-xl border border-white/10 bg-obsidian-900 flex items-center justify-between px-4 py-3 text-xs text-slate-400 font-mono">
               <span>
                 Page {page} of {totalPages} · {filteredStaff.length} Total Staff
               </span>

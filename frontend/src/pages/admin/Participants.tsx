@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, CheckCircle2, Circle, Upload, Download, Users, Search, Filter, FileSpreadsheet, IdCard, ImageOff, Lock } from "lucide-react";
+import { Plus, Pencil, Trash2, CheckCircle2, Circle, Upload, Download, Users, Search, Filter, FileSpreadsheet, IdCard, ImageOff, Lock, Unlock, Phone, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,8 @@ interface Participant {
   date_of_birth?: string;
   student_class?: string;
   photo_url?: string | null;
+  photo_uploads_locked?: boolean | null;
+  photo_uploads_locked_effective?: boolean;
   is_active?: boolean;
 }
 
@@ -41,6 +43,8 @@ interface Coach {
   notes?: string;
   aadhaar_no?: string;
   photo_url?: string | null;
+  photo_uploads_locked?: boolean | null;
+  photo_uploads_locked_effective?: boolean;
   is_present?: boolean;
 }
 
@@ -212,6 +216,26 @@ export default function Participants() {
     await api.delete(`/participants/${id}`);
     toast.success("Participant deleted");
     load();
+  };
+
+  const togglePhotoLock = async (p: Participant) => {
+    try {
+      const r = await api.put<Participant>(`/participants/${p.id}`, { photo_uploads_locked: !p.photo_uploads_locked_effective });
+      setParticipants((rows) => rows.map((x) => (x.id === p.id ? { ...x, photo_uploads_locked: r.data.photo_uploads_locked, photo_uploads_locked_effective: r.data.photo_uploads_locked_effective } : x)));
+      toast.success(r.data.photo_uploads_locked_effective ? `Photo uploads locked for ${p.full_name}` : `Photo uploads unlocked for ${p.full_name}`);
+    } catch {
+      toast.error("Could not update photo upload lock");
+    }
+  };
+
+  const toggleCoachPhotoLock = async (c: Coach) => {
+    try {
+      const r = await api.put<Coach>(`/coaches/${c.id}`, { photo_uploads_locked: !c.photo_uploads_locked_effective });
+      setCoaches((rows) => rows.map((x) => (x.id === c.id ? { ...x, photo_uploads_locked: r.data.photo_uploads_locked, photo_uploads_locked_effective: r.data.photo_uploads_locked_effective } : x)));
+      toast.success(r.data.photo_uploads_locked_effective ? `Photo uploads locked for ${c.full_name}` : `Photo uploads unlocked for ${c.full_name}`);
+    } catch {
+      toast.error("Could not update photo upload lock");
+    }
   };
 
   const removePhoto = async (p: Participant) => {
@@ -621,13 +645,26 @@ export default function Participants() {
                   data-testid={`participant-card-${p.id}`}
                   className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-2 shadow-sm"
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <span className="text-[10px] font-mono text-slate-500">
-                        #{(page - 1) * PAGE_SIZE + i + 1}
-                      </span>
-                      <h3 className="font-heading font-bold text-white text-sm">{p.full_name}</h3>
-                      <p className="text-xs text-gold font-body">{teamName(p.team_id)}</p>
+                  <div className="flex items-start justify-between gap-2.5">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {p.photo_url ? (
+                        <img
+                          src={`${BASE_URL}${p.photo_url}`}
+                          alt={p.full_name}
+                          className="h-10 w-10 rounded-full object-cover border border-white/10 shrink-0"
+                        />
+                      ) : (
+                        <div className="h-10 w-10 rounded-full bg-white/5 border border-white/10 grid place-items-center text-slate-400 font-heading font-black text-xs shrink-0">
+                          {p.full_name.slice(0, 1).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-mono text-slate-500">
+                          #{(page - 1) * PAGE_SIZE + i + 1}
+                        </span>
+                        <h3 className="font-heading font-bold text-white text-sm truncate">{p.full_name}</h3>
+                        <p className="text-xs text-gold font-body truncate">{teamName(p.team_id)}</p>
+                      </div>
                     </div>
 
                     {canMarkAttendance ? (
@@ -658,7 +695,7 @@ export default function Participants() {
                     )}
                   </div>
 
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <Label className="!mb-0 text-[10px]">Weight (kg)</Label>
                     {(() => {
                       const cap = weightCapFor(p.age_group);
@@ -675,6 +712,11 @@ export default function Participants() {
                               className={`h-7 w-20 text-xs ${overLimit ? "border-red-500 text-red-400" : ""}`}
                               data-testid={`participant-weight-mobile-${p.id}`}
                             />
+                            {cap != null && (
+                              <span className={`text-[10px] font-mono ${overLimit ? "text-red-400" : "text-slate-500"}`}>
+                                / {cap} kg
+                              </span>
+                            )}
                             {canMarkAttendance && (
                               <button
                                 type="button"
@@ -690,19 +732,26 @@ export default function Participants() {
                         );
                       }
                       return (
-                        <Input
-                          type="number"
-                          min={0}
-                          step="0.1"
-                          disabled={!canMarkAttendance || savingWeightId === p.id}
-                          value={draft}
-                          onChange={(e) => setWeightDrafts((d) => ({ ...d, [p.id]: e.target.value }))}
-                          onBlur={() => saveWeight(p)}
-                          onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-                          placeholder={cap ? `≤ ${cap}` : "—"}
-                          className={`h-7 w-20 text-xs ${overLimit ? "border-red-500 text-red-400" : ""}`}
-                          data-testid={`participant-weight-mobile-${p.id}`}
-                        />
+                        <>
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.1"
+                            disabled={!canMarkAttendance || savingWeightId === p.id}
+                            value={draft}
+                            onChange={(e) => setWeightDrafts((d) => ({ ...d, [p.id]: e.target.value }))}
+                            onBlur={() => saveWeight(p)}
+                            onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+                            placeholder={cap ? `≤ ${cap}` : "—"}
+                            className={`h-7 w-20 text-xs ${overLimit ? "border-red-500 text-red-400" : ""}`}
+                            data-testid={`participant-weight-mobile-${p.id}`}
+                          />
+                          {cap != null && (
+                            <span className={`text-[10px] font-mono ${overLimit ? "text-red-400" : "text-slate-500"}`}>
+                              / {cap} kg
+                            </span>
+                          )}
+                        </>
                       );
                     })()}
                   </div>
@@ -751,6 +800,27 @@ export default function Participants() {
                     </button>
                   </div>
 
+                  {/* PROFILE METADATA DETAILS */}
+                  {(p.student_class || p.father_name || p.date_of_birth) && (
+                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-slate-400 font-body pt-0.5 border-t border-white/5">
+                      {p.student_class && (
+                        <span>Class: <strong className="text-slate-300 font-semibold">{p.student_class}</strong></span>
+                      )}
+                      {p.father_name && (
+                        <span>Father: <strong className="text-slate-300 font-semibold">{p.father_name}</strong></span>
+                      )}
+                      {p.date_of_birth && (
+                        <span className="font-mono text-[10px]">DOB: {p.date_of_birth}</span>
+                      )}
+                    </div>
+                  )}
+
+                  {p.notes && (
+                    <p className="text-[11px] text-slate-400 italic font-body">
+                      Note: {p.notes}
+                    </p>
+                  )}
+
                   <div className="border-t border-white/10 pt-2.5 flex gap-2">
                     <a
                       href={(p.is_active ?? true) ? `${BASE_URL}/api/export/idcards/participant/${p.id}.pdf` : undefined}
@@ -768,6 +838,18 @@ export default function Participants() {
                       <IdCard className={cn("h-3.5 w-3.5", p.photo_url ? "text-emerald-400" : "text-red-400")} />
                       {(p.is_active ?? true) ? "Download ID Card" : "Inactive — No ID Card"}
                     </a>
+                    {canEdit && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 shrink-0"
+                        onClick={() => togglePhotoLock(p)}
+                        data-testid={`photo-lock-mobile-${p.id}`}
+                        title={p.photo_uploads_locked_effective ? "Photo uploads locked — click to unlock" : "Lock photo uploads"}
+                      >
+                        {p.photo_uploads_locked_effective ? <Lock className="h-3.5 w-3.5 text-amber-400" /> : <Unlock className="h-3.5 w-3.5 text-slate-300" />}
+                      </Button>
+                    )}
                     {canEdit && p.photo_url && (
                       <Button
                         variant="outline"
@@ -1001,6 +1083,17 @@ export default function Participants() {
                           >
                             <IdCard className="h-3.5 w-3.5" />
                           </a>
+                          {canEdit && (
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => togglePhotoLock(p)}
+                              data-testid={`photo-lock-${p.id}`}
+                              title={p.photo_uploads_locked_effective ? "Photo uploads locked — click to unlock" : "Lock photo uploads"}
+                            >
+                              {p.photo_uploads_locked_effective ? <Lock className="h-3.5 w-3.5 text-amber-400" /> : <Unlock className="h-3.5 w-3.5 text-slate-300" />}
+                            </Button>
+                          )}
                           {canEdit && p.photo_url && (
                             <Button
                               variant="ghost"
@@ -1106,13 +1199,26 @@ export default function Participants() {
                   data-testid={`coach-card-${c.id}`}
                   className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-2 shadow-sm"
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <span className="text-[10px] font-mono text-slate-500">
-                        #{(page - 1) * PAGE_SIZE + i + 1}
-                      </span>
-                      <h3 className="font-heading font-bold text-white text-sm">{c.full_name}</h3>
-                      <p className="text-xs text-gold font-body">{teamName(c.team_id)}</p>
+                  <div className="flex items-start justify-between gap-2.5">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {c.photo_url ? (
+                        <img
+                          src={`${BASE_URL}${c.photo_url}`}
+                          alt={c.full_name}
+                          className="h-10 w-10 rounded-full object-cover border border-white/10 shrink-0"
+                        />
+                      ) : (
+                        <div className="h-10 w-10 rounded-full bg-white/5 border border-white/10 grid place-items-center text-gold font-heading font-black text-xs shrink-0">
+                          {c.full_name.slice(0, 1).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-mono text-slate-500">
+                          #{(page - 1) * PAGE_SIZE + i + 1}
+                        </span>
+                        <h3 className="font-heading font-bold text-white text-sm truncate">{c.full_name}</h3>
+                        <p className="text-xs text-gold font-body truncate">{teamName(c.team_id)}</p>
+                      </div>
                     </div>
 
                     {canMarkAttendance ? (
@@ -1143,20 +1249,42 @@ export default function Participants() {
                     )}
                   </div>
 
-                  <div className="flex flex-wrap gap-1 text-[11px] pt-1">
+                  <div className="flex flex-wrap items-center gap-1.5 text-[11px] pt-1">
                     {c.role && (
                       <span className="rounded bg-gold/15 px-1.5 py-0.5 font-bold text-gold">{c.role}</span>
                     )}
                     {c.phone && (
-                      <span className="rounded bg-white/5 px-1.5 py-0.5 font-mono text-slate-300">{c.phone}</span>
+                      <a
+                        href={`tel:${c.phone}`}
+                        className="inline-flex items-center gap-1 rounded bg-white/5 hover:bg-white/10 px-1.5 py-0.5 font-mono text-slate-300 hover:text-gold transition-colors"
+                        title="Call"
+                      >
+                        <Phone className="h-2.5 w-2.5 text-gold" />
+                        {c.phone}
+                      </a>
                     )}
                     {c.aadhaar_no && (
-                      <span className="rounded bg-white/5 px-1.5 py-0.5 font-mono text-slate-300">{c.aadhaar_no}</span>
+                      <span className="rounded bg-white/5 px-1.5 py-0.5 font-mono text-slate-300">
+                        Aadhaar: {c.aadhaar_no}
+                      </span>
                     )}
                     {c.email && (
-                      <span className="rounded bg-white/5 px-1.5 py-0.5 text-slate-300">{c.email}</span>
+                      <a
+                        href={`mailto:${c.email}`}
+                        className="inline-flex items-center gap-1 rounded bg-white/5 hover:bg-white/10 px-1.5 py-0.5 text-slate-300 hover:text-gold transition-colors"
+                        title="Email"
+                      >
+                        <Mail className="h-2.5 w-2.5 text-slate-400" />
+                        {c.email}
+                      </a>
                     )}
                   </div>
+
+                  {c.notes && (
+                    <p className="text-[11px] text-slate-400 italic font-body pt-0.5">
+                      Note: {c.notes}
+                    </p>
+                  )}
 
                   <div className="border-t border-white/10 pt-2.5 flex gap-2">
                     <a
@@ -1171,6 +1299,18 @@ export default function Participants() {
                     >
                       <IdCard className={cn("h-3.5 w-3.5", c.photo_url ? "text-emerald-400" : "text-red-400")} /> Download ID Card
                     </a>
+                    {canEdit && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 shrink-0"
+                        onClick={() => toggleCoachPhotoLock(c)}
+                        data-testid={`coach-photo-lock-mobile-${c.id}`}
+                        title={c.photo_uploads_locked_effective ? "Photo uploads locked — click to unlock" : "Lock photo uploads"}
+                      >
+                        {c.photo_uploads_locked_effective ? <Lock className="h-3.5 w-3.5 text-amber-400" /> : <Unlock className="h-3.5 w-3.5 text-slate-300" />}
+                      </Button>
+                    )}
                     {canEdit && c.photo_url && (
                       <Button
                         variant="outline"
@@ -1293,6 +1433,17 @@ export default function Participants() {
                           >
                             <IdCard className="h-3.5 w-3.5" />
                           </a>
+                          {canEdit && (
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => toggleCoachPhotoLock(c)}
+                              data-testid={`coach-photo-lock-${c.id}`}
+                              title={c.photo_uploads_locked_effective ? "Photo uploads locked — click to unlock" : "Lock photo uploads"}
+                            >
+                              {c.photo_uploads_locked_effective ? <Lock className="h-3.5 w-3.5 text-amber-400" /> : <Unlock className="h-3.5 w-3.5 text-slate-300" />}
+                            </Button>
+                          )}
                           {canEdit && c.photo_url && (
                             <Button
                               variant="ghost"

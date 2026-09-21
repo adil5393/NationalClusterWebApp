@@ -292,106 +292,199 @@ export function StaffAssignmentsTab({
               />
             </div>
           ) : (
-            <div className="rounded-xl border border-white/10 bg-obsidian-900 overflow-hidden">
-              <Table>
-                <THead>
-                  <TR>
-                    <TH>Staff Member</TH>
-                    <TH>Shift</TH>
-                    <TH>Operational Area</TH>
-                    <TH>Specific Duty</TH>
-                    <TH>Location</TH>
-                    <TH>Time Window</TH>
-                    <TH>Status</TH>
-                    {canEdit && <TH className="text-right">Actions</TH>}
-                  </TR>
-                </THead>
-                <TBody>
-                  {filteredDuties.map((d) => {
-                    const overflow = formatOverflowMinutes(d.outside_shift_minutes);
-                    return (
-                      <TR key={d.id} className="hover:bg-white/[0.01]">
-                        {/* STAFF */}
-                        <TD className="font-heading font-bold text-white text-xs">
-                          {d.staff_name || `Staff #${d.staff_id}`}
-                        </TD>
+            <div className="space-y-3">
+              {/* MOBILE: CARD LIST */}
+              <div className="grid gap-2.5 sm:gap-3 lg:hidden">
+                {filteredDuties.map((d) => {
+                  const overflow = formatOverflowMinutes(d.outside_shift_minutes);
+                  return (
+                    <div
+                      key={d.id}
+                      data-testid={`duty-card-${d.id}`}
+                      className="rounded-xl border border-white/10 bg-obsidian-900/90 p-3.5 space-y-2.5 shadow-sm"
+                    >
+                      <div className="flex items-start justify-between gap-2.5">
+                        <div className="min-w-0">
+                          <h3 className="font-heading font-bold text-white text-sm truncate">
+                            {d.staff_name || `Staff #${d.staff_id}`}
+                          </h3>
+                          <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                            <span className="rounded bg-gold/15 border border-gold/30 px-1.5 py-0.5 text-xs font-heading font-bold text-gold">
+                              {d.duty_type}
+                            </span>
+                            <span className="text-[11px] text-slate-400 font-mono">
+                              {d.operational_area_name || "General"}
+                            </span>
+                          </div>
+                        </div>
 
-                        {/* SHIFT */}
-                        <TD className="text-xs font-mono text-slate-300">
-                          {d.shift_name || "Cross-Shift"}
-                        </TD>
-
-                        {/* OPERATIONAL AREA */}
-                        <TD>
-                          <span className="font-heading font-bold text-gold text-xs">
-                            {d.operational_area_name || "General"}
-                          </span>
-                        </TD>
-
-                        {/* SPECIFIC DUTY */}
-                        <TD className="text-xs text-slate-200 font-bold">
-                          {d.duty_type}
-                        </TD>
-
-                        {/* LOCATION */}
-                        <TD>
-                          <span className="flex items-center gap-1 text-xs text-emerald-400 font-mono">
-                            <MapPin className="h-3 w-3 shrink-0" />
-                            {d.location_name || d.room_name || "Operational Venue"}
-                          </span>
-                        </TD>
-
-                        {/* TIME */}
-                        <TD className="text-xs font-mono text-slate-300">
-                          {d.start_time && d.end_time
-                            ? `${formatShiftTime(d.start_time)} – ${formatShiftTime(d.end_time)}`
-                            : "All Day"}
-                        </TD>
-
-                        {/* STATUS / WARNING */}
-                        <TD>
+                        <div className="shrink-0">
                           {d.warning ? (
-                            <span className="inline-flex items-center gap-1 text-amber-400 font-mono text-[11px] font-bold">
+                            <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-400">
                               <AlertTriangle className="h-3 w-3 shrink-0" />
                               Outside shift {overflow ? `(${overflow})` : ""}
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 text-emerald-400 font-mono text-[11px]">
+                            <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-400">
                               <Check className="h-3 w-3 stroke-[3]" /> Active
                             </span>
                           )}
-                        </TD>
+                        </div>
+                      </div>
 
-                        {/* ACTIONS */}
-                        {canEdit && (
-                          <TD className="text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                onClick={() => onEditDuty(d)}
-                                data-testid={`edit-assignment-duty-${d.id}`}
-                                title="Edit Duty"
-                              >
-                                <Pencil className="h-3.5 w-3.5 text-slate-300" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                onClick={() => onDeleteDuty(d.id)}
-                                data-testid={`delete-assignment-duty-${d.id}`}
-                                title="Delete Duty"
-                              >
-                                <Trash2 className="h-3.5 w-3.5 text-red-400" />
-                              </Button>
-                            </div>
-                          </TD>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-mono text-slate-300 pt-0.5">
+                        <span className="flex items-center gap-1 text-emerald-400">
+                          <MapPin className="h-3 w-3 shrink-0" />
+                          {d.location_name || d.room_name || "Operational Venue"}
+                        </span>
+                        <span className="flex items-center gap-1 text-slate-400">
+                          <Clock className="h-3 w-3 shrink-0" />
+                          {d.start_time && d.end_time
+                            ? `${formatShiftTime(d.start_time)} – ${formatShiftTime(d.end_time)}`
+                            : "All Day"}
+                        </span>
+                        {d.shift_name && (
+                          <span className="text-slate-500">
+                            Shift: {d.shift_name}
+                          </span>
                         )}
-                      </TR>
-                    );
-                  })}
-                </TBody>
-              </Table>
+                      </div>
+
+                      {d.notes && (
+                        <p className="text-[11px] text-slate-400 italic font-body">
+                          "{d.notes}"
+                        </p>
+                      )}
+
+                      {canEdit && (
+                        <div className="border-t border-white/10 pt-2 flex items-center justify-end gap-1.5">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => onEditDuty(d)}
+                            data-testid={`edit-assignment-duty-mobile-${d.id}`}
+                            className="h-8 text-xs font-bold"
+                          >
+                            <Pencil className="h-3.5 w-3.5 mr-1 text-slate-300" /> Edit
+                          </Button>
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            onClick={() => onDeleteDuty(d.id)}
+                            data-testid={`delete-assignment-duty-mobile-${d.id}`}
+                            className="h-8 text-xs font-bold"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* DESKTOP: TABLE */}
+              <div className="hidden lg:block rounded-xl border border-white/10 bg-obsidian-900 overflow-hidden">
+                <Table>
+                  <THead>
+                    <TR>
+                      <TH>Staff Member</TH>
+                      <TH>Shift</TH>
+                      <TH>Operational Area</TH>
+                      <TH>Specific Duty</TH>
+                      <TH>Location</TH>
+                      <TH>Time Window</TH>
+                      <TH>Status</TH>
+                      {canEdit && <TH className="text-right">Actions</TH>}
+                    </TR>
+                  </THead>
+                  <TBody>
+                    {filteredDuties.map((d) => {
+                      const overflow = formatOverflowMinutes(d.outside_shift_minutes);
+                      return (
+                        <TR key={d.id} className="hover:bg-white/[0.01]">
+                          {/* STAFF */}
+                          <TD className="font-heading font-bold text-white text-xs">
+                            {d.staff_name || `Staff #${d.staff_id}`}
+                          </TD>
+
+                          {/* SHIFT */}
+                          <TD className="text-xs font-mono text-slate-300">
+                            {d.shift_name || "Cross-Shift"}
+                          </TD>
+
+                          {/* OPERATIONAL AREA */}
+                          <TD>
+                            <span className="font-heading font-bold text-gold text-xs">
+                              {d.operational_area_name || "General"}
+                            </span>
+                          </TD>
+
+                          {/* SPECIFIC DUTY */}
+                          <TD className="text-xs text-slate-200 font-bold">
+                            {d.duty_type}
+                          </TD>
+
+                          {/* LOCATION */}
+                          <TD>
+                            <span className="flex items-center gap-1 text-xs text-emerald-400 font-mono">
+                              <MapPin className="h-3 w-3 shrink-0" />
+                              {d.location_name || d.room_name || "Operational Venue"}
+                            </span>
+                          </TD>
+
+                          {/* TIME */}
+                          <TD className="text-xs font-mono text-slate-300">
+                            {d.start_time && d.end_time
+                              ? `${formatShiftTime(d.start_time)} – ${formatShiftTime(d.end_time)}`
+                              : "All Day"}
+                          </TD>
+
+                          {/* STATUS / WARNING */}
+                          <TD>
+                            {d.warning ? (
+                              <span className="inline-flex items-center gap-1 text-amber-400 font-mono text-[11px] font-bold">
+                                <AlertTriangle className="h-3 w-3 shrink-0" />
+                                Outside shift {overflow ? `(${overflow})` : ""}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-emerald-400 font-mono text-[11px]">
+                                <Check className="h-3 w-3 stroke-[3]" /> Active
+                              </span>
+                            )}
+                          </TD>
+
+                          {/* ACTIONS */}
+                          {canEdit && (
+                            <TD className="text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  onClick={() => onEditDuty(d)}
+                                  data-testid={`edit-assignment-duty-${d.id}`}
+                                  title="Edit Duty"
+                                >
+                                  <Pencil className="h-3.5 w-3.5 text-slate-300" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  onClick={() => onDeleteDuty(d.id)}
+                                  data-testid={`delete-assignment-duty-${d.id}`}
+                                  title="Delete Duty"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                                </Button>
+                              </div>
+                            </TD>
+                          )}
+                        </TR>
+                      );
+                    })}
+                  </TBody>
+                </Table>
+              </div>
             </div>
           )}
         </>

@@ -988,7 +988,76 @@ export function ShiftWorkspace({
             )}
           </div>
 
-          <div className="rounded-xl border border-white/10 bg-obsidian-900 overflow-hidden">
+          {/* MOBILE CARD VIEW (<lg) */}
+          <div className="space-y-3 lg:hidden">
+            {activeAreas.map((area) => {
+              const incharges = areaIncharges.get(area.id) || [];
+              const hasIncharge = incharges.length > 0;
+
+              return (
+                <div
+                  key={area.id}
+                  className="rounded-xl border border-white/10 bg-obsidian-900 p-4 space-y-3"
+                  data-testid={`shift-incharge-card-${area.id}`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h4 className="font-heading font-bold text-white text-base">
+                        {area.name}
+                      </h4>
+                      <p className="text-xs font-mono text-slate-400 mt-0.5">
+                        Code: <span className="text-slate-200">{area.code}</span>
+                      </p>
+                    </div>
+                    {hasIncharge ? (
+                      <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-emerald-400 font-bold font-mono text-[11px]">
+                        <Check className="h-3 w-3 stroke-[3]" /> Covered
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-amber-400 font-bold font-mono text-[11px]">
+                        <AlertTriangle className="h-3 w-3" /> Not Assigned
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-heading uppercase tracking-wider text-slate-400">In-Charge(s)</p>
+                    {hasIncharge ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {incharges.map((s) => (
+                          <span
+                            key={s.id}
+                            className="rounded bg-gold/15 border border-gold/30 px-2.5 py-1 text-xs font-heading font-bold text-gold"
+                          >
+                            {s.full_name}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-slate-500 italic text-xs font-mono">No in-charges designated yet</span>
+                    )}
+                  </div>
+
+                  {canEdit && (
+                    <div className="pt-2 border-t border-white/5 flex justify-end">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={onOpenInchargesModal}
+                        data-testid={`incharge-edit-area-mobile-${area.id}`}
+                        className="h-7 text-xs text-gold font-bold hover:bg-gold/10"
+                      >
+                        {hasIncharge ? "Edit In-Charges" : "Assign In-Charge"}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* DESKTOP TABLE VIEW (>=lg) */}
+          <div className="hidden lg:block rounded-xl border border-white/10 bg-obsidian-900 overflow-hidden">
             <table className="w-full text-left text-xs">
               <thead className="border-b border-white/10 bg-white/5 font-heading uppercase text-[10px] tracking-wider text-slate-400">
                 <tr>
