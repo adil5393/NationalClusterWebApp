@@ -249,6 +249,11 @@ def get_photo_uploads_lock(db: Session = Depends(get_db)):
 def set_photo_uploads_lock(payload: schemas.GlobalPhotoLockUpdate, db: Session = Depends(get_db)):
     settings_row = _get_app_settings(db)
     settings_row.global_photo_uploads_locked = payload.locked
+    # A wider switch resets everything beneath it so every team/person shows
+    # (and behaves as) the same state; individual toggles then override.
+    db.query(models.Team).update({models.Team.photo_uploads_locked: None})
+    db.query(models.Participant).update({models.Participant.photo_uploads_locked: None})
+    db.query(models.Coach).update({models.Coach.photo_uploads_locked: None})
     db.commit()
     return {"locked": settings_row.global_photo_uploads_locked}
 
@@ -346,6 +351,10 @@ def update_team(team_id: int, payload: schemas.TeamUpdate, db: Session = Depends
 
     for key, value in data.items():
         setattr(team, key, value)
+    if "photo_uploads_locked" in data:
+        # Team-wide toggle resets its people so the whole roster matches.
+        for m in (models.Participant, models.Coach):
+            db.query(m).filter(m.team_id == team.id).update({m.photo_uploads_locked: None})
     db.commit()
     db.refresh(team)
     team.present_counts = _present_counts_map(db, [team.id]).get(team.id, {})

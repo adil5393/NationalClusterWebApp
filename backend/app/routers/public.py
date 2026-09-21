@@ -371,7 +371,10 @@ def public_team_detail(team_id: int, db: Session = Depends(get_db)):
     # /reveal-contacts check to get them, see below. aadhaar_no is withheld
     # too — it's only ever baked into the rendered PDF, never sent to a client.
     coaches = [
-        {"id": c.id, "full_name": c.full_name, "role": c.role, "email": c.email, "photo_url": c.photo_url}
+        {
+            "id": c.id, "full_name": c.full_name, "role": c.role, "email": c.email, "photo_url": c.photo_url,
+            "photo_uploads_locked": c.photo_uploads_locked_effective,
+        }
         for c in team.coaches
     ]
     has_hidden_contacts = any(c.phone for c in team.coaches)
@@ -383,6 +386,7 @@ def public_team_detail(team_id: int, db: Session = Depends(get_db)):
             "age_group": p.age_group,
             "photo_url": p.photo_url,
             "photo_finalized": p.photo_finalized,
+            "photo_uploads_locked": p.photo_uploads_locked_effective,
         }
         for p in team.participants
     ]
@@ -445,7 +449,7 @@ def public_team_detail(team_id: int, db: Session = Depends(get_db)):
         "accommodation": accommodation,
         "transport": transport,
         "schedule": schedule,
-        "photo_uploads_locked": team.photo_uploads_locked or _global_photo_uploads_locked(db),
+        "photo_uploads_locked": team.photo_uploads_locked_effective,
     }
 
 
@@ -586,8 +590,8 @@ async def upload_participant_photo(
     participant = db.get(models.Participant, participant_id)
     if not participant:
         raise HTTPException(404, "Participant not found")
-    if participant.team.photo_uploads_locked or _global_photo_uploads_locked(db):
-        raise HTTPException(423, "Photo uploads are currently locked by the organizers for this team.")
+    if participant.photo_uploads_locked_effective:
+        raise HTTPException(423, "Photo uploads are currently locked by the organizers.")
 
     if _photo_upload_rate_limited(participant_id):
         raise HTTPException(429, "Too many attempts — try again later")
@@ -695,8 +699,8 @@ async def upload_coach_photo(
     coach = db.get(models.Coach, coach_id)
     if not coach:
         raise HTTPException(404, "Coach not found")
-    if coach.team.photo_uploads_locked or _global_photo_uploads_locked(db):
-        raise HTTPException(423, "Photo uploads are currently locked by the organizers for this team.")
+    if coach.photo_uploads_locked_effective:
+        raise HTTPException(423, "Photo uploads are currently locked by the organizers.")
 
     if _coach_photo_upload_rate_limited(coach_id):
         raise HTTPException(429, "Too many attempts — try again later")

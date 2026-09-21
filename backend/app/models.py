@@ -25,9 +25,15 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import object_session, relationship
 
 from .database import Base
+
+
+def _global_photo_lock(obj) -> bool:
+    session = object_session(obj)
+    row = session.get(AppSettings, 1) if session else None
+    return bool(row and row.global_photo_uploads_locked)
 
 
 class TimestampMixin:
@@ -117,12 +123,21 @@ class Team(TimestampMixin, Base):
     # Checked at upload time regardless of who's asking (a coach typing the
     # right DOB/phone doesn't bypass it); never affects already-uploaded
     # photos or anything else about the team.
-    photo_uploads_locked = Column(Boolean, nullable=False, default=False, server_default="false")
+    # Tri-state: None = inherit the global switch, True = locked, False =
+    # explicitly unlocked (overrides a locked global switch for this team).
+    photo_uploads_locked = Column(Boolean, nullable=True)
 
     participants = relationship("Participant", back_populates="team", cascade="all, delete-orphan")
     coaches = relationship("Coach", back_populates="team", cascade="all, delete-orphan")
     photos = relationship("TeamPhoto", back_populates="team", cascade="all, delete-orphan", order_by="TeamPhoto.id")
     accommodation = relationship("AccommodationAssignment", back_populates="team")
+
+    @property
+    def photo_uploads_locked_effective(self) -> bool:
+        """Team override, else the global switch."""
+        if self.photo_uploads_locked is not None:
+            return self.photo_uploads_locked
+        return _global_photo_lock(self)
     transport = relationship("TransportAssignment", back_populates="team")
     last_year_awards = relationship("TeamLastYearAward", back_populates="team", cascade="all, delete-orphan")
     inactive_age_groups = relationship("TeamInactiveAgeGroup", back_populates="team", cascade="all, delete-orphan")
@@ -292,6 +307,10 @@ class Participant(TimestampMixin, Base):
     # registration_no, see public.py) — a coach/manager uploads this for
     # their own roster, no admin action needed.
     photo_filename = Column(String(120))
+    # Per-person upload lock, tri-state: None = inherit the team's / global
+    # lock, True = locked, False = explicitly unlocked (overrides a locked
+    # team or global switch) — see photo_uploads_locked_effective.
+    photo_uploads_locked = Column(Boolean, nullable=True)
     # True only once a photo has gone through the manual crop-confirm step
     # (see face_crop.py / TeamPortal.tsx's cropper) — lets the roster tell a
     # deliberately-framed photo apart from a legacy one uploaded before that
@@ -317,6 +336,13 @@ class Participant(TimestampMixin, Base):
     team = relationship("Team", back_populates="participants")
 
     @property
+    def photo_uploads_locked_effective(self) -> bool:
+        """Person override > team override > global switch."""
+        if self.photo_uploads_locked is not None:
+            return self.photo_uploads_locked
+        return self.team.photo_uploads_locked_effective
+
+    @property
     def photo_url(self) -> "str | None":
         return f"/api/assets/participants/{self.photo_filename}" if self.photo_filename else None
 
@@ -338,6 +364,10 @@ class Coach(TimestampMixin, Base):
     # number, same shape as Participant.photo_filename's DOB-gated upload —
     # see public.py) or an admin removing it from the Participants admin page.
     photo_filename = Column(String(120))
+    # Per-person upload lock, tri-state: None = inherit the team's / global
+    # lock, True = locked, False = explicitly unlocked (overrides a locked
+    # team or global switch) — see photo_uploads_locked_effective.
+    photo_uploads_locked = Column(Boolean, nullable=True)
     # Attendance/check-in at the event, same convention as Participant — kept
     # off any fixture/eligibility query on purpose, so coaches/managers never
     # count toward age-group eligibility or present-count thresholds.
@@ -345,6 +375,13 @@ class Coach(TimestampMixin, Base):
     checked_in_at = Column(DateTime(timezone=True))
 
     team = relationship("Team", back_populates="coaches")
+
+    @property
+    def photo_uploads_locked_effective(self) -> bool:
+        """Person override > team override > global switch."""
+        if self.photo_uploads_locked is not None:
+            return self.photo_uploads_locked
+        return self.team.photo_uploads_locked_effective
 
     @property
     def photo_url(self) -> "str | None":

@@ -41,6 +41,7 @@ interface Coach {
   email?: string;
   phone?: string | null;
   photo_url?: string | null;
+  photo_uploads_locked?: boolean;
 }
 interface TeamDetail {
   id: number;
@@ -57,6 +58,7 @@ interface TeamDetail {
     full_name: string;
     role?: string;
     age_group?: string;
+    photo_uploads_locked?: boolean;
     photo_url?: string | null;
     photo_finalized?: boolean;
   }[];
@@ -690,12 +692,12 @@ export default function TeamPortal() {
                     <button
                       type="button"
                       onClick={() =>
-                        team.photo_uploads_locked
+                        c.photo_uploads_locked
                           ? toast.error("Photo uploads are currently locked by the organizers for this team.")
                           : setCoachPhotoTarget(c)
                       }
                       title={
-                        team.photo_uploads_locked
+                        c.photo_uploads_locked
                           ? "Photo uploads are locked by the organizers"
                           : c.photo_url
                             ? "Update photo"
@@ -704,7 +706,7 @@ export default function TeamPortal() {
                       data-testid={`coach-photo-btn-${c.id}`}
                       className={cn(
                         "relative group shrink-0 h-10 w-10 rounded-lg overflow-hidden border border-white/10 bg-obsidian-900/90 focus:outline-none focus:ring-2 focus:ring-gold/40 transition-all flex items-center justify-center",
-                        team.photo_uploads_locked ? "opacity-60 cursor-not-allowed" : "hover:border-gold/60",
+                        c.photo_uploads_locked ? "opacity-60 cursor-not-allowed" : "hover:border-gold/60",
                       )}
                     >
                       {c.photo_url ? (
@@ -873,12 +875,12 @@ export default function TeamPortal() {
                           <button
                             type="button"
                             onClick={() =>
-                              team.photo_uploads_locked
+                              p.photo_uploads_locked
                                 ? toast.error("Photo uploads are currently locked by the organizers for this team.")
                                 : setPhotoTarget(p)
                             }
                             title={
-                              team.photo_uploads_locked
+                              p.photo_uploads_locked
                                 ? "Photo uploads are locked by the organizers"
                                 : p.photo_url
                                   ? p.photo_finalized
@@ -889,7 +891,7 @@ export default function TeamPortal() {
                             data-testid={`participant-photo-btn-${p.id}`}
                             className={cn(
                               "relative group shrink-0 h-12 w-12 sm:h-14 sm:w-14 rounded-xl overflow-hidden border border-white/10 bg-obsidian-900/90 focus:outline-none focus:ring-2 focus:ring-gold/40 transition-all flex items-center justify-center shadow-inner",
-                              team.photo_uploads_locked ? "opacity-60 cursor-not-allowed" : "hover:border-gold/60",
+                              p.photo_uploads_locked ? "opacity-60 cursor-not-allowed" : "hover:border-gold/60",
                             )}
                           >
                             {p.photo_url ? (

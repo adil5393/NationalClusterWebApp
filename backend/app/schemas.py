@@ -189,7 +189,9 @@ class TeamRead(ORMModel, TeamBase):
     all_photos_uploaded: bool = False
     is_active: bool = True
     has_arrived: bool = False
-    photo_uploads_locked: bool = False
+    # Raw tri-state override (None = inherit); the effective value is what the UI shows.
+    photo_uploads_locked: Optional[bool] = None
+    photo_uploads_locked_effective: bool = False
     # Self-reported travel plan from the arrival Google Form sync — read-only
     # here (see TeamUpdate, which never accepts these), distinct from the
     # organizer-confirmed has_arrived above.
@@ -610,6 +612,8 @@ class ParticipantUpdate(BaseModel):
     father_name: Optional[str] = None
     date_of_birth: Optional[date] = None
     student_class: Optional[str] = None
+    # Admin toggle: blocks public photo uploads for just this person.
+    photo_uploads_locked: Optional[bool] = None
 
     _blank_reg = field_validator("registration_no", "date_of_birth", "age", mode="before")(lambda cls, v: _blank_to_none(v))
 
@@ -620,6 +624,9 @@ class ParticipantRead(ORMModel, ParticipantBase):
     is_present: bool = False
     checked_in_at: Optional[datetime] = None
     photo_url: Optional[str] = None
+    # Raw tri-state override (None = inherit); the effective value is what the UI shows.
+    photo_uploads_locked: Optional[bool] = None
+    photo_uploads_locked_effective: bool = False
     weight: Optional[Decimal] = None
     is_active: bool = True
 
@@ -672,6 +679,8 @@ class CoachUpdate(BaseModel):
     phone: Optional[str] = None
     notes: Optional[str] = None
     aadhaar_no: Optional[str] = None
+    # Admin toggle: blocks public photo uploads for just this person.
+    photo_uploads_locked: Optional[bool] = None
 
 
 class CoachRead(ORMModel, CoachBase):
@@ -679,6 +688,9 @@ class CoachRead(ORMModel, CoachBase):
     is_present: bool = False
     checked_in_at: Optional[datetime] = None
     photo_url: Optional[str] = None
+    # Raw tri-state override (None = inherit); the effective value is what the UI shows.
+    photo_uploads_locked: Optional[bool] = None
+    photo_uploads_locked_effective: bool = False
 
 
 # --- Volunteers ---
