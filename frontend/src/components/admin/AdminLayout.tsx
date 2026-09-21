@@ -356,8 +356,12 @@ export function AdminLayout() {
             data-testid="admin-brand"
             onClick={() => setMobileNavOpen(false)}
           >
-            <div className="grid h-9 w-9 place-items-center rounded-lg border border-gold/40 bg-gold/15 text-gold font-heading font-black text-xs shadow-sm group-hover:scale-105 transition-transform">
-              <Trophy className="h-4 w-4 text-gold" />
+            <div className="relative grid h-9 w-9 place-items-center rounded-lg border border-gold/40 bg-white/[0.06] p-1 shadow-[0_0_15px_-3px_rgba(245,158,11,0.25)] transition-transform group-hover:scale-105 shrink-0 overflow-hidden">
+              <img
+                src="/icon-192.png"
+                alt="Tournament Emblem"
+                className="h-full w-full object-contain drop-shadow"
+              />
             </div>
             <div className="leading-tight">
               <div className="flex items-center gap-1.5">

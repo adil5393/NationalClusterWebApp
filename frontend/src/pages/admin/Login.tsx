@@ -43,8 +43,12 @@ export default function Login() {
       <div className="w-full max-w-md">
         {/* BRAND EMBLEM */}
         <div className="flex flex-col items-center gap-3">
-          <div className="relative grid h-14 w-14 place-items-center rounded-xl border border-gold/40 bg-gradient-to-br from-gold/20 via-obsidian-900 to-obsidian text-gold shadow-[0_0_25px_-5px_rgba(245,158,11,0.35)]">
-            <Trophy className="h-7 w-7 text-gold" />
+          <div className="relative grid h-16 w-16 place-items-center rounded-2xl border border-gold/40 bg-white/[0.06] p-1.5 shadow-[0_0_25px_-5px_rgba(245,158,11,0.35)] overflow-hidden">
+            <img
+              src="/icon-192.png"
+              alt="Tournament Emblem"
+              className="h-full w-full object-contain drop-shadow"
+            />
           </div>
           <div className="text-center leading-tight">
             <div className="flex items-center justify-center gap-1.5">
