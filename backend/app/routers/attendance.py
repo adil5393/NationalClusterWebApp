@@ -83,6 +83,8 @@ def set_attendance(participant_id: int, payload: schemas.AttendanceUpdate, db: S
     p = db.get(models.Participant, participant_id)
     if not p:
         raise HTTPException(404, "Participant not found")
+    if not p.team.is_active:
+        raise HTTPException(400, "This team is inactive — attendance can't be changed.")
     if p.is_present and not payload.present:
         _require_admin_password(db, payload.admin_password)
     p.is_present = payload.present
@@ -107,6 +109,8 @@ def set_weight(participant_id: int, payload: schemas.WeightUpdate, db: Session =
     p = db.get(models.Participant, participant_id)
     if not p:
         raise HTTPException(404, "Participant not found")
+    if not p.team.is_active:
+        raise HTTPException(400, "This team is inactive — weight can't be changed.")
     if payload.weight is not None and payload.weight <= 0:
         raise HTTPException(400, "Weight must be a positive number")
     if p.weight is not None and payload.weight != p.weight:

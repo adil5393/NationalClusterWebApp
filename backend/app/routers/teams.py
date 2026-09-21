@@ -6,6 +6,7 @@ from .. import models, schemas
 from ..auth_utils import verify_password
 from ..config import settings
 from ..database import get_db
+from ..security import require_auth
 from ..ws import broadcast_roster_change_sync
 
 router = APIRouter(prefix="/api/teams", tags=["teams"])
@@ -339,6 +340,11 @@ def update_team(team_id: int, payload: schemas.TeamUpdate, db: Session = Depends
     if not team:
         raise HTTPException(404, "Team not found")
     data = payload.model_dump(exclude_unset=True)
+    # An inactive team can't have its arrival status or awards changed
+    # (unless this same request reactivates it).
+    if not team.is_active and data.get("is_active") is not True:
+        if "has_arrived" in data or payload.last_year_awards is not None:
+            raise HTTPException(400, "This team is inactive — arrival and awards can't be changed.")
     data.pop("last_year_awards", None)
     admin_password = data.pop("admin_password", None)
     _check_team_codes_free(db, data, exclude_id=team.id)
@@ -375,6 +381,8 @@ def set_team_age_group_active(team_id: int, age_group: str, payload: schemas.Tea
     team = db.get(models.Team, team_id)
     if not team:
         raise HTTPException(404, "Team not found")
+    if not team.is_active:
+        raise HTTPException(400, "This team is inactive — age groups can't be changed.")
 
     if not payload.is_active:
         _require_admin_password(db, payload.admin_password)

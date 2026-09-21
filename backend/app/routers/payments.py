@@ -50,6 +50,8 @@ def _get_team(db: Session, team_id: int) -> models.Team:
     team = db.get(models.Team, team_id)
     if not team:
         raise HTTPException(404, "Team not found")
+    if not team.is_active:
+        raise HTTPException(400, "This team is inactive — billing is not available.")
     return team
 
 

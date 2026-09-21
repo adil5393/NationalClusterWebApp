@@ -479,6 +479,7 @@ const empty: Partial<Team> = { name: "", school: "", region: "", country: "India
 
 export default function AdminTeams() {
   const { canEdit } = useModuleAccess("teams");
+  const { canEdit: canToggleActive } = useModuleAccess("team_activation");
   const gateDisabled = !!useMe()?.admin_password_gate_disabled;
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
@@ -868,7 +869,7 @@ export default function AdminTeams() {
                       {/* Primary status badges */}
                       <div className="shrink-0 flex flex-col items-end gap-1">
                         <ActiveCell team={t} canEdit={canEdit} onToggle={toggleActive} />
-                        <ArrivedCell team={t} canEdit={canEdit} onToggle={toggleArrived} />
+                        <ArrivedCell team={t} canEdit={canEdit && t.is_active !== false} onToggle={toggleArrived} />
                       </div>
                     </div>
 
@@ -992,7 +993,7 @@ export default function AdminTeams() {
                             </span>
                           </span>
                         );
-                        if (!canEdit) return <span key={group}>{pill}</span>;
+                        if (!canEdit || t.is_active === false) return <span key={group}>{pill}</span>;
                         return (
                           <button
                             key={group}
@@ -1011,7 +1012,7 @@ export default function AdminTeams() {
                       {awards.length > 0 ? (
                         <button
                           type="button"
-                          onClick={() => canEdit && setAwardsTeam(t)}
+                          onClick={() => canEdit && t.is_active !== false && setAwardsTeam(t)}
                           disabled={!canEdit}
                           data-testid={`edit-awards-mobile-${t.id}`}
                           className={cn("inline-flex items-center gap-1", canEdit ? "hover:opacity-80 cursor-pointer" : "cursor-default")}
@@ -1032,7 +1033,7 @@ export default function AdminTeams() {
                       ) : (
                         <button
                           type="button"
-                          onClick={() => canEdit && setAwardsTeam(t)}
+                          onClick={() => canEdit && t.is_active !== false && setAwardsTeam(t)}
                           disabled={!canEdit}
                           data-testid={`edit-awards-mobile-${t.id}`}
                           className={cn(
@@ -1054,7 +1055,7 @@ export default function AdminTeams() {
                           variant="outline"
                           size="sm"
                           className="h-8 text-xs min-w-0 px-2 font-heading font-bold"
-                          onClick={() => setIdCardTeam(t)}
+                          onClick={() => (t.is_active === false ? toast.error("Team is inactive — ID cards are not available") : setIdCardTeam(t))}
                           data-testid={`download-team-idcards-mobile-${t.id}`}
                           title="Team ID Cards"
                         >
@@ -1092,7 +1093,7 @@ export default function AdminTeams() {
                           variant="outline"
                           size="sm"
                           className="h-8 text-xs min-w-0 px-2 font-heading font-bold"
-                          onClick={() => setReceiptTeam({ id: t.id, name: t.name })}
+                          onClick={() => (t.is_active === false ? toast.error("Team is inactive — billing is not available") : setReceiptTeam({ id: t.id, name: t.name }))}
                           data-testid={`receipt-team-mobile-${t.id}`}
                           title="Billing & Receipts"
                         >
@@ -1206,7 +1207,7 @@ export default function AdminTeams() {
                           <ActiveCell team={t} canEdit={canEdit} onToggle={toggleActive} />
                         </TD>
                         <TD className="px-1.5 py-2 text-center w-20">
-                          <ArrivedCell team={t} canEdit={canEdit} onToggle={toggleArrived} />
+                          <ArrivedCell team={t} canEdit={canEdit && t.is_active !== false} onToggle={toggleArrived} />
                         </TD>
                         <TD className="px-1.5 py-2 min-w-0">
                           <div className="flex items-center gap-1.5">
@@ -1217,10 +1218,10 @@ export default function AdminTeams() {
                           </div>
                         </TD>
                         <TD className="px-1.5 py-2 min-w-0">
-                          <AgeGroupActiveCell team={t} canEdit={canEdit} onToggle={toggleAgeGroupActive} />
+                          <AgeGroupActiveCell team={t} canEdit={canEdit && t.is_active !== false} onToggle={toggleAgeGroupActive} />
                         </TD>
                         <TD className="px-1.5 py-2 min-w-0">
-                          <LastYearAwardsCell team={t} canEdit={canEdit} onEdit={() => setAwardsTeam(t)} />
+                          <LastYearAwardsCell team={t} canEdit={canEdit && t.is_active !== false} onEdit={() => setAwardsTeam(t)} />
                         </TD>
                         <TD className="px-1.5 py-2 min-w-0 max-w-[120px]">
                           <AccommodationCell t={t} />
@@ -1272,7 +1273,7 @@ export default function AdminTeams() {
                             </Button>
                             <button
                               type="button"
-                              onClick={() => setIdCardTeam(t)}
+                              onClick={() => (t.is_active === false ? toast.error("Team is inactive — ID cards are not available") : setIdCardTeam(t))}
                               className={cn(
                                 "inline-flex items-center justify-center rounded h-7 w-7 p-0 transition-colors shrink-0",
                                 t.all_photos_uploaded
@@ -1295,7 +1296,7 @@ export default function AdminTeams() {
                             <Button
                               variant="ghost"
                               className="h-7 w-7 p-0 shrink-0"
-                              onClick={() => setReceiptTeam({ id: t.id, name: t.name })}
+                              onClick={() => (t.is_active === false ? toast.error("Team is inactive — billing is not available") : setReceiptTeam({ id: t.id, name: t.name }))}
                               data-testid={`generate-receipt-${t.id}`}
                               title="Billing & Refunds"
                             >

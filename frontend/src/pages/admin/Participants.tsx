@@ -51,6 +51,7 @@ interface Coach {
 interface Team {
   id: number;
   name: string;
+  is_active?: boolean;
 }
 
 const PAGE_SIZE = 25;
@@ -137,6 +138,7 @@ export default function Participants() {
   }, [participants]);
 
   const teamName = (tid?: number) => teams.find((t) => t.id === tid)?.name || "—";
+  const teamInactive = (tid?: number) => teams.find((t) => t.id === tid)?.is_active === false;
   const presentCount = participants.filter((p) => p.is_present).length;
 
   const filtered = useMemo(() => {
@@ -667,7 +669,7 @@ export default function Participants() {
                       </div>
                     </div>
 
-                    {canMarkAttendance ? (
+                    {(canMarkAttendance && !teamInactive(p.team_id)) ? (
                       <button
                         onClick={() => toggleAttendance(p)}
                         data-testid={`attendance-toggle-mobile-${p.id}`}
@@ -717,7 +719,7 @@ export default function Participants() {
                                 / {cap} kg
                               </span>
                             )}
-                            {canMarkAttendance && (
+                            {canMarkAttendance && !teamInactive(p.team_id) && (
                               <button
                                 type="button"
                                 onClick={() => openWeightEdit(p)}
@@ -737,7 +739,7 @@ export default function Participants() {
                             type="number"
                             min={0}
                             step="0.1"
-                            disabled={!canMarkAttendance || savingWeightId === p.id}
+                            disabled={!canMarkAttendance || teamInactive(p.team_id) || savingWeightId === p.id}
                             value={draft}
                             onChange={(e) => setWeightDrafts((d) => ({ ...d, [p.id]: e.target.value }))}
                             onBlur={() => saveWeight(p)}
@@ -823,11 +825,11 @@ export default function Participants() {
 
                   <div className="border-t border-white/10 pt-2.5 flex gap-2">
                     <a
-                      href={(p.is_active ?? true) ? `${BASE_URL}/api/export/idcards/participant/${p.id}.pdf` : undefined}
-                      aria-disabled={!(p.is_active ?? true)}
+                      href={!(p.is_active ?? true) || teamInactive(p.team_id) ? undefined : `${BASE_URL}/api/export/idcards/participant/${p.id}.pdf`}
+                      aria-disabled={!(p.is_active ?? true) || teamInactive(p.team_id)}
                       className={cn(
                         "inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md border text-xs font-semibold transition-colors",
-                        !(p.is_active ?? true)
+                        (!(p.is_active ?? true) || teamInactive(p.team_id))
                           ? "border-white/10 bg-white/5 text-slate-500 cursor-not-allowed pointer-events-none"
                           : p.photo_url
                           ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
@@ -836,7 +838,7 @@ export default function Participants() {
                       data-testid={`download-idcard-mobile-${p.id}`}
                     >
                       <IdCard className={cn("h-3.5 w-3.5", p.photo_url ? "text-emerald-400" : "text-red-400")} />
-                      {(p.is_active ?? true) ? "Download ID Card" : "Inactive — No ID Card"}
+                      {(p.is_active ?? true) && !teamInactive(p.team_id) ? "Download ID Card" : "Inactive — No ID Card"}
                     </a>
                     {canEdit && (
                       <Button
@@ -959,7 +961,7 @@ export default function Participants() {
                                     / {cap} kg
                                   </span>
                                 )}
-                                {canMarkAttendance && (
+                                {canMarkAttendance && !teamInactive(p.team_id) && (
                                   <button
                                     type="button"
                                     onClick={() => openWeightEdit(p)}
@@ -979,7 +981,7 @@ export default function Participants() {
                                 type="number"
                                 min={0}
                                 step="0.1"
-                                disabled={!canMarkAttendance || savingWeightId === p.id}
+                                disabled={!canMarkAttendance || teamInactive(p.team_id) || savingWeightId === p.id}
                                 value={draft}
                                 onChange={(e) =>
                                   setWeightDrafts((d) => ({ ...d, [p.id]: e.target.value }))
@@ -1000,7 +1002,7 @@ export default function Participants() {
                         })()}
                       </TD>
                       <TD>
-                        {canMarkAttendance ? (
+                        {(canMarkAttendance && !teamInactive(p.team_id)) ? (
                           <button
                             onClick={() => toggleAttendance(p)}
                             data-testid={`attendance-toggle-${p.id}`}
@@ -1059,11 +1061,11 @@ export default function Participants() {
                         <div className="flex items-center justify-end gap-1">
                           <a
                             href={
-                              (p.is_active ?? true)
+                              (p.is_active ?? true) && !teamInactive(p.team_id)
                                 ? `${BASE_URL}/api/export/idcards/participant/${p.id}.pdf`
                                 : undefined
                             }
-                            aria-disabled={!(p.is_active ?? true)}
+                            aria-disabled={!(p.is_active ?? true) || teamInactive(p.team_id)}
                             className={cn(
                               "inline-flex items-center justify-center gap-2 rounded-md font-body tracking-wide transition-colors h-8 w-8 p-0",
                               !(p.is_active ?? true)
@@ -1074,7 +1076,7 @@ export default function Participants() {
                             )}
                             data-testid={`download-idcard-${p.id}`}
                             title={
-                              !(p.is_active ?? true)
+                              !(p.is_active ?? true) || teamInactive(p.team_id)
                                 ? "Inactive — ID card not available"
                                 : p.photo_url
                                 ? "Download ID Card (PDF) — photo uploaded"
@@ -1288,7 +1290,8 @@ export default function Participants() {
 
                   <div className="border-t border-white/10 pt-2.5 flex gap-2">
                     <a
-                      href={`${BASE_URL}/api/export/idcards/coach/${c.id}.pdf`}
+                      href={teamInactive(c.team_id) ? undefined : `${BASE_URL}/api/export/idcards/coach/${c.id}.pdf`}
+                      aria-disabled={teamInactive(c.team_id)}
                       className={cn(
                         "inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md border text-xs font-semibold transition-colors",
                         c.photo_url
@@ -1417,7 +1420,8 @@ export default function Participants() {
                       <TD className="text-right">
                         <div className="flex items-center justify-end gap-1">
                           <a
-                            href={`${BASE_URL}/api/export/idcards/coach/${c.id}.pdf`}
+                            href={teamInactive(c.team_id) ? undefined : `${BASE_URL}/api/export/idcards/coach/${c.id}.pdf`}
+                      aria-disabled={teamInactive(c.team_id)}
                             className={cn(
                               "inline-flex items-center justify-center gap-2 rounded-md font-body tracking-wide transition-colors h-8 w-8 p-0",
                               c.photo_url

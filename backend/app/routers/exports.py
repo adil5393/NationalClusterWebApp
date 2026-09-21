@@ -1662,8 +1662,9 @@ def _active_participants(participants: list[models.Participant]) -> list[models.
     participant (Participant.is_active, toggled only via the admin-
     password-gated POST /participants/{id}/active) never renders an ID
     card, in any export, without needing every call site to remember the
-    filter itself."""
-    return [p for p in participants if p.is_active]
+    filter itself. Members of an inactive team (Team.is_active) are
+    excluded too."""
+    return [p for p in participants if p.is_active and p.team.is_active]
 
 
 def _individual_card_files(participants: list[models.Participant], team_by_id: dict[int, models.Team]) -> list[tuple[str, bytes]]:
@@ -1774,6 +1775,8 @@ def export_idcard_participant(participant_id: int, db: Session = Depends(get_db)
         raise HTTPException(404, "Participant not found")
     if not participant.is_active:
         raise HTTPException(400, "This participant is inactive — their ID card is not available.")
+    if not participant.team.is_active:
+        raise HTTPException(400, "This team is inactive — ID cards are not available.")
     card = id_card.render_id_card_page(participant, participant.team, _photo_path(participant))
     pdf = id_card.build_pdf([card])
     return _pdf_response(pdf, f"idcard-{participant.registration_no or participant.id}.pdf")
@@ -1784,6 +1787,8 @@ def export_idcard_team(team_id: int, db: Session = Depends(get_db)):
     team = db.get(models.Team, team_id)
     if not team:
         raise HTTPException(404, "Team not found")
+    if not team.is_active:
+        raise HTTPException(400, "This team is inactive — ID cards are not available.")
     if not team.participants:
         raise HTTPException(404, "This team has no participants to generate cards for")
     # Coach + Manager cards always close out the download, after every
@@ -1805,6 +1810,8 @@ def export_idcard_team_12x18(team_id: int, db: Session = Depends(get_db)):
     team = db.get(models.Team, team_id)
     if not team:
         raise HTTPException(404, "Team not found")
+    if not team.is_active:
+        raise HTTPException(400, "This team is inactive — ID cards are not available.")
     if not team.participants:
         raise HTTPException(404, "This team has no participants to generate cards for")
     groups = _team_card_groups(team.participants, team)
@@ -1821,6 +1828,8 @@ def export_idcard_team_individual(team_id: int, db: Session = Depends(get_db)):
     team = db.get(models.Team, team_id)
     if not team:
         raise HTTPException(404, "Team not found")
+    if not team.is_active:
+        raise HTTPException(400, "This team is inactive — ID cards are not available.")
     if not team.participants:
         raise HTTPException(404, "This team has no participants to generate cards for")
     files = _individual_card_files(team.participants, {team.id: team}) + _team_staff_card_files(team)
@@ -1835,6 +1844,7 @@ def export_idcard_all(db: Session = Depends(get_db)):
         .order_by(models.Participant.team_id)
         .all()
     )
+    participants = _active_participants(participants)
     if not participants:
         raise HTTPException(404, "No participants to generate cards for")
     # Lower DPI here only — this bulk export is a reference/backup document,
@@ -1871,6 +1881,7 @@ def export_idcard_all_individual(db: Session = Depends(get_db)):
     longer a single-file size ceiling forcing a DPI compromise."""
     teams = {t.id: t for t in db.query(models.Team).all()}
     participants = db.query(models.Participant).order_by(models.Participant.team_id).all()
+    participants = _active_participants(participants)
     if not participants:
         raise HTTPException(404, "No participants to generate cards for")
     files = _individual_card_files(participants, teams)
@@ -1894,6 +1905,8 @@ def export_idcard_coach(coach_id: int, db: Session = Depends(get_db)):
     coach = db.get(models.Coach, coach_id)
     if not coach:
         raise HTTPException(404, "Coach not found")
+    if not coach.team.is_active:
+        raise HTTPException(400, "This team is inactive — ID cards are not available.")
     page = id_card.render_staff_id_card_page(coach, coach.team, _coach_photo_path(coach))
     pdf = id_card.build_pdf([page])
     role_slug = (coach.role or "coach").lower()
