@@ -44,6 +44,7 @@ interface Team {
   affiliation_number?: string | null;
   region?: string;
   cluster?: string | null;
+  label?: string | null;
   country?: string;
   contact_name?: string;
   contact_email?: string;
@@ -523,7 +524,7 @@ function FilterGroup<T extends string>({
   );
 }
 
-const empty: Partial<Team> = { name: "", school: "", region: "", cluster: "", country: "India", member_count: 0 };
+const empty: Partial<Team> = { name: "", school: "", region: "", cluster: "", label: "", country: "India", member_count: 0 };
 
 export default function AdminTeams() {
   const { canEdit } = useModuleAccess("teams");
@@ -591,28 +592,41 @@ export default function AdminTeams() {
 
   const save = async () => {
     if (!form.name?.trim()) return toast.error("Team name is required");
+    // Send only the fields this form edits — spreading the whole team row
+    // would also resend is_active/has_arrived (a false value trips the
+    // admin-password gate on an ordinary detail edit) and last_year_awards.
+    // Blank text -> null so unique codes don't collide on "" and clearing
+    // a field actually clears it.
+    const blank = (v?: string | null) => (v && v.trim() ? v.trim() : null);
+    const payload = {
+      name: form.name!.trim(),
+      school_code: blank(form.school_code),
+      affiliation_number: blank(form.affiliation_number),
+      school: blank(form.school),
+      region: blank(form.region),
+      cluster: blank(form.cluster),
+      label: blank(form.label),
+      country: blank(form.country),
+      contact_name: blank(form.contact_name),
+      contact_email: blank(form.contact_email),
+      contact_phone: blank(form.contact_phone),
+      member_count: Number(form.member_count) || 0,
+      stay: blank(form.stay),
+      notes: blank(form.notes),
+    };
+    // Changing an existing team's label (set, changed, or cleared) needs an
+    // admin password — same gate as turning Active/Arrived off (see
+    // backend routers/teams.py _require_admin_password) — so this doesn't
+    // save yet; it hands off to the same password dialog those toggles use.
+    if (form.id) {
+      const original = teams.find((x) => x.id === form.id);
+      if (original && payload.label !== (original.label ?? null)) {
+        setOpen(false);
+        setPendingToggle({ kind: "label", team: original, payload });
+        return;
+      }
+    }
     try {
-      // Send only the fields this form edits — spreading the whole team row
-      // would also resend is_active/has_arrived (a false value trips the
-      // admin-password gate on an ordinary detail edit) and last_year_awards.
-      // Blank text -> null so unique codes don't collide on "" and clearing
-      // a field actually clears it.
-      const blank = (v?: string | null) => (v && v.trim() ? v.trim() : null);
-      const payload = {
-        name: form.name!.trim(),
-        school_code: blank(form.school_code),
-        affiliation_number: blank(form.affiliation_number),
-        school: blank(form.school),
-        region: blank(form.region),
-        cluster: blank(form.cluster),
-        country: blank(form.country),
-        contact_name: blank(form.contact_name),
-        contact_email: blank(form.contact_email),
-        contact_phone: blank(form.contact_phone),
-        member_count: Number(form.member_count) || 0,
-        stay: blank(form.stay),
-        notes: blank(form.notes),
-      };
       if (form.id) await api.put(`/teams/${form.id}`, payload);
       else await api.post("/teams", payload);
       toast.success(form.id ? "Team updated" : "Team created");
@@ -640,9 +654,14 @@ export default function AdminTeams() {
   // Not Arrived, an age group -> Inactive) requires an admin password —
   // same "type it again to unlock" shape as un-marking attendance (see
   // backend routers/teams.py _require_admin_password). Turning one ON never
-  // needs this, so those calls go straight through.
+  // needs this, so those calls go straight through. "label" reuses the same
+  // dialog for any change to Team.label from the main edit form (see save()).
   const [pendingToggle, setPendingToggle] = useState<
-    { kind: "active"; team: Team } | { kind: "arrived"; team: Team } | { kind: "ageGroup"; team: Team; ageGroup: string } | null
+    | { kind: "active"; team: Team }
+    | { kind: "arrived"; team: Team }
+    | { kind: "ageGroup"; team: Team; ageGroup: string }
+    | { kind: "label"; team: Team; payload: Record<string, unknown> }
+    | null
   >(null);
   const [togglePassword, setTogglePassword] = useState("");
   const [toggleBusy, setToggleBusy] = useState(false);
@@ -702,9 +721,14 @@ export default function AdminTeams() {
           has_arrived: false,
           admin_password: togglePassword.trim(),
         });
-      } else {
+      } else if (pendingToggle.kind === "ageGroup") {
         await api.put(`/teams/${pendingToggle.team.id}/age-groups/${encodeURIComponent(pendingToggle.ageGroup)}/active`, {
           is_active: false,
+          admin_password: togglePassword.trim(),
+        });
+      } else {
+        await api.put(`/teams/${pendingToggle.team.id}`, {
+          ...pendingToggle.payload,
           admin_password: togglePassword.trim(),
         });
       }
@@ -1563,6 +1587,16 @@ export default function AdminTeams() {
             </div>
           </div>
           <div>
+            <Label>Label</Label>
+            <Input
+              value={form.label ?? ""}
+              onChange={(e) => set("label", e.target.value)}
+              placeholder="e.g. sister school group"
+              title="Two teams sharing the same label can never be placed in the same pool"
+              data-testid="team-label-input"
+            />
+          </div>
+          <div>
             <Label>Country</Label>
             <Input
               value={form.country ?? ""}
@@ -1725,6 +1759,9 @@ export default function AdminTeams() {
                 Marking <span className="text-white font-bold">{pendingToggle.ageGroup}</span> inactive for{" "}
                 <span className="text-white font-bold">{pendingToggle.team.name}</span> requires an admin account's password.
               </>
+            )}
+            {pendingToggle?.kind === "label" && (
+              <>Changing <span className="text-white font-bold">{pendingToggle.team.name}</span>'s label requires an admin account's password — it controls which teams can never share a pool.</>
             )}
           </p>
           <div>

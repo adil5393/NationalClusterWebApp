@@ -94,6 +94,14 @@ class Team(TimestampMixin, Base):
     # jurisdiction can span several states — see CLUSTER_SUMMARY.md). Not
     # sourced from any import yet; set by hand on the Teams page.
     cluster = Column(String(10))
+    # Free-text organizer grouping — e.g. sister schools, or any other reason
+    # two teams shouldn't meet before a later round. Null means "no label"
+    # and never conflicts with anything, including another null. Two teams
+    # sharing the same non-null label can never be placed in the same pool
+    # (routers/pools.py _check_label_conflict) — same shape as the
+    # last-year-award pool conflict, just organizer-set instead of derived
+    # from results.
+    label = Column(String(60))
     country = Column(String(120), default="India")
     contact_name = Column(String(160))
     contact_email = Column(String(200))

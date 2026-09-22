@@ -106,21 +106,45 @@ def _check_last_year_conflict(pool_teams: list[models.Team], team: models.Team) 
             )
 
 
+def _check_label_conflict(pool_teams: list[models.Team], team: models.Team) -> None:
+    """Teams sharing the same non-null Label (an organizer-set grouping — e.g.
+    sister schools, or any other reason two teams shouldn't meet before a
+    later round) can never share a pool with one another. Null labels never
+    conflict, including with each other."""
+    if not team.label:
+        return
+    conflict = next((t for t in pool_teams if t.id != team.id and t.label == team.label), None)
+    if conflict:
+        raise HTTPException(
+            409,
+            f'{team.name} and {conflict.name} share the label "{team.label}" — they can\'t be placed in the same pool',
+        )
+
+
 def _awards_conflict(a: models.Team, b: models.Team) -> bool:
     return any(x.age_group == y.age_group for x in a.last_year_awards for y in b.last_year_awards)
+
+
+def _label_conflict(a: models.Team, b: models.Team) -> bool:
+    return a.label is not None and a.label == b.label
+
+
+def _pool_conflict(a: models.Team, b: models.Team) -> bool:
+    return _awards_conflict(a, b) or _label_conflict(a, b)
 
 
 def _repair_last_year_conflicts(breakdown: list[dict], teams_by_id: dict[int, models.Team]) -> None:
     """Unlike a manual add-to-pool (which just blocks so the organizer can pick
     someone else), auto-create chunks unassigned teams by size/order alone with
-    no awareness of the top-4 rule — so a conflict here would only ever surface
-    as a confusing 409 mid-commit, after the organizer already approved the
-    preview. Up to 4 top-4 finishers from the same age group could all land in
-    one pool together (6 possible conflicting pairs, not just 1), so this
-    repeatedly resolves one pair at a time — swap one team into whichever
-    other pool can take it without recreating the conflict there — doing full
-    passes over every pool until a pass fixes nothing (either everything's
-    clean, or no safe swap exists anywhere for what's left)."""
+    no awareness of the top-4 rule or the label rule — so a conflict here would
+    only ever surface as a confusing 409 mid-commit, after the organizer already
+    approved the preview. Up to 4 top-4 finishers from the same age group could
+    all land in one pool together (6 possible conflicting pairs, not just 1),
+    and any number of same-labeled teams could too, so this repeatedly resolves
+    one pair at a time — swap one team into whichever other pool can take it
+    without recreating a conflict (of either kind) there — doing full passes
+    over every pool until a pass fixes nothing (either everything's clean, or
+    no safe swap exists anywhere for what's left)."""
     for _pass in range(20):  # generous bound; a real run converges in a couple of passes
         changed = False
         for pool in breakdown:
@@ -128,7 +152,7 @@ def _repair_last_year_conflicts(breakdown: list[dict], teams_by_id: dict[int, mo
             pair = next(
                 (
                     (x, y) for i, x in enumerate(ids) for y in ids[i + 1:]
-                    if _awards_conflict(teams_by_id[x], teams_by_id[y])
+                    if _pool_conflict(teams_by_id[x], teams_by_id[y])
                 ),
                 None,
             )
@@ -142,8 +166,8 @@ def _repair_last_year_conflicts(breakdown: list[dict], teams_by_id: dict[int, mo
                 swap_target = next(
                     (
                         c_id for c_id in other_ids
-                        if all(not _awards_conflict(teams_by_id[c_id], teams_by_id[t]) for t in ids if t != b_id)
-                        and all(not _awards_conflict(teams_by_id[b_id], teams_by_id[t]) for t in other_ids if t != c_id)
+                        if all(not _pool_conflict(teams_by_id[c_id], teams_by_id[t]) for t in ids if t != b_id)
+                        and all(not _pool_conflict(teams_by_id[b_id], teams_by_id[t]) for t in other_ids if t != c_id)
                     ),
                     None,
                 )
@@ -155,8 +179,9 @@ def _repair_last_year_conflicts(breakdown: list[dict], teams_by_id: dict[int, mo
                     changed = True
                     break
             # If no safe swap exists anywhere (e.g. only one pool total), leave it —
-            # the commit-time _check_last_year_conflict call still catches it and
-            # raises a clear error instead of silently creating an invalid pool.
+            # the commit-time _check_last_year_conflict/_check_label_conflict calls
+            # still catch it and raise a clear error instead of silently creating
+            # an invalid pool.
         if not changed:
             break
 
@@ -296,6 +321,7 @@ def _add_teams_to_pool(db: Session, tournament: models.Tournament, pool: models.
         if team_id in already:
             raise HTTPException(409, f"{team.name} is already in another pool this round (pool #{already[team_id]})")
         _check_last_year_conflict(pool.teams, team)
+        _check_label_conflict(pool.teams, team)
         pool.teams.append(team)
         current_ids.add(team_id)
 
@@ -395,6 +421,7 @@ def auto_create_pools(tournament_id: int, round_id: int, payload: schemas.AutoCr
         for team_id in entry["team_ids"]:
             team = db.get(models.Team, team_id)
             _check_last_year_conflict(pool.teams, team)
+            _check_label_conflict(pool.teams, team)
             pool.teams.append(team)
         db.flush()
         _generate_pool_matches(db, pool)

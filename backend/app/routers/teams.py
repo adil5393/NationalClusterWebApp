@@ -21,6 +21,12 @@ def _require_admin_password(db: Session, password: "str | None") -> None:
     can quietly drop a team out of fixture eligibility or off the arrival
     checklist by a mis-click.
 
+    Also gates any change to Team.label (set, changed, or cleared) — unlike
+    the toggles above this isn't one-directional: a mis-typed or mis-cleared
+    label can just as easily let two teams that must stay apart end up in
+    the same pool as it can wrongly block two that don't conflict, so every
+    change needs the password, not just one direction.
+
     Dev/testing only: DISABLE_ADMIN_PASSWORD_GATE skips this entirely so
     toggles can be flipped off without an admin password on hand — never set
     in production (see config.py)."""
@@ -357,7 +363,8 @@ def update_team(team_id: int, payload: schemas.TeamUpdate, db: Session = Depends
     admin_password = data.pop("admin_password", None)
     _check_team_codes_free(db, data, exclude_id=team.id)
 
-    if data.get("is_active") is False or data.get("has_arrived") is False:
+    label_changed = "label" in data and data["label"] != team.label
+    if data.get("is_active") is False or data.get("has_arrived") is False or label_changed:
         _require_admin_password(db, admin_password)
 
     if payload.last_year_awards is not None:

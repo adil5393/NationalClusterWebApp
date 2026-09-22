@@ -96,6 +96,9 @@ class TeamBase(BaseModel):
     school: Optional[str] = None
     region: Optional[str] = None
     cluster: Optional[str] = None
+    # Organizer-set grouping — two teams sharing the same non-null label can
+    # never be placed in the same pool (routers/pools.py _check_label_conflict).
+    label: Optional[str] = None
     country: Optional[str] = "India"
     contact_name: Optional[str] = None
     contact_email: Optional[str] = None
@@ -135,6 +138,7 @@ class TeamUpdate(BaseModel):
     school: Optional[str] = None
     region: Optional[str] = None
     cluster: Optional[str] = None
+    label: Optional[str] = None
     country: Optional[str] = None
     contact_name: Optional[str] = None
     contact_email: Optional[str] = None
