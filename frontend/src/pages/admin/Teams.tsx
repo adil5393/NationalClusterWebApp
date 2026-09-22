@@ -45,6 +45,7 @@ interface Team {
   school_code?: string;
   affiliation_number?: string | null;
   region?: string;
+  cluster?: string | null;
   country?: string;
   contact_name?: string;
   contact_email?: string;
@@ -475,7 +476,7 @@ function AccommodationCell({ t }: { t: Team }) {
   );
 }
 
-const empty: Partial<Team> = { name: "", school: "", region: "", country: "India", member_count: 0 };
+const empty: Partial<Team> = { name: "", school: "", region: "", cluster: "", country: "India", member_count: 0 };
 
 export default function AdminTeams() {
   const { canEdit } = useModuleAccess("teams");
@@ -552,6 +553,7 @@ export default function AdminTeams() {
         affiliation_number: blank(form.affiliation_number),
         school: blank(form.school),
         region: blank(form.region),
+        cluster: blank(form.cluster),
         country: blank(form.country),
         contact_name: blank(form.contact_name),
         contact_email: blank(form.contact_email),
@@ -679,7 +681,7 @@ export default function AdminTeams() {
   const filtered = teams.filter((t) => {
     if (!search.trim()) return true;
     const s = search.toLowerCase();
-    return [t.name, t.school, t.school_code, t.affiliation_number, t.region, t.country, t.contact_name]
+    return [t.name, t.school, t.school_code, t.affiliation_number, t.region, t.cluster, t.country, t.contact_name]
       .filter(Boolean)
       .some((v) => v!.toLowerCase().includes(s));
   });
@@ -791,7 +793,7 @@ export default function AdminTeams() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search teams by name, school, school code, region…"
+            placeholder="Search teams by name, school, school code, region, cluster…"
             className="h-9 text-xs"
           />
         </div>
@@ -878,6 +880,11 @@ export default function AdminTeams() {
                       <Badge tone={isIndia ? "gold" : "coral"} size="sm">
                         {t.country || "General"}
                       </Badge>
+                      {t.cluster && (
+                        <span className="rounded bg-white/5 px-2 py-0.5 text-[10px] font-mono text-slate-300" title="Cluster">
+                          Cluster {t.cluster}
+                        </span>
+                      )}
                       {t.region && (
                         <span className="rounded bg-white/5 px-2 py-0.5 text-[10px] font-mono text-slate-300">
                           {t.region}
@@ -1192,12 +1199,15 @@ export default function AdminTeams() {
                                   {t.affiliation_number && <span title={`Affiliation #${t.affiliation_number}`}>Aff: {t.affiliation_number}</span>}
                                 </div>
                               )}
+                              {t.region && (
+                                <p className="text-[10px] text-slate-500 font-body truncate leading-tight" title={t.region}>{t.region}</p>
+                              )}
                             </div>
                           </div>
                         </TD>
                         <TD className="px-1.5 py-2 min-w-0 max-w-[100px] xl:max-w-[120px]">
                           <div className="space-y-0.5 min-w-0">
-                            <p className="text-slate-300 font-body text-xs truncate font-medium" title={t.region || "—"}>{t.region || "—"}</p>
+                            <p className="text-slate-300 font-body text-xs truncate font-medium" title={t.cluster ? `Cluster ${t.cluster}` : "—"}>{t.cluster || "—"}</p>
                             <span className={cn("inline-flex items-center rounded px-1 py-0.2 text-[9px] font-bold font-heading", isIndia ? "border border-gold/30 bg-gold/15 text-gold" : "border border-coral/30 bg-coral/15 text-coral")} title={t.country || "General"}>
                               {t.country || "General"}
                             </span>
@@ -1386,21 +1396,22 @@ export default function AdminTeams() {
               />
             </div>
             <div>
-              <Label>Region / Cluster State</Label>
+              <Label>Region / State</Label>
               <Input
                 value={form.region ?? ""}
                 onChange={(e) => set("region", e.target.value)}
-                placeholder="e.g. Cluster VIII - Delhi"
+                placeholder="e.g. Delhi"
               />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>Country</Label>
+              <Label>Cluster</Label>
               <Input
-                value={form.country ?? ""}
-                onChange={(e) => set("country", e.target.value)}
-                placeholder="India / Saudi Arabia"
+                value={form.cluster ?? ""}
+                onChange={(e) => set("cluster", e.target.value)}
+                placeholder="e.g. VIII"
+                data-testid="team-cluster-input"
               />
             </div>
             <div>
@@ -1412,6 +1423,14 @@ export default function AdminTeams() {
                 data-testid="team-members-input"
               />
             </div>
+          </div>
+          <div>
+            <Label>Country</Label>
+            <Input
+              value={form.country ?? ""}
+              onChange={(e) => set("country", e.target.value)}
+              placeholder="India / Saudi Arabia"
+            />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

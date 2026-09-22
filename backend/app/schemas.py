@@ -95,6 +95,7 @@ class TeamBase(BaseModel):
     name: str
     school: Optional[str] = None
     region: Optional[str] = None
+    cluster: Optional[str] = None
     country: Optional[str] = "India"
     contact_name: Optional[str] = None
     contact_email: Optional[str] = None
@@ -133,6 +134,7 @@ class TeamUpdate(BaseModel):
     affiliation_number: Optional[str] = None
     school: Optional[str] = None
     region: Optional[str] = None
+    cluster: Optional[str] = None
     country: Optional[str] = None
     contact_name: Optional[str] = None
     contact_email: Optional[str] = None

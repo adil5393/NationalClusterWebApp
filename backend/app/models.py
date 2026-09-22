@@ -86,6 +86,14 @@ class Team(TimestampMixin, Base):
     name = Column(String(200), nullable=False)
     school = Column(String(200))
     region = Column(String(120))
+    # The CBSE cluster this school qualified through, e.g. "IV", "XVIII" —
+    # a roman numeral by CBSE convention (see the Sports Calendar / cluster
+    # results), free text here since the organizer types it in rather than
+    # picking from a fixed list. Distinct from region: two teams share a
+    # region without sharing a cluster, and vice versa (a cluster's
+    # jurisdiction can span several states — see CLUSTER_SUMMARY.md). Not
+    # sourced from any import yet; set by hand on the Teams page.
+    cluster = Column(String(10))
     country = Column(String(120), default="India")
     contact_name = Column(String(160))
     contact_email = Column(String(200))
