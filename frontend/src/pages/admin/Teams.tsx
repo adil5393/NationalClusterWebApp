@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus, Pencil, Trash2, QrCode, Upload, Trophy, X, Shield, Users, Search, ImageIcon, IdCard, Receipt, Printer, FileArchive, Bus, Lock, Unlock, Phone, Mail, Calendar, Clock, MapPin } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
@@ -75,6 +75,19 @@ const MIN_SQUAD_SIZE = 12;
 function ageGroupRank(g: string) {
   const m = g.match(/(\d+)/);
   return m ? parseInt(m[1], 10) : 999;
+}
+
+// Clusters are Roman numerals ("I".."XX") — a plain string sort would put
+// "X" before "IX", so this decodes each one for a proper numeric sort.
+function romanToInt(roman: string) {
+  const values: Record<string, number> = { I: 1, V: 5, X: 10, L: 50, C: 100 };
+  let total = 0;
+  for (let i = 0; i < roman.length; i++) {
+    const v = values[roman[i]] ?? 0;
+    const next = values[roman[i + 1]] ?? 0;
+    total += next > v ? -v : v;
+  }
+  return total;
 }
 
 function AgeGroupCountsCell({ counts }: { counts?: Record<string, number> }) {
@@ -474,6 +487,42 @@ function AccommodationCell({ t }: { t: Team }) {
   );
 }
 
+function FilterGroup<T extends string>({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: T;
+  onChange: (v: T) => void;
+  options: { value: T; label: string }[];
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[10px] font-heading font-bold uppercase tracking-wider text-slate-500">{label}</span>
+      <div className="flex gap-0.5 rounded-lg border border-white/10 bg-white/[0.02] p-0.5">
+        {options.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            data-testid={`filter-${label.toLowerCase()}-${opt.value}`}
+            className={cn(
+              "rounded px-2 py-1 text-[10px] font-heading font-bold transition-colors whitespace-nowrap",
+              value === opt.value
+                ? "bg-gold text-obsidian shadow-sm"
+                : "text-slate-400 hover:bg-white/10 hover:text-white",
+            )}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const empty: Partial<Team> = { name: "", school: "", region: "", cluster: "", country: "India", member_count: 0 };
 
 export default function AdminTeams() {
@@ -491,6 +540,10 @@ export default function AdminTeams() {
   const [teamArrivalImportOpen, setTeamArrivalImportOpen] = useState(false);
   const [form, setForm] = useState<Partial<Team>>(empty);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+  const [arrivalFilter, setArrivalFilter] = useState<"all" | "arrived" | "not_arrived">("all");
+  const [awardFilter, setAwardFilter] = useState<"all" | "has_award" | "no_award">("all");
+  const [clusterFilter, setClusterFilter] = useState("all");
   const [globalPhotoLock, setGlobalPhotoLock] = useState(false);
   const [globalPhotoLockBusy, setGlobalPhotoLockBusy] = useState(false);
 
@@ -676,12 +729,39 @@ export default function AdminTeams() {
 
   const set = (k: keyof Team, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
+  const clusterOptions = useMemo(
+    () =>
+      Array.from(new Set(teams.map((t) => t.cluster).filter((c): c is string => !!c))).sort(
+        (a, b) => romanToInt(a) - romanToInt(b) || a.localeCompare(b),
+      ),
+    [teams],
+  );
+
+  const filtersActive =
+    statusFilter !== "all" || arrivalFilter !== "all" || awardFilter !== "all" || clusterFilter !== "all";
+  const clearFilters = () => {
+    setStatusFilter("all");
+    setArrivalFilter("all");
+    setAwardFilter("all");
+    setClusterFilter("all");
+  };
+
   const filtered = teams.filter((t) => {
-    if (!search.trim()) return true;
-    const s = search.toLowerCase();
-    return [t.name, t.school, t.school_code, t.affiliation_number, t.region, t.cluster, t.country, t.contact_name]
-      .filter(Boolean)
-      .some((v) => v!.toLowerCase().includes(s));
+    if (search.trim()) {
+      const s = search.toLowerCase();
+      const matches = [t.name, t.school, t.school_code, t.affiliation_number, t.region, t.cluster, t.country, t.contact_name]
+        .filter(Boolean)
+        .some((v) => v!.toLowerCase().includes(s));
+      if (!matches) return false;
+    }
+    if (statusFilter === "active" && t.is_active === false) return false;
+    if (statusFilter === "inactive" && t.is_active !== false) return false;
+    if (arrivalFilter === "arrived" && !t.has_arrived) return false;
+    if (arrivalFilter === "not_arrived" && t.has_arrived) return false;
+    if (awardFilter === "has_award" && (t.last_year_awards?.length ?? 0) === 0) return false;
+    if (awardFilter === "no_award" && (t.last_year_awards?.length ?? 0) > 0) return false;
+    if (clusterFilter !== "all" && t.cluster !== clusterFilter) return false;
+    return true;
   });
 
   return (
@@ -798,6 +878,66 @@ export default function AdminTeams() {
         <span className="text-xs text-slate-400 font-mono shrink-0">
           Showing <strong className="text-white font-bold">{filtered.length}</strong> of {teams.length}
         </span>
+      </div>
+
+      {/* FILTERS */}
+      <div className="flex flex-wrap items-center gap-2 min-w-0" data-testid="team-filters">
+        <FilterGroup
+          label="Status"
+          value={statusFilter}
+          onChange={setStatusFilter}
+          options={[
+            { value: "all", label: "All" },
+            { value: "active", label: "Active" },
+            { value: "inactive", label: "Inactive" },
+          ]}
+        />
+        <FilterGroup
+          label="Arrival"
+          value={arrivalFilter}
+          onChange={setArrivalFilter}
+          options={[
+            { value: "all", label: "All" },
+            { value: "arrived", label: "Arrived" },
+            { value: "not_arrived", label: "Not Arrived" },
+          ]}
+        />
+        <FilterGroup
+          label="Awards"
+          value={awardFilter}
+          onChange={setAwardFilter}
+          options={[
+            { value: "all", label: "All" },
+            { value: "has_award", label: "Has Award" },
+            { value: "no_award", label: "No Award" },
+          ]}
+        />
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-heading font-bold uppercase tracking-wider text-slate-500">Cluster</span>
+          <select
+            value={clusterFilter}
+            onChange={(e) => setClusterFilter(e.target.value)}
+            data-testid="cluster-filter-select"
+            className="rounded-lg border border-white/10 bg-obsidian-900 px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-gold/50"
+          >
+            <option value="all">All</option>
+            {clusterOptions.map((c) => (
+              <option key={c} value={c}>
+                Cluster {c}
+              </option>
+            ))}
+          </select>
+        </div>
+        {filtersActive && (
+          <button
+            type="button"
+            onClick={clearFilters}
+            data-testid="clear-filters-btn"
+            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-heading font-bold uppercase tracking-wider text-slate-400 hover:text-white transition-colors"
+          >
+            <X className="h-3 w-3" /> Clear Filters
+          </button>
+        )}
       </div>
 
       {/* TEAMS CONTENT */}
