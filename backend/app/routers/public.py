@@ -40,7 +40,17 @@ def _drive_urls(raw: "str | None") -> "tuple[str | None, str | None]":
 
 @router.get("/teams", response_model=list[schemas.TeamPublic])
 def public_teams(db: Session = Depends(get_db)):
-    teams = db.query(models.Team).order_by(models.Team.name).all()
+    """The public directory/listing — unlike the organizer Teams page (which
+    always shows every team, inactive ones included, so nothing needed for
+    day-to-day management goes missing), the public site only ever renders
+    active teams: a withdrawn/benched delegation isn't part of the event a
+    visitor is looking at. This is enforced here rather than per-frontend-
+    page so every public consumer (Teams directory, Home, About, Campus map)
+    gets it automatically and an inactive team's data never round-trips to
+    a public client at all. The single-team portal (GET /teams/{id}) is
+    deliberately NOT filtered — that's a direct link shared with the team
+    itself, not something a visitor browses to."""
+    teams = db.query(models.Team).filter(models.Team.is_active.is_(True)).order_by(models.Team.name).all()
     result = []
     for t in teams:
         photos = []
