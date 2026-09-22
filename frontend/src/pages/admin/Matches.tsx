@@ -2794,22 +2794,40 @@ function LiveConsole({
                     <Label className="text-[11px]">Team A</Label>
                     <Select value={resetTeamA} onChange={(e) => setResetTeamA(e.target.value)}>
                       <option value="">— TBD —</option>
-                      {teams.map((t) => (
-                        <option key={t.id} value={t.id} style={t.is_active === false ? { color: "#f59e0b" } : undefined}>
-                          {teamOptionLabel(t)}
-                        </option>
-                      ))}
+                      <optgroup label="Active Teams">
+                        {teams.filter((t) => t.is_active !== false).map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="Inactive Teams">
+                        {teams.filter((t) => t.is_active === false).map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {teamOptionLabel(t)}
+                          </option>
+                        ))}
+                      </optgroup>
                     </Select>
                   </div>
                   <div>
                     <Label className="text-[11px]">Team B</Label>
                     <Select value={resetTeamB} onChange={(e) => setResetTeamB(e.target.value)}>
                       <option value="">— TBD —</option>
-                      {teams.map((t) => (
-                        <option key={t.id} value={t.id} style={t.is_active === false ? { color: "#f59e0b" } : undefined}>
-                          {teamOptionLabel(t)}
-                        </option>
-                      ))}
+                      <optgroup label="Active Teams">
+                        {teams.filter((t) => t.is_active !== false).map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="Inactive Teams">
+                        {teams.filter((t) => t.is_active === false).map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {teamOptionLabel(t)}
+                          </option>
+                        ))}
+                      </optgroup>
                     </Select>
                   </div>
                 </div>

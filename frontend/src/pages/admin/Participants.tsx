@@ -578,11 +578,20 @@ export default function Participants() {
             data-testid="participant-team-filter"
           >
             <option value="">All Teams ({teams.length})</option>
-            {teams.map((t) => (
-              <option key={t.id} value={t.id} style={t.is_active === false ? { color: "#f59e0b" } : undefined}>
-                {teamOptionLabel(t)}
-              </option>
-            ))}
+            <optgroup label="Active Teams">
+              {teams.filter((t) => t.is_active !== false).map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Inactive Teams">
+              {teams.filter((t) => t.is_active === false).map((t) => (
+                <option key={t.id} value={t.id}>
+                  {teamOptionLabel(t)}
+                </option>
+              ))}
+            </optgroup>
           </Select>
         </div>
 
@@ -1555,11 +1564,20 @@ export default function Participants() {
               data-testid="participant-team-select"
             >
               <option value="">Select team…</option>
-              {teams.map((t) => (
-                <option key={t.id} value={t.id} style={t.is_active === false ? { color: "#f59e0b" } : undefined}>
-                  {teamOptionLabel(t)}
-                </option>
-              ))}
+              <optgroup label="Active Teams">
+                {teams.filter((t) => t.is_active !== false).map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Inactive Teams">
+                {teams.filter((t) => t.is_active === false).map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {teamOptionLabel(t)}
+                  </option>
+                ))}
+              </optgroup>
             </Select>
           </div>
           <div>
@@ -1676,11 +1694,20 @@ export default function Participants() {
               data-testid="coach-team-select"
             >
               <option value="">Select team…</option>
-              {teams.map((t) => (
-                <option key={t.id} value={t.id} style={t.is_active === false ? { color: "#f59e0b" } : undefined}>
-                  {teamOptionLabel(t)}
-                </option>
-              ))}
+              <optgroup label="Active Teams">
+                {teams.filter((t) => t.is_active !== false).map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Inactive Teams">
+                {teams.filter((t) => t.is_active === false).map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {teamOptionLabel(t)}
+                  </option>
+                ))}
+              </optgroup>
             </Select>
           </div>
           <div>

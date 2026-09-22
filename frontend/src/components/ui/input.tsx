@@ -71,7 +71,7 @@ export const Select = forwardRef<
   <select
     ref={ref}
     className={cn(
-      "h-10 w-full rounded-md border border-white/15 bg-obsidian-900 px-3 text-sm font-body text-white transition-colors focus:border-gold focus:outline-none focus-visible:ring-1 focus-visible:ring-gold [&>option]:bg-obsidian-900 [&>option]:text-white",
+      "h-10 w-full rounded-md border border-white/15 bg-obsidian-900 px-3 text-sm font-body text-white transition-colors focus:border-gold focus:outline-none focus-visible:ring-1 focus-visible:ring-gold [&_option]:bg-obsidian-900 [&_option]:text-white [&_optgroup]:bg-obsidian-900 [&_optgroup]:text-slate-400",
       className,
     )}
     {...props}

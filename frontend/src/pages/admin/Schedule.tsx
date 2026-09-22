@@ -313,11 +313,20 @@ export default function Schedule() {
               data-testid="event-team-select"
             >
               <option value="">All teams / General public</option>
-              {teams.map((t) => (
-                <option key={t.id} value={t.id} style={t.is_active === false ? { color: "#f59e0b" } : undefined}>
-                  {t.is_active === false ? `${t.name} (Inactive)` : t.name}
-                </option>
-              ))}
+              <optgroup label="Active Teams">
+                {teams.filter((t) => t.is_active !== false).map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Inactive Teams">
+                {teams.filter((t) => t.is_active === false).map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} (Inactive)
+                  </option>
+                ))}
+              </optgroup>
             </Select>
           </div>
           <div>
