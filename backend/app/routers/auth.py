@@ -81,4 +81,10 @@ def me(request: Request, db: Session = Depends(get_db)):
     if user_id and (not user or not user.is_active):
         request.session.clear()
         user = None
+    elif user:
+        # Rolling session: re-assigning marks the session modified so
+        # SessionMiddleware re-issues the cookie (fresh Max-Age and signature
+        # timestamp). An actively used account therefore never hits the fixed
+        # 7-day-from-login cliff; only 7 days of inactivity expires it.
+        request.session["user_id"] = user.id
     return _user_payload(user)

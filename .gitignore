@@ -99,6 +99,7 @@ credentials.json
 !backend/tests/test_operational_categories_and_staff.py
 !backend/tests/test_photo_lock_levels.py
 !backend/tests/test_inactive_team_idcards.py
+!backend/tests/test_auth_rolling_session.py
 
 *test*.py
 !backend/tests/test_staff_shifts.py
@@ -107,6 +108,7 @@ credentials.json
 !backend/tests/test_contacts_staff_integration.py
 !backend/tests/test_photo_lock_levels.py
 !backend/tests/test_inactive_team_idcards.py
+!backend/tests/test_auth_rolling_session.py
 backend/make_school_images.py
 # Runtime-uploaded content (gallery/participant/team photos) lives under
 # here and is never committed — but id_card_template.png and the receipt's
@@ -128,3 +130,6 @@ scoresheet.pdf
 
 get_emails.py
 emails*/
+61125.jpeg
+
+61125.pdf

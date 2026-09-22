@@ -889,16 +889,6 @@ class StaffCredentialResult(BaseModel):
     login_password: str
 
 
-class StaffLocationUpdate(BaseModel):
-    """POST /staff-locations/me — the authenticated user's own approximate
-    location. user_id is deliberately absent: the backend always derives
-    whose location this is from the session (see routers/staff_locations.py),
-    never from the request body."""
-    latitude: float = Field(..., ge=-90, le=90)
-    longitude: float = Field(..., ge=-180, le=180)
-    accuracy: Optional[float] = Field(None, ge=0)
-
-
 # --- Shift Blocks (common workforce shift windows) ---
 class ShiftBlockBase(BaseModel):
     name: str

@@ -45,12 +45,10 @@ const IdCardBacks = lazy(() => import("@/pages/admin/IdCardBacks"));
 const Duties = lazy(() => import("@/pages/admin/Duties"));
 const MyWork = lazy(() => import("@/pages/admin/MyWork"));
 const MyIdCard = lazy(() => import("@/pages/admin/MyIdCard"));
-const StaffLiveMap = lazy(() => import("@/pages/admin/StaffLiveMap"));
 const Matches = lazy(() => import("@/pages/admin/Matches"));
 const MatGroundAssignment = lazy(() => import("@/pages/admin/MatGroundAssignment"));
 const Reports = lazy(() => import("@/pages/admin/Reports"));
 const Tasks = lazy(() => import("@/pages/admin/Tasks"));
-const WalkieTalkie = lazy(() => import("@/pages/admin/WalkieTalkie"));
 const Accounts = lazy(() => import("@/pages/admin/Accounts"));
 const AdminContacts = lazy(() => import("@/pages/admin/Contacts"));
 const Login = lazy(() => import("@/pages/admin/Login"));
@@ -138,14 +136,6 @@ export default function App() {
               </StaffOpsGuard>
             }
           />
-          <Route
-            path="/admin/staff-map"
-            element={
-              <StaffOpsGuard>
-                <StaffLiveMap />
-              </StaffOpsGuard>
-            }
-          />
           <Route path="/admin/knowledge" element={<Knowledge />} />
           <Route path="/admin/procurement" element={<Procurement />} />
           <Route path="/admin/announcements" element={<AdminAnnouncements />} />
@@ -173,7 +163,6 @@ export default function App() {
               </StaffOpsGuard>
             }
           />
-          <Route path="/admin/walkie" element={<WalkieTalkie />} />
           <Route path="/admin/documents" element={<ComingSoon title="Documents" />} />
           <Route path="/admin/contacts" element={<AdminContacts />} />
           <Route path="/admin/settings" element={<ComingSoon title="Settings" />} />

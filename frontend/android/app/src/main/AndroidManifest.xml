@@ -33,42 +33,9 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
-
-        <!-- @capawesome-team/capacitor-android-foreground-service: keeps the
-             WebView (and therefore the Walkie-Talkie WebSocket/WebRTC audio)
-             running while the app is backgrounded or the screen is locked —
-             see lib/walkie/foregroundService.ts. Transmitting still always
-             stops on blur/visibility-change (see call.ts); only LISTENING is
-             meant to survive backgrounding. -->
-        <receiver android:name="io.capawesome.capacitorjs.plugins.foregroundservice.NotificationActionBroadcastReceiver" />
-        <service
-            android:name="io.capawesome.capacitorjs.plugins.foregroundservice.AndroidForegroundService"
-            android:foregroundServiceType="microphone" />
     </application>
 
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
-
-    <!-- Staff Live Map: foreground-only approximate location reporting for
-         the logged-in staff account (see AdminLayout.tsx's location-reporting
-         effect and @capacitor/geolocation). Deliberately no
-         ACCESS_BACKGROUND_LOCATION — location is only ever read while the
-         app is open and in the foreground, never as a background service. -->
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-
-    <!-- Walkie-Talkie PTT. Transmitting (actually capturing/sending mic
-         audio) is still only ever live while a user is actively holding the
-         PTT button, and always stops immediately on blur/visibility-change/
-         app pause — see MicPermissionPlugin.java and call.ts. RECORD_AUDIO
-         is requested once up front on opening the Walkie-Talkie page (not
-         lazily at first PTT press) because Android requires it already
-         granted before a Microphone-type foreground service can start —
-         see lib/walkie/foregroundService.ts for why LISTENING (not
-         transmitting) needs to keep running in the background at all. -->
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
 </manifest>

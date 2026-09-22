@@ -41,13 +41,22 @@ export const api = axios.create({
 // logged out." Scoped to /admin routes only: public pages (team portal
 // reveal-contacts, participant photo upload) also get 401s for their own
 // reasons and already handle those locally regardless.
+// AuthProvider registers this so a genuine mid-session expiry moves the app
+// to "unauthenticated" through React state (no hard page reload, which would
+// restart the whole bootstrap and lose the user's place).
+let onSessionExpired: (() => void) | null = null;
+export function setSessionExpiredHandler(fn: (() => void) | null) {
+  onSessionExpired = fn;
+}
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     const path = window.location.pathname;
     const isSessionExpired = error?.response?.data?.detail === "Not authenticated";
     if (isSessionExpired && path.startsWith("/admin") && !path.startsWith("/admin/login")) {
-      window.location.href = "/admin/login";
+      if (onSessionExpired) onSessionExpired();
+      else window.location.href = "/admin/login";
     }
     return Promise.reject(error);
   },

@@ -1,8 +1,11 @@
-import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Navigate, useLocation, useNavigate, Link } from "react-router-dom";
 import { Lock, Trophy, ArrowLeft, Shield } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { AuthSplash } from "@/components/admin/AuthSplash";
+import type { Me } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 
@@ -11,14 +14,24 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+  const auth = useAuth();
+  const from = (location.state as { from?: string } | null)?.from || "/admin";
+
+  // If a valid session already exists (e.g. app reopened), skip the form.
+  useEffect(() => {
+    auth.ensure();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username || !password) return;
     setLoading(true);
     try {
-      await api.post("/auth/login", { username, password });
-      navigate("/admin");
+      const r = await api.post<Me>("/auth/login", { username, password });
+      auth.setSession(r.data);
+      navigate(from, { replace: true });
     } catch (e: any) {
       if (e?.response) {
         // Server actually answered — this is a real credential/validation rejection.
@@ -34,6 +47,11 @@ export default function Login() {
       setLoading(false);
     }
   };
+
+  if (auth.status === "authenticated") return <Navigate to={from} replace />;
+  if (auth.status === "idle" || auth.status === "loading") {
+    return <AuthSplash unreachable={auth.unreachable} onRetry={auth.retry} />;
+  }
 
   return (
     <div

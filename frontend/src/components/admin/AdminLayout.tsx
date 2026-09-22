@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { Capacitor } from "@capacitor/core";
-import { Geolocation } from "@capacitor/geolocation";
 import {
   LayoutDashboard,
   Users,
@@ -34,8 +34,6 @@ import {
   Trophy,
   Shield,
   Activity,
-  Mic,
-  MapPinned,
   ClipboardList,
   HeartHandshake,
   ShieldCheck,
@@ -43,9 +41,9 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
-import { Spinner } from "@/components/ui/feedback";
-import { Me, PermissionsContext } from "@/lib/permissions";
-import { WalkieProvider } from "@/lib/walkie/WalkieProvider";
+import { PermissionsContext } from "@/lib/permissions";
+import { useAuth } from "@/lib/auth";
+import { AuthSplash } from "@/components/admin/AuthSplash";
 
 interface NavGroup {
   title: string;
@@ -68,7 +66,6 @@ const STAFF_OPS_ONLY_PATHS = new Set([
   "/admin",
   "/admin/staff",
   "/admin/duties",
-  "/admin/staff-map",
   "/admin/tasks",
   "/admin/accounts",
 ]);
@@ -108,7 +105,6 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/admin/officials", label: "Officials", icon: ShieldCheck, moduleKey: "officials" },
       { to: "/admin/duties", label: "Staff Duties", icon: ClipboardList, moduleKey: "staff" },
       { to: "/admin/accounts", label: "Accounts & Access", icon: UserCog, moduleKey: "accounts" },
-      { to: "/admin/staff-map", label: "Staff Live Map", icon: MapPinned, moduleKey: "staff_map" },
     ],
   },
   {
@@ -117,7 +113,6 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/admin/tasks", label: "Tasks", icon: CheckSquare },
       { to: "/admin/transport", label: "Transport", icon: Bus, moduleKey: "transport" },
       { to: "/admin/procurement", label: "Procurement", icon: ShoppingCart, moduleKey: "procurement" },
-      { to: "/admin/walkie", label: "Walkie Talkie", icon: Mic },
     ],
   },
   {
@@ -177,25 +172,15 @@ export function AdminLayout() {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<Result[]>([]);
   const [openSearch, setOpenSearch] = useState(false);
-  const [authed, setAuthed] = useState<boolean | null>(null);
-  const [me, setMe] = useState<Me | null>(null);
+  const auth = useAuth();
+  const me = auth.me;
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    api
-      .get<Me>("/auth/me")
-      .then((r) => {
-        if (r.data.authenticated) {
-          setAuthed(true);
-          setMe(r.data);
-        } else {
-          navigate("/admin/login");
-        }
-      })
-      .catch(() => navigate("/admin/login"));
+    auth.ensure();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -227,65 +212,13 @@ export function AdminLayout() {
   }, [me, location.pathname, navigate]);
 
   const logout = async () => {
-    await api.post("/auth/logout");
-    navigate("/admin/login");
+    try {
+      await auth.logout();
+      navigate("/admin/login", { replace: true });
+    } catch {
+      toast.error("Could not reach the server to log out. Try again when you are online.");
+    }
   };
-
-  // Staff Live Map: foreground-only location reporting for this account.
-  // Runs for the whole time an authenticated session stays in the admin
-  // area (this layout wraps every /admin/* route and is never remounted by
-  // internal navigation), not just while on the map page itself — pings
-  // once now, then every ~4 minutes, and again whenever the app/tab returns
-  // to the foreground. @capacitor/geolocation has a web fallback backed by
-  // navigator.geolocation, so this same code runs unchanged in the
-  // Capacitor Android app and in a plain browser/PWA. No watchPosition, no
-  // background tracking, and a confirmed permission denial stops further
-  // attempts for the rest of this session rather than re-prompting.
-  useEffect(() => {
-    if (!me?.authenticated) return;
-    let stopped = false;
-    let cancelled = false;
-
-    const reportLocation = async () => {
-      if (stopped || cancelled) return;
-      try {
-        const status = await Geolocation.checkPermissions();
-        if (status.location === "denied" && status.coarseLocation === "denied") {
-          stopped = true;
-          return;
-        }
-        const pos = await Geolocation.getCurrentPosition({
-          enableHighAccuracy: false,
-          timeout: 10000,
-          maximumAge: 60000,
-        });
-        if (cancelled) return;
-        await api.post("/staff-locations/me", {
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracy: pos.coords.accuracy ?? null,
-        });
-      } catch {
-        // GPS timeout, location services off, a network hiccup on the POST,
-        // or a web browser without geolocation support — never let any of
-        // this block or interrupt the app, just skip this round and retry
-        // on the next tick or the next foreground event.
-      }
-    };
-
-    reportLocation();
-    const intervalId = setInterval(reportLocation, 4 * 60 * 1000);
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") reportLocation();
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-
-    return () => {
-      cancelled = true;
-      clearInterval(intervalId);
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, [me?.authenticated]);
 
   useEffect(() => {
     if (timer.current) clearTimeout(timer.current);
@@ -301,12 +234,11 @@ export function AdminLayout() {
     }, 250);
   }, [q]);
 
-  if (authed === null) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-obsidian text-slate-200">
-        <Spinner label="Verifying tournament operations session…" />
-      </div>
-    );
+  if (auth.status === "idle" || auth.status === "loading") {
+    return <AuthSplash unreachable={auth.unreachable} onRetry={auth.retry} />;
+  }
+  if (auth.status === "unauthenticated") {
+    return <Navigate to="/admin/login" replace state={{ from: location.pathname + location.search }} />;
   }
 
   const isItemVisible = (moduleKey?: string, to?: string) => {
@@ -318,7 +250,7 @@ export function AdminLayout() {
     // Both of these are deliberately not real gate-able modules (see
     // schemas.ORGANIZER_MODULES) — admin-only, full stop, not something a
     // "view"/"edit" permission grant can ever unlock for a staff login.
-    if (moduleKey === "accounts" || moduleKey === "staff_map") return !!me?.is_admin;
+    if (moduleKey === "accounts") return !!me?.is_admin;
     if (me?.is_admin) return true;
     if (!!me?.permissions?.[moduleKey]) return true;
     // An account with zero "matches" module access can still be assigned to
@@ -545,12 +477,7 @@ export function AdminLayout() {
         {/* OPERATIONS CONTENT OUTLET */}
         <main className="flex-1 p-4 sm:p-6 lg:p-4 xl:p-6">
           <PermissionsContext.Provider value={me}>
-            {/* Mounted here (not inside the WalkieTalkie page) so the
-                connection survives navigating to any other /admin/* route —
-                see WalkieProvider.tsx for why. */}
-            <WalkieProvider authenticated={!!me?.authenticated}>
-              <Outlet />
-            </WalkieProvider>
+            <Outlet />
           </PermissionsContext.Provider>
         </main>
       </div>

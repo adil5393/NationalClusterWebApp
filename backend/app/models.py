@@ -974,7 +974,7 @@ class OperationalArea(TimestampMixin, Base):
     validation, so several strings can mean the same real responsibility
     while looking unrelated to a naive string-based grouping.
 
-    Deliberately a small flat lookup (like EventLocation/WalkieChannel) —
+    Deliberately a small flat lookup (like EventLocation) —
     no hierarchy, no scheduling behavior. See ShiftOperationalIncharge for
     the shift-wise "who leads this area" relationship built on top of it."""
     __tablename__ = "operational_areas"
@@ -1053,31 +1053,6 @@ class ShiftOperationalIncharge(TimestampMixin, Base):
     staff = relationship("StaffMember")
 
 
-class StaffLocation(TimestampMixin, Base):
-    """One row per OrganizerUser — their last reported approximate location
-    (organizer-only Staff Live Map), overwritten on every update. No history
-    is kept by design; `updated_at` (from TimestampMixin) IS the "last seen"
-    timestamp the map's freshness labels key off, so no separate
-    last-reported column is needed.
-
-    A one-to-one table here (user_id as the primary key, not a separate
-    autoincrement id) rather than columns on OrganizerUser: this is an
-    operational/ephemeral concern updated every few minutes by a background
-    ping, not an identity/auth attribute — keeping it off the core login
-    table means a location-reporting bug can never touch auth data, a user
-    with no location yet is simply absent (no row) rather than a set of
-    nullable columns on every login, and it leaves room to grow (e.g. a
-    future event-zone FK) without cluttering OrganizerUser.
-    """
-    __tablename__ = "staff_locations"
-    user_id = Column(Integer, ForeignKey("organizer_users.id", ondelete="CASCADE"), primary_key=True)
-    latitude = Column(Float, nullable=False)
-    longitude = Column(Float, nullable=False)
-    accuracy = Column(Float)  # device-reported horizontal accuracy in meters, if known
-
-    user = relationship("OrganizerUser", back_populates="location")
-
-
 organizer_user_staff = Table(
     "organizer_user_staff",
     Base.metadata,
@@ -1123,64 +1098,6 @@ class OrganizerUser(TimestampMixin, Base):
     # control (except delete/reset — see security.require_match_access) its own
     # assigned matches, even with no "matches" entry in `permissions` at all.
     assigned_matches = relationship("Match", secondary="match_staff_assignments", back_populates="assigned_users")
-    # Last known approximate location (Staff Live Map) — one-to-one, no
-    # history. See StaffLocation below for why this is its own table rather
-    # than columns on this one.
-    location = relationship("StaffLocation", back_populates="user", uselist=False, cascade="all, delete-orphan")
-
-
-class WalkieChannel(TimestampMixin, Base):
-    """A Walkie-Talkie PTT channel. `kind` distinguishes the 7 fixed
-    operational channels seeded by this table's own migration ("SYSTEM") from
-    any later category-derived channel ("GROUP", access derived live from
-    StaffMember.category — see routers/walkie.py — never a stored membership
-    list) and admin-created ad-hoc ones ("CUSTOM"). None of the seeded SYSTEM
-    channels sets staff_category: only "Transport" the channel has any
-    natural relationship to an existing StaffMember category, and even that
-    is deliberately NOT wired up for V1 (see routers/walkie.py's access
-    rules) — every SYSTEM channel is listen+transmit open to any
-    authenticated organizer account except "All Staff", whose transmission
-    is gated by `transmit_restricted` instead.
-
-    No membership/roster table exists here on purpose: channel access is
-    always computed live (admin bypass, transmit_restricted + explicit
-    grants, or later a category match) rather than duplicated into a
-    separately-maintained list that could drift from the real staff data."""
-    __tablename__ = "walkie_channels"
-    id = Column(Integer, primary_key=True)
-    key = Column(String(40), nullable=False, unique=True)
-    name = Column(String(120), nullable=False)
-    icon = Column(String(8))  # a single emoji, e.g. "🚌"
-    kind = Column(String(10), nullable=False, default="SYSTEM")  # "SYSTEM" | "GROUP" | "CUSTOM"
-    # Set only for a future "GROUP" channel — which StaffMember.category value
-    # grants access. Null for every channel seeded today.
-    staff_category = Column(String(80))
-    # True only for "All Staff": everyone may listen, but transmitting needs
-    # is_admin or a WalkieChannelTransmitPermission row (see below) — every
-    # other channel has no such restriction in V1.
-    transmit_restricted = Column(Boolean, nullable=False, default=False)
-    is_active = Column(Boolean, nullable=False, default=True)
-
-    transmit_permissions = relationship(
-        "WalkieChannelTransmitPermission", back_populates="channel", cascade="all, delete-orphan"
-    )
-
-
-class WalkieChannelTransmitPermission(Base):
-    """An explicit grant to transmit on a `transmit_restricted` channel
-    (currently just "All Staff") for an account that isn't already an admin.
-    The one deliberate exception to "derive access, don't store membership"
-    — this specific permission has no existing relationship to derive it
-    from, so it has to be its own minimal table."""
-    __tablename__ = "walkie_channel_transmit_permissions"
-    id = Column(Integer, primary_key=True)
-    channel_id = Column(Integer, ForeignKey("walkie_channels.id", ondelete="CASCADE"), nullable=False)
-    organizer_user_id = Column(Integer, ForeignKey("organizer_users.id", ondelete="CASCADE"), nullable=False)
-    __table_args__ = (UniqueConstraint("channel_id", "organizer_user_id", name="uq_walkie_transmit_permission"),)
-
-    channel = relationship("WalkieChannel", back_populates="transmit_permissions")
-    organizer_user = relationship("OrganizerUser")
-
 
 class Tournament(TimestampMixin, Base):
     """One sport's knockout competition (e.g. "Kabaddi — Boys Under 17"). A
