@@ -19,18 +19,16 @@ import { driveThumbnail } from "@/lib/meta";
 import { cn } from "@/lib/utils";
 import { TeamAvatar } from "@/components/ui/team-badge";
 
-type AwardPosition = "winner" | "runner" | "third" | "fourth";
+type AwardPosition = "gold" | "silver" | "bronze";
 const AWARD_LABEL: Record<AwardPosition, string> = {
-  winner: "Winner",
-  runner: "Runner-up",
-  third: "3rd Place",
-  fourth: "4th Place",
+  gold: "Gold",
+  silver: "Silver",
+  bronze: "Bronze",
 };
 const AWARD_TONE: Record<AwardPosition, string> = {
-  winner: "border border-gold/40 bg-gold/15 text-gold shadow-sm",
-  runner: "border border-blue-500/40 bg-blue-500/15 text-blue-300",
-  third: "border border-purple-500/40 bg-purple-500/15 text-purple-300",
-  fourth: "border border-coral/40 bg-coral/15 text-coral",
+  gold: "border border-gold/40 bg-gold/15 text-gold shadow-sm",
+  silver: "border border-slate-400/40 bg-slate-400/15 text-slate-300",
+  bronze: "border border-amber-700/40 bg-amber-700/15 text-amber-600",
 };
 
 interface LastYearAward {
@@ -329,7 +327,7 @@ function AwardsDialog({
               <div key={g} className="flex items-center justify-between gap-2 rounded-lg border border-white/5 bg-white/[0.02] p-2.5">
                 <span className="text-xs font-heading font-bold text-white">{g}</span>
                 <div className="flex gap-1">
-                  {(["", "winner", "runner", "third", "fourth"] as const).map((opt) => (
+                  {(["", "gold", "silver", "bronze"] as const).map((opt) => (
                     <button
                       key={opt || "none"}
                       type="button"

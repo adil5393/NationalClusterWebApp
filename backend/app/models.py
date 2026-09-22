@@ -215,24 +215,33 @@ class TeamPhoto(TimestampMixin, Base):
 class TeamLastYearAward(Base):
     """A team's last-year result, scoped to one age group — a school can have
     finished top-4 in one age group and not another, so this isn't a single
-    tournament-wide flag. Four possible finishes: "winner" | "runner" |
-    "third" | "fourth" — last year's top 4 in a given age group, each
-    tracked separately per age group. Enforced in routers/teams.py: at most
-    one team per (age_group, award) — the DB-level unique constraint backs
-    that up — and a team holds at most one of the four in the same age group
-    (unique on team_id + age_group). Any two of last year's top-4 finishers
-    in the same age group are also never allowed to share a pool this year
-    (routers/pools.py _check_last_year_conflict) — not just winner-vs-runner,
-    all six pairs among the four are mutually exclusive."""
+    tournament-wide flag. Labels match CBSE's own medal terms: "gold" |
+    "silver" | "bronze" — CBSE itself doesn't distinguish an order between
+    its two Bronze finishers (both are just "Bronze" in its results), so
+    unlike gold/silver, bronze is NOT limited to one team per age group.
+    Enforced in routers/teams.py: at most one team per (age_group, "gold")
+    and one per (age_group, "silver") — a partial unique index backs that up
+    for those two labels only — while a team still holds at most one award
+    total per age group (unique on team_id + age_group). Any two of last
+    year's top-4 finishers (gold/silver/either bronze) in the same age group
+    are also never allowed to share a pool this year (routers/pools.py
+    _check_last_year_conflict) — not just gold-vs-silver, every pair among
+    them is mutually exclusive."""
     __tablename__ = "team_last_year_awards"
     __table_args__ = (
         UniqueConstraint("team_id", "age_group", name="uq_team_last_year_award_team_group"),
-        UniqueConstraint("age_group", "award", name="uq_team_last_year_award_group_award"),
+        Index(
+            "uq_team_last_year_award_group_award",
+            "age_group",
+            "award",
+            unique=True,
+            postgresql_where=text("award IN ('gold', 'silver')"),
+        ),
     )
     id = Column(Integer, primary_key=True)
     team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
     age_group = Column(String(40), nullable=False)
-    award = Column(String(10), nullable=False)  # "winner" | "runner" | "third" | "fourth"
+    award = Column(String(10), nullable=False)  # "gold" | "silver" | "bronze"
 
     team = relationship("Team", back_populates="last_year_awards")
 

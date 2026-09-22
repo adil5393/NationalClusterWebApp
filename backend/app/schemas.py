@@ -125,7 +125,7 @@ class GlobalPhotoLockUpdate(BaseModel):
 
 class LastYearAwardEntry(ORMModel):
     age_group: str
-    award: Literal["winner", "runner", "third", "fourth"]
+    award: Literal["gold", "silver", "bronze"]
 
 
 class TeamUpdate(BaseModel):

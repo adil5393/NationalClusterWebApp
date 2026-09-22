@@ -78,14 +78,15 @@ def _teams_already_in_round(db: Session, round_id: int, exclude_pool_id: int | N
     return result
 
 
-_AWARD_LABEL = {"winner": "winner", "runner": "runner-up", "third": "3rd place", "fourth": "4th place"}
+_AWARD_LABEL = {"gold": "gold", "silver": "silver", "bronze": "bronze"}
 
 
 def _check_last_year_conflict(pool_teams: list[models.Team], team: models.Team) -> None:
-    """Last year's top-4 finishers, in the SAME age group, can never share a
-    pool with one another — all six pairs among the four are mutually
-    exclusive, not just winner-vs-runner. A team holding an award in one age
-    group doesn't conflict with a pool teammate's award in a different one."""
+    """Last year's top-4 finishers (gold, silver, or either bronze), in the
+    SAME age group, can never share a pool with one another — every pair
+    among them is mutually exclusive, not just gold-vs-silver. A team
+    holding an award in one age group doesn't conflict with a pool
+    teammate's award in a different one."""
     for award in team.last_year_awards:
         conflict = next(
             (

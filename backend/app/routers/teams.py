@@ -285,15 +285,18 @@ def _pool_teammates(db: Session, team_id: int) -> list[models.Team]:
 
 def _replace_last_year_awards(db: Session, team: models.Team, awards: list[schemas.LastYearAwardEntry]) -> None:
     """Replaces this team's whole set of last-year awards (at most one per
-    age group — a team can be winner in one group and runner-up (or 3rd, or
-    4th) in another, just never two of the four in the same one). Steal-on-
-    conflict is not allowed: if another team already holds the same
-    (age_group, award), this fails loudly instead of silently reassigning
-    it. Also rejects an award that would collide with a pool teammate
-    already holding any of the OTHER three top-4 spots in the same age
-    group — all six pairs among the four are mutually exclusive. Validates
-    everything before touching the DB, so a rejected request leaves the
-    team's existing awards untouched."""
+    age group — a team can be gold in one group and silver (or bronze) in
+    another, just never two of the three in the same one). Steal-on-conflict
+    is not allowed for gold/silver: if another team already holds the same
+    (age_group, "gold"/"silver"), this fails loudly instead of silently
+    reassigning it. Bronze is exempt from that check — CBSE's own results
+    never distinguish an order between its two Bronze finishers, so more
+    than one team can hold bronze in the same age group. Also rejects an
+    award that would collide with a pool teammate already holding any of the
+    OTHER top-4 spots in the same age group — every pair among
+    gold/silver/bronze is mutually exclusive there, bronze included.
+    Validates everything before touching the DB, so a rejected request
+    leaves the team's existing awards untouched."""
     seen_groups: set[str] = set()
     for entry in awards:
         if entry.age_group in seen_groups:
@@ -302,21 +305,22 @@ def _replace_last_year_awards(db: Session, team: models.Team, awards: list[schem
 
     teammates = _pool_teammates(db, team.id)
     for entry in awards:
-        holder = (
-            db.query(models.TeamLastYearAward)
-            .filter(
-                models.TeamLastYearAward.age_group == entry.age_group,
-                models.TeamLastYearAward.award == entry.award,
-                models.TeamLastYearAward.team_id != team.id,
+        if entry.award in ("gold", "silver"):
+            holder = (
+                db.query(models.TeamLastYearAward)
+                .filter(
+                    models.TeamLastYearAward.age_group == entry.age_group,
+                    models.TeamLastYearAward.award == entry.award,
+                    models.TeamLastYearAward.team_id != team.id,
+                )
+                .first()
             )
-            .first()
-        )
-        if holder:
-            other = db.get(models.Team, holder.team_id)
-            raise HTTPException(
-                409,
-                f"{other.name if other else 'Another team'} already holds last year's {entry.award} for {entry.age_group}",
-            )
+            if holder:
+                other = db.get(models.Team, holder.team_id)
+                raise HTTPException(
+                    409,
+                    f"{other.name if other else 'Another team'} already holds last year's {entry.award} for {entry.age_group}",
+                )
         conflict = next(
             (t for t in teammates if any(a.age_group == entry.age_group for a in t.last_year_awards)),
             None,
