@@ -2,6 +2,18 @@ FROM node:20-alpine AS build
 
 WORKDIR /app
 
+# Trusts this machine's antivirus/proxy TLS-interception root cert, if the
+# machine building this image exported one locally (see .gitignore's
+# *-root-ca.crt — never committed, so this is a per-machine, opt-in step;
+# on the production server / anywhere else, these three lines are a no-op).
+# See frontend/Dockerfile for the full explanation of the apk bootstrap.
+RUN apk add --no-cache --repository http://dl-cdn.alpinelinux.org/alpine/latest-stable/main ca-certificates
+COPY *-root-ca.crt Dockerfile.production /tmp/maybe-ca/
+RUN mv /tmp/maybe-ca/*.crt /usr/local/share/ca-certificates/ 2>/dev/null; rm -rf /tmp/maybe-ca; update-ca-certificates
+# Node bundles its own CA list instead of using the system store above —
+# see frontend/Dockerfile for why this repoint is always a safe no-op.
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+
 COPY package.json yarn.lock* ./
 RUN yarn install --frozen-lockfile || yarn install
 

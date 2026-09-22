@@ -132,4 +132,10 @@ get_emails.py
 emails*/
 61125.jpeg
 
-61125.pdf
+# Local machine's antivirus/proxy SSL-interception root cert, if this dev
+# machine needs one trusted inside the build (see backend/Dockerfile and
+# frontend/Dockerfile*: COPY'd only if present, via a glob, so its absence
+# on any other machine/CI/production is a silent no-op, never a build
+# failure). Never something to share or commit — it's specific to whatever
+# security software is on THIS Windows box.
+*-root-ca.crt
