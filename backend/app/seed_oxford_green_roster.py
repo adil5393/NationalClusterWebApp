@@ -9,17 +9,14 @@ Participant.registration_no — see routers/imports.py import_attendance_list),
 so re-running this after fixing a transcription typo is safe: it only ever
 updates the same 12 rows, never duplicates them.
 
-School-code mismatch (deliberately NOT auto-corrected here — see run()'s
-printed report): our Team row for this school already exists with
-school_code "60446" / affiliation_number "2130984" (from a national
-attendance-list import on 2026-09-21), but this letter, the Google
-registration form and the CBSE cluster-results file all agree the school's
-code is "61125" — and the letter gives yet another affiliation number,
-"2132787". This script matches the EXISTING team defensively on any of
-those four values, so it never creates a second, duplicate Team row for the
-same school — but it leaves the mismatch itself for a human to resolve
-(which number is right is a CBSE-records question, not one this script can
-answer).
+This is a DIFFERENT school from the "Oxford Green" Team already in the
+database (school_code 60446 / affiliation_number 2130984, Village Sirsa,
+Greater Noida — a national-attendance-list import from 2026-09-21). This one
+is Village Peepalka, Greater Noida, school_code 61125 / affiliation_number
+2132787 per its own letter — confirmed by the user to be a separate school
+that just happens to share a name. The two are never merged: this script
+only ever matches/creates a Team on (school_code, affiliation_number) =
+(61125, 2132787) and never touches the Sirsa team.
 
 Run:
     python -m app.seed_oxford_green_roster
@@ -31,9 +28,7 @@ from .database import SessionLocal, engine, Base
 from . import models
 
 SCHOOL_CODE = "61125"
-AFFILIATION_NO = "2132787"  # as printed on the letter — see the mismatch note above
-ALT_SCHOOL_CODE = "60446"          # the code our existing Team row actually has
-ALT_AFFILIATION_NO = "2130984"     # ditto, for affiliation_number
+AFFILIATION_NO = "2132787"
 SCHOOL_NAME = "OXFORD GREEN PUBLIC SCHOOL, PEEPALKA, GREATER NOIDA"
 AGE_GROUP = "Under 17"
 
@@ -67,8 +62,8 @@ def run() -> None:
         team = (
             db.query(models.Team)
             .filter(
-                models.Team.school_code.in_([SCHOOL_CODE, ALT_SCHOOL_CODE])
-                | models.Team.affiliation_number.in_([AFFILIATION_NO, ALT_AFFILIATION_NO])
+                (models.Team.school_code == SCHOOL_CODE)
+                | (models.Team.affiliation_number == AFFILIATION_NO)
             )
             .first()
         )
@@ -76,20 +71,16 @@ def run() -> None:
             team = models.Team(
                 school_code=SCHOOL_CODE, affiliation_number=AFFILIATION_NO,
                 name=SCHOOL_NAME, school=SCHOOL_NAME, region="Uttar Pradesh", country="India",
+                member_count=len(PLAYERS),
             )
             db.add(team)
             db.flush()
-            print(f"Created new Team #{team.id} (school_code={SCHOOL_CODE}) — no existing match found.")
+            print(f"Created new Team #{team.id} (school_code={SCHOOL_CODE}, affiliation_number={AFFILIATION_NO}).")
         else:
             print(
                 f"Matched existing Team #{team.id} {team.name!r} "
                 f"(school_code={team.school_code}, affiliation_number={team.affiliation_number})."
             )
-            if team.school_code != SCHOOL_CODE or team.affiliation_number != AFFILIATION_NO:
-                print(
-                    f"  NOTE: this letter says school_code={SCHOOL_CODE}, affiliation_number={AFFILIATION_NO} — "
-                    f"left the Team row as-is; not auto-corrected (see the module docstring)."
-                )
 
         existing_before = {
             p.registration_no: p
