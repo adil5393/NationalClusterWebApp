@@ -2,6 +2,7 @@
 import csv
 import io
 import itertools
+import re
 import zipfile
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -163,6 +164,271 @@ def export_participants_xlsx(db: Session = Depends(get_db)):
         iter([buf.getvalue()]),
         media_type=XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": 'attachment; filename="participants_roster.xlsx"'},
+    )
+
+
+@router.get("/teams-full.xlsx", dependencies=[Depends(require_module("teams"))])
+def export_teams_full_xlsx(db: Session = Depends(get_db)):
+    """The single most complete team report: every organizer-set flag per
+    team (active/arrived/cluster/label/benched age groups/last-year awards/
+    accommodation/photo-upload lock) on one sheet, and the full participant
+    roster — each row carrying its own team's key flags — on a second, so
+    an organizer never has to cross-reference the Teams and Participants
+    pages by hand to answer something like "which inactive teams still have
+    an unhoused roster"."""
+    from .teams import _accommodation_map, _age_group_counts_map, _participant_counts
+
+    teams = db.query(models.Team).order_by(models.Team.name).all()
+    team_ids = [t.id for t in teams]
+    participant_counts = _participant_counts(db)
+    accommodation = _accommodation_map(db, team_ids, participant_counts)
+    age_group_counts = _age_group_counts_map(db, team_ids)
+
+    inactive_groups_by_team: dict[int, list[str]] = defaultdict(list)
+    for team_id, age_group in db.query(
+        models.TeamInactiveAgeGroup.team_id, models.TeamInactiveAgeGroup.age_group
+    ).all():
+        inactive_groups_by_team[team_id].append(age_group)
+
+    def _age_group_rank(g: str) -> int:
+        m = re.search(r"(\d+)", g)
+        return int(m.group(1)) if m else 999
+
+    def _squad_breakdown(team_id: int, team_active: bool) -> str:
+        """Every age group this team either fields a roster in or has
+        individually benched (the union — a bench entry with zero rostered
+        players still matters, and so does a fielded squad with no bench
+        entry), each with its headcount and Active/Benched status. A wholly
+        inactive team (Team.is_active False) shows every one of its groups
+        as Benched regardless of TeamInactiveAgeGroup, since is_active
+        benches everything at once; TeamInactiveAgeGroup only ever adds
+        finer-grained benching on top of an otherwise-active team."""
+        counts = age_group_counts.get(team_id, {})
+        benched = set(inactive_groups_by_team.get(team_id, []))
+        groups = sorted(set(counts) | benched, key=_age_group_rank)
+        if not groups:
+            return "—"
+        parts = []
+        for g in groups:
+            status = "Benched" if (not team_active or g in benched) else "Active"
+            parts.append(f"{g}: {counts.get(g, 0)} ({status})")
+        return " | ".join(parts)
+
+    def _active_roster_size(team_id: int, team_active: bool) -> int:
+        """Total roster minus whichever players are on an inactive age
+        group — or the whole roster, for a wholly inactive team (same
+        eligibility rule as accommodation.py's _team_size). Subtracting
+        from the total (rather than summing only active groups) keeps a
+        participant with no age_group set in the count — they can't be in
+        a benched group, so they're never inactive on that basis."""
+        total = participant_counts.get(team_id, 0)
+        if not team_active:
+            return 0
+        benched = set(inactive_groups_by_team.get(team_id, []))
+        inactive_count = sum(c for g, c in age_group_counts.get(team_id, {}).items() if g in benched)
+        return total - inactive_count
+
+    awards_by_team: dict[int, list[str]] = defaultdict(list)
+    for team_id, age_group, award in db.query(
+        models.TeamLastYearAward.team_id, models.TeamLastYearAward.age_group, models.TeamLastYearAward.award
+    ).all():
+        awards_by_team[team_id].append(f"{age_group}: {award.capitalize()}")
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Teams - Full Flags"
+    max_cols = 16
+
+    next_row = style_header_banner(
+        ws,
+        tournament_name="FULL TEAM REPORT",
+        subtitle="Every Organizer Flag, Per Delegation",
+        badge_text="OFFICIAL TEAM EXPORT",
+        max_col=max_cols,
+        start_row=1,
+    )
+
+    total_teams = len(teams)
+    active_teams = sum(1 for t in teams if t.is_active)
+    arrived_teams = sum(1 for t in teams if t.has_arrived)
+    labeled_teams = sum(1 for t in teams if t.label)
+    cards = [
+        ("Total Teams", total_teams, f"{active_teams} Active"),
+        ("Inactive", total_teams - active_teams, "Benched Wholesale"),
+        ("Arrived", arrived_teams, f"{total_teams - arrived_teams} Not Yet"),
+        ("Labeled", labeled_teams, "Pool-Conflict Groups"),
+    ]
+    next_row = style_kpi_cards(ws, cards, start_row=next_row, card_width_cols=1)
+
+    next_row = style_section_bar(ws, "Team Directory & Flags", next_row, max_col=max_cols, icon="🚩")
+
+    headers = [
+        ("#", 5, ALIGN_HEADER_CENTER),
+        ("TEAM NAME", 26, ALIGN_HEADER_LEFT),
+        ("SCHOOL CODE", 12, ALIGN_HEADER_CENTER),
+        ("AFFILIATION NO.", 14, ALIGN_HEADER_CENTER),
+        ("REGION", 16, ALIGN_HEADER_LEFT),
+        ("CLUSTER", 10, ALIGN_HEADER_CENTER),
+        ("LABEL", 16, ALIGN_HEADER_LEFT),
+        ("ACTIVE", 9, ALIGN_HEADER_CENTER),
+        ("AGE GROUP SQUADS (COUNT & STATUS)", 40, ALIGN_HEADER_LEFT),
+        ("ARRIVED", 9, ALIGN_HEADER_CENTER),
+        ("ROSTER SIZE (ACTIVE)", 12, ALIGN_HEADER_CENTER),
+        ("LAST YEAR AWARDS", 24, ALIGN_HEADER_LEFT),
+        ("ACCOMMODATION", 14, ALIGN_HEADER_CENTER),
+        ("PHOTO UPLOADS", 14, ALIGN_HEADER_CENTER),
+        ("CONTACT", 22, ALIGN_HEADER_LEFT),
+        ("NOTES", 20, ALIGN_HEADER_LEFT),
+    ]
+    ws.row_dimensions[next_row].height = 22
+    for col_idx, (th_label, _, align) in enumerate(headers, start=1):
+        cell = ws.cell(row=next_row, column=col_idx, value=th_label)
+        cell.font = FONT_TH
+        cell.fill = FILL_TH_PRIMARY
+        cell.alignment = align
+        cell.border = BORDER_HEADER
+    next_row += 1
+
+    fill_inactive = PatternFill("solid", fgColor=CLR_AMBER_BG)
+    for idx, t in enumerate(teams, start=1):
+        ws.row_dimensions[next_row].height = 20
+        fill = fill_inactive if not t.is_active else (FILL_ZEBRA_EVEN if idx % 2 == 0 else FILL_ZEBRA_ODD)
+        acc = accommodation.get(t.id, {"status": "none"})
+        contact = " / ".join(v for v in (t.contact_name, t.contact_phone, t.contact_email) if v) or "—"
+
+        row_data = [
+            (idx, ALIGN_CENTER, FONT_TD_BOLD),
+            (t.name, ALIGN_LEFT, FONT_TD_BOLD),
+            (t.school_code or "—", ALIGN_CENTER, FONT_TD),
+            (t.affiliation_number or "—", ALIGN_CENTER, FONT_TD),
+            (t.region or "—", ALIGN_LEFT, FONT_TD),
+            (t.cluster or "—", ALIGN_CENTER, FONT_TD),
+            (t.label or "—", ALIGN_LEFT, FONT_TD),
+            ("Active" if t.is_active else "Inactive", ALIGN_CENTER, FONT_TD_BOLD),
+            (_squad_breakdown(t.id, t.is_active), ALIGN_LEFT, FONT_TD),
+            ("Yes" if t.has_arrived else "No", ALIGN_CENTER, FONT_TD),
+            (_active_roster_size(t.id, t.is_active), ALIGN_CENTER, FONT_TD_BOLD),
+            (", ".join(awards_by_team.get(t.id, [])) or "—", ALIGN_LEFT, FONT_TD),
+            (acc["status"].capitalize(), ALIGN_CENTER, FONT_TD),
+            ("Locked" if t.photo_uploads_locked_effective else "Open", ALIGN_CENTER, FONT_TD),
+            (contact, ALIGN_LEFT, FONT_TD),
+            (t.notes or "—", ALIGN_LEFT, FONT_TD),
+        ]
+        for col_idx, (val, align, font) in enumerate(row_data, start=1):
+            cell = ws.cell(row=next_row, column=col_idx, value=val)
+            cell.font = font
+            cell.alignment = align
+            cell.fill = fill
+            cell.border = BORDER_CELL
+        next_row += 1
+
+    ws.row_dimensions[next_row].height = 12
+    next_row += 1
+    style_footer(ws, next_row, max_col=max_cols)
+    auto_fit_columns(ws, min_width=8, max_width=45, extra_padding=3)
+    enable_sheet_ergonomics(ws, freeze_pane="A7")
+
+    # ---------- Sheet 2: full participant roster, team flags joined in ----------
+    ws2 = wb.create_sheet("Participants - Full Roster")
+    max_cols2 = 12
+    team_by_id = {t.id: t for t in teams}
+    participants = (
+        db.query(models.Participant)
+        .order_by(models.Participant.team_id, models.Participant.full_name)
+        .all()
+    )
+
+    next_row2 = style_header_banner(
+        ws2,
+        tournament_name="FULL TEAM REPORT",
+        subtitle="Participant Roster, With Each Participant's Team Flags",
+        badge_text="OFFICIAL ROSTER EXPORT",
+        max_col=max_cols2,
+        start_row=1,
+    )
+    next_row2 = style_kpi_cards(
+        ws2,
+        [
+            ("Total Participants", len(participants), "Registered"),
+            ("Present", sum(1 for p in participants if p.is_present), "Checked In"),
+            ("On Inactive Teams", sum(1 for p in participants if not team_by_id.get(p.team_id, models.Team()).is_active), "Flagged"),
+            ("Teams Represented", len({p.team_id for p in participants if p.team_id}), "Affiliated"),
+        ],
+        start_row=next_row2,
+        card_width_cols=1,
+    )
+    next_row2 = style_section_bar(ws2, "Full Participant Roster", next_row2, max_col=max_cols2, icon="👥")
+
+    headers2 = [
+        ("#", 5, ALIGN_HEADER_CENTER),
+        ("FULL NAME", 24, ALIGN_HEADER_LEFT),
+        ("TEAM", 24, ALIGN_HEADER_LEFT),
+        ("TEAM ACTIVE", 11, ALIGN_HEADER_CENTER),
+        ("TEAM CLUSTER", 11, ALIGN_HEADER_CENTER),
+        ("TEAM LABEL", 16, ALIGN_HEADER_LEFT),
+        ("REG. NO.", 16, ALIGN_HEADER_CENTER),
+        ("AGE GROUP", 12, ALIGN_HEADER_CENTER),
+        ("GROUP BENCHED", 13, ALIGN_HEADER_CENTER),
+        ("GENDER", 9, ALIGN_HEADER_CENTER),
+        ("PRESENT", 9, ALIGN_HEADER_CENTER),
+        ("WEIGHT (KG)", 11, ALIGN_HEADER_CENTER),
+    ]
+    ws2.row_dimensions[next_row2].height = 22
+    for col_idx, (th_label, _, align) in enumerate(headers2, start=1):
+        cell = ws2.cell(row=next_row2, column=col_idx, value=th_label)
+        cell.font = FONT_TH
+        cell.fill = FILL_TH_PRIMARY
+        cell.alignment = align
+        cell.border = BORDER_HEADER
+    next_row2 += 1
+
+    for idx, p in enumerate(participants, start=1):
+        team = team_by_id.get(p.team_id)
+        team_inactive = not team.is_active if team else False
+        # A wholly inactive team benches every one of its age groups at
+        # once (same rule _squad_breakdown above uses) — not just the ones
+        # with their own TeamInactiveAgeGroup row.
+        group_benched = bool(p.age_group) and (
+            team_inactive or p.age_group in inactive_groups_by_team.get(p.team_id, [])
+        )
+        ws2.row_dimensions[next_row2].height = 20
+        fill = fill_inactive if (team_inactive or group_benched) else (FILL_ZEBRA_EVEN if idx % 2 == 0 else FILL_ZEBRA_ODD)
+
+        row_data2 = [
+            (idx, ALIGN_CENTER, FONT_TD_BOLD),
+            (p.full_name, ALIGN_LEFT, FONT_TD_BOLD),
+            (team.name if team else "—", ALIGN_LEFT, FONT_TD),
+            ("Active" if team and team.is_active else "Inactive", ALIGN_CENTER, FONT_TD),
+            (team.cluster if team and team.cluster else "—", ALIGN_CENTER, FONT_TD),
+            (team.label if team and team.label else "—", ALIGN_LEFT, FONT_TD),
+            (p.registration_no or "—", ALIGN_CENTER, FONT_TD),
+            (p.age_group or "—", ALIGN_CENTER, FONT_TD),
+            ("Benched" if group_benched else "—", ALIGN_CENTER, FONT_TD),
+            (p.gender or "—", ALIGN_CENTER, FONT_TD),
+            ("Yes" if p.is_present else "No", ALIGN_CENTER, FONT_TD),
+            (float(p.weight) if p.weight is not None else "—", ALIGN_CENTER, FONT_TD),
+        ]
+        for col_idx, (val, align, font) in enumerate(row_data2, start=1):
+            cell = ws2.cell(row=next_row2, column=col_idx, value=val)
+            cell.font = font
+            cell.alignment = align
+            cell.fill = fill
+            cell.border = BORDER_CELL
+        next_row2 += 1
+
+    ws2.row_dimensions[next_row2].height = 12
+    next_row2 += 1
+    style_footer(ws2, next_row2, max_col=max_cols2)
+    auto_fit_columns(ws2, min_width=8, max_width=45, extra_padding=3)
+    enable_sheet_ergonomics(ws2, freeze_pane="A7")
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type=XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": 'attachment; filename="full_team_report.xlsx"'},
     )
 
 

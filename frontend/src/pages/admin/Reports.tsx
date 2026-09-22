@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Download, FileSpreadsheet, Trash2, Layers, RefreshCw, CheckSquare, Bus, ShieldCheck, UserCog, Wallet, BedDouble, Eye, Trophy, LayoutGrid } from "lucide-react";
+import { AlertTriangle, Download, FileSpreadsheet, Trash2, Layers, RefreshCw, CheckSquare, Bus, ShieldCheck, UserCog, Wallet, BedDouble, Eye, Trophy, LayoutGrid, Flag } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -250,6 +250,15 @@ export default function Reports() {
                 testId="download-attendance-report-btn"
                 onView={() => openViewReport("attendance", `${BACKEND}/api/export/attendance.xlsx`, "Download Attendance .xlsx")}
                 extraDownloads={[{ href: `${BACKEND}/api/export/live-detail/attendance.pdf`, label: "PDF" }]}
+              />
+            )}
+            {teamsAccess.canView && (
+              <ReportDownloadCard
+                icon={Flag}
+                title="Full Team Report"
+                description="Every team flag (active, arrived, cluster, label, benched age groups, last-year awards, accommodation) plus the full participant roster."
+                href={`${BACKEND}/api/export/teams-full.xlsx`}
+                testId="download-teams-full-report-btn"
               />
             )}
             {teamsAccess.canView && (
