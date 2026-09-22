@@ -73,8 +73,13 @@ interface MatchT {
   team_a_name?: string | null;
   team_b_id?: number | null;
   team_b_name?: string | null;
+  match_number: number;
   source_match_a_id?: number | null;
+  source_match_a_number?: number | null;
+  source_match_a_round_name?: string | null;
   source_match_b_id?: number | null;
+  source_match_b_number?: number | null;
+  source_match_b_round_name?: string | null;
   venue_id?: number | null;
   venue_name?: string | null;
   mat_id?: number | null;
@@ -222,8 +227,16 @@ function canControlMatchFor(me: Me | null, canEdit: boolean, matchId: number): b
 
 function matchLabel(m: MatchT) {
   if (m.notes === "Bye") return `${m.team_a_name ?? m.team_b_name} — Bye`;
-  const a = m.team_a_name ?? (m.source_match_a_id ? `Winner of Match ${m.source_match_a_id}` : "TBD");
-  const b = m.team_b_name ?? (m.source_match_b_id ? `Winner of Match ${m.source_match_b_id}` : "TBD");
+  const a =
+    m.team_a_name ??
+    (m.source_match_a_number
+      ? `Winner of Match #${m.source_match_a_number}${m.source_match_a_round_name ? ` (${m.source_match_a_round_name})` : ""}`
+      : "TBD");
+  const b =
+    m.team_b_name ??
+    (m.source_match_b_number
+      ? `Winner of Match #${m.source_match_b_number}${m.source_match_b_round_name ? ` (${m.source_match_b_round_name})` : ""}`
+      : "TBD");
   return `${a} vs ${b}`;
 }
 
@@ -264,7 +277,7 @@ function RoundMatchesList({
           >
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <span className="text-[10px] font-mono text-slate-500">#{i + 1}</span>
+                <span className="text-[10px] font-mono text-slate-500">#{m.match_number}</span>
                 <p className="font-heading font-bold text-white text-sm break-words">{matchLabel(m)}</p>
               </div>
               <div className="flex items-center gap-1 shrink-0">
@@ -591,6 +604,10 @@ function AssignStaffDialog({
       )}
     </Dialog>
   );
+}
+
+function teamOptionLabel(t: Team) {
+  return t.is_active === false ? `${t.name} (Inactive)` : t.name;
 }
 
 function ageGroupRank(g: string) {
@@ -2778,8 +2795,8 @@ function LiveConsole({
                     <Select value={resetTeamA} onChange={(e) => setResetTeamA(e.target.value)}>
                       <option value="">— TBD —</option>
                       {teams.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
+                        <option key={t.id} value={t.id} style={t.is_active === false ? { color: "#f59e0b" } : undefined}>
+                          {teamOptionLabel(t)}
                         </option>
                       ))}
                     </Select>
@@ -2789,8 +2806,8 @@ function LiveConsole({
                     <Select value={resetTeamB} onChange={(e) => setResetTeamB(e.target.value)}>
                       <option value="">— TBD —</option>
                       {teams.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
+                        <option key={t.id} value={t.id} style={t.is_active === false ? { color: "#f59e0b" } : undefined}>
+                          {teamOptionLabel(t)}
                         </option>
                       ))}
                     </Select>
@@ -4226,7 +4243,7 @@ function PoolDetailDialog({
                         key={m.id}
                         className={me?.assigned_match_ids?.includes(m.id) ? "bg-gold/5 border-l-2 border-l-gold" : undefined}
                       >
-                        <TD className="font-mono text-xs text-slate-500">{i + 1}</TD>
+                        <TD className="font-mono text-xs text-slate-500">{m.match_number}</TD>
                         <TD className="font-heading font-bold text-white text-xs">
                           {m.team_a_name} vs {m.team_b_name}
                         </TD>

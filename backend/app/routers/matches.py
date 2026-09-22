@@ -28,10 +28,24 @@ def _team_name(db: Session, team_id: int | None) -> str | None:
     return t.name if t else None
 
 
-def _match_dict(m: models.Match, db: Session) -> dict:
+def _match_number(m: models.Match) -> int:
+    """This match's 1-based position within its own round (Round.matches is
+    already ordered by Match.id — see models.py) — the one numbering scheme
+    used everywhere a match needs a friendly, stable label, so the Matches &
+    Fixtures page and the Reports workbook always show the same number for
+    the same match, regardless of how either page groups/filters/sorts it
+    for display (e.g. by pool, or through a search box)."""
+    for i, sibling in enumerate(m.round.matches):
+        if sibling.id == m.id:
+            return i + 1
+    return 0  # unreachable: m is always a member of m.round.matches
+
+
+def _match_dict(m: models.Match, db: Session, number: int | None = None) -> dict:
     venue = db.get(models.Venue, m.venue_id) if m.venue_id else None
     return {
         "id": m.id,
+        "match_number": number if number is not None else _match_number(m),
         "tournament_id": m.tournament_id,
         "tournament_name": m.tournament.name if m.tournament else None,
         "sport": m.tournament.sport if m.tournament else None,
@@ -46,7 +60,11 @@ def _match_dict(m: models.Match, db: Session) -> dict:
         "team_b_id": m.team_b_id,
         "team_b_name": _team_name(db, m.team_b_id),
         "source_match_a_id": m.source_match_a_id,
+        "source_match_a_number": _match_number(m.source_match_a) if m.source_match_a else None,
+        "source_match_a_round_name": m.source_match_a.round.name if m.source_match_a else None,
         "source_match_b_id": m.source_match_b_id,
+        "source_match_b_number": _match_number(m.source_match_b) if m.source_match_b else None,
+        "source_match_b_round_name": m.source_match_b.round.name if m.source_match_b else None,
         "source_pool_a_id": m.source_pool_a_id,
         "source_pool_a_name": m.source_pool_a.name if m.source_pool_a else None,
         "source_pool_a_rank": m.source_pool_a_rank,
@@ -74,6 +92,7 @@ def _match_dict(m: models.Match, db: Session) -> dict:
 
 
 def _round_dict(r: models.Round, db: Session) -> dict:
+    numbers = {m.id: i + 1 for i, m in enumerate(r.matches)}
     return {
         "id": r.id,
         "tournament_id": r.tournament_id,
@@ -81,7 +100,7 @@ def _round_dict(r: models.Round, db: Session) -> dict:
         "sequence": r.sequence,
         "format": r.format,
         "source_round_id": r.source_round_id,
-        "matches": [_match_dict(m, db) for m in r.matches],
+        "matches": [_match_dict(m, db, numbers[m.id]) for m in r.matches],
     }
 
 

@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from .. import models
 from ..database import get_db
+from .matches import _match_number
 from ..excel_styler import (
     ALIGN_CENTER,
     ALIGN_HEADER_CENTER,
@@ -257,7 +258,7 @@ def _render_round_sheet(
             st_fill, st_font = get_status_style(status_text)
 
             row_data = [
-                (f"M-{m.id}", ALIGN_CENTER, FONT_TD_BOLD, fill),
+                (f"M-{_match_number(m)}", ALIGN_CENTER, FONT_TD_BOLD, fill),
                 (stage_name, ALIGN_CENTER, FONT_TD, fill),
                 (team_a_name, ALIGN_LEFT, FONT_TD_BOLD, fill),
                 (score_a, ALIGN_CENTER, FONT_TD_BOLD, fill),
