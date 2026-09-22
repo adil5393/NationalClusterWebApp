@@ -45,6 +45,7 @@ interface Building {
 interface Team {
   id: number;
   name: string;
+  is_active?: boolean;
 }
 interface Participant {
   id: number;
@@ -354,8 +355,8 @@ export default function Accommodation() {
             >
               <option value="">Select team…</option>
               {teams.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
+                <option key={t.id} value={t.id} style={t.is_active === false ? { color: "#f59e0b" } : undefined}>
+                  {t.is_active === false ? `${t.name} (Inactive)` : t.name}
                 </option>
               ))}
             </Select>

@@ -14,6 +14,7 @@ import { useModuleAccess } from "@/lib/permissions";
 interface Team {
   id: number;
   name: string;
+  is_active?: boolean;
 }
 interface Venue {
   id: number;
@@ -313,8 +314,8 @@ export default function Schedule() {
             >
               <option value="">All teams / General public</option>
               {teams.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
+                <option key={t.id} value={t.id} style={t.is_active === false ? { color: "#f59e0b" } : undefined}>
+                  {t.is_active === false ? `${t.name} (Inactive)` : t.name}
                 </option>
               ))}
             </Select>

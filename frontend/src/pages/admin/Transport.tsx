@@ -41,6 +41,7 @@ interface Vehicle {
 interface Team {
   id: number;
   name: string;
+  is_active?: boolean;
 }
 
 interface Assignment {
@@ -656,8 +657,8 @@ export default function Transport() {
               >
                 <option value="">Select team…</option>
                 {teams.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
+                  <option key={t.id} value={t.id} style={t.is_active === false ? { color: "#f59e0b" } : undefined}>
+                    {t.is_active === false ? `${t.name} (Inactive)` : t.name}
                   </option>
                 ))}
               </Select>

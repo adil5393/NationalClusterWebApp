@@ -67,6 +67,10 @@ const AGE_GROUP_WEIGHT_CAPS: Record<string, number> = {
   "under 17": 57,
   "under 19": 70,
 };
+function teamOptionLabel(t: Team) {
+  return t.is_active === false ? `${t.name} (Inactive)` : t.name;
+}
+
 function weightCapFor(ageGroup?: string): number | undefined {
   if (!ageGroup) return undefined;
   return AGE_GROUP_WEIGHT_CAPS[ageGroup.trim().toLowerCase()];
@@ -575,8 +579,8 @@ export default function Participants() {
           >
             <option value="">All Teams ({teams.length})</option>
             {teams.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
+              <option key={t.id} value={t.id} style={t.is_active === false ? { color: "#f59e0b" } : undefined}>
+                {teamOptionLabel(t)}
               </option>
             ))}
           </Select>
@@ -1552,8 +1556,8 @@ export default function Participants() {
             >
               <option value="">Select team…</option>
               {teams.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
+                <option key={t.id} value={t.id} style={t.is_active === false ? { color: "#f59e0b" } : undefined}>
+                  {teamOptionLabel(t)}
                 </option>
               ))}
             </Select>
@@ -1673,8 +1677,8 @@ export default function Participants() {
             >
               <option value="">Select team…</option>
               {teams.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
+                <option key={t.id} value={t.id} style={t.is_active === false ? { color: "#f59e0b" } : undefined}>
+                  {teamOptionLabel(t)}
                 </option>
               ))}
             </Select>
