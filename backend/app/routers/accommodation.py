@@ -1,6 +1,5 @@
 """Accommodation: assign teams/participants to rooms + live occupancy per building."""
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
@@ -15,35 +14,82 @@ def _room_context(room: models.Room):
     return floor, building
 
 
+def _team_eligible(db: Session, team_id: "int | None") -> bool:
+    """Whether a team can hold/count toward accommodation at all — mirrors
+    routers/matches.py's _team_unplayable_reason's is_active half (no
+    tournament/disqualification concept applies here, accommodation isn't
+    scoped to one tournament)."""
+    team = db.get(models.Team, team_id) if team_id else None
+    return bool(team and team.is_active)
+
+
+def _participant_eligible(db: Session, participant_id: "int | None") -> bool:
+    """Whether a participant counts toward accommodation — their team must be
+    active overall AND, if they belong to one, their specific age group must
+    not be individually benched (TeamInactiveAgeGroup — e.g. a school's
+    Under 14 squad withdrew while its Under 17 squad still competes)."""
+    p = db.get(models.Participant, participant_id) if participant_id else None
+    if not p or not _team_eligible(db, p.team_id):
+        return False
+    if not p.age_group:
+        return True
+    benched = (
+        db.query(models.TeamInactiveAgeGroup)
+        .filter_by(team_id=p.team_id, age_group=p.age_group)
+        .first()
+    )
+    return benched is None
+
+
 def _team_size(db: Session, team_id: int) -> int:
-    """A team's real roster size — the actual Participant rows entered/imported for
-    it, not the self-reported Team.member_count (which can drift out of sync)."""
-    return db.query(func.count(models.Participant.id)).filter_by(team_id=team_id).scalar() or 0
+    """A team's real, accommodation-eligible roster size: the actual
+    Participant rows entered/imported for it (not the self-reported
+    Team.member_count, which can drift out of sync), excluding any whose
+    specific age group has been benched (TeamInactiveAgeGroup) and zero
+    outright for an inactive team — accommodation counts only ever reflect
+    active teams and active age groups."""
+    if not _team_eligible(db, team_id):
+        return 0
+    participants = db.query(models.Participant.id, models.Participant.age_group).filter_by(team_id=team_id).all()
+    benched_groups = {
+        row[0]
+        for row in db.query(models.TeamInactiveAgeGroup.age_group).filter_by(team_id=team_id).all()
+    }
+    return sum(1 for _, age_group in participants if not age_group or age_group not in benched_groups)
 
 
 def _room_headcount(db: Session, room_id: int) -> int:
     """Real person-count occupying a room: participant-level assignments count as 1
     each; whole-team assignments count as that team's actual roster size — NOT as a
     single row, which is what silently let over-capacity whole-team assignments
-    through before."""
+    through before. An inactive team or a benched age group never contributes —
+    see _team_size/_participant_eligible."""
     total = 0
     for a in db.query(models.AccommodationAssignment).filter_by(room_id=room_id).all():
         if a.participant_id:
-            total += 1
+            if _participant_eligible(db, a.participant_id):
+                total += 1
         elif a.team_id:
             total += _team_size(db, a.team_id)
     return total
 
 
 def _team_present_count(db: Session, team_id: int) -> int:
-    """How many of a team's roster (athletes only) have been checked in present."""
-    return (
-        db.query(func.count(models.Participant.id))
+    """How many of a team's roster (athletes only) have been checked in present —
+    excluding a benched age group or an inactive team, same as _team_size."""
+    if not _team_eligible(db, team_id):
+        return 0
+    rows = (
+        db.query(models.Participant.id, models.Participant.age_group)
         .filter_by(team_id=team_id)
         .filter(models.Participant.is_present.is_(True))
-        .scalar()
-        or 0
+        .all()
     )
+    benched_groups = {
+        row[0]
+        for row in db.query(models.TeamInactiveAgeGroup.age_group).filter_by(team_id=team_id).all()
+    }
+    return sum(1 for _, age_group in rows if not age_group or age_group not in benched_groups)
 
 
 def _room_present_count(db: Session, room_id: int) -> int:
@@ -53,9 +99,10 @@ def _room_present_count(db: Session, room_id: int) -> int:
     total = 0
     for a in db.query(models.AccommodationAssignment).filter_by(room_id=room_id).all():
         if a.participant_id:
-            p = db.get(models.Participant, a.participant_id)
-            if p and p.is_present:
-                total += 1
+            if _participant_eligible(db, a.participant_id):
+                p = db.get(models.Participant, a.participant_id)
+                if p and p.is_present:
+                    total += 1
         elif a.team_id:
             total += _team_present_count(db, a.team_id)
     return total
@@ -179,6 +226,20 @@ def create_assignment(payload: schemas.AssignmentCreate, db: Session = Depends(g
         raise HTTPException(404, "Team not found")
     if payload.participant_id and not db.get(models.Participant, payload.participant_id):
         raise HTTPException(404, "Participant not found")
+
+    # Accommodation only ever gets newly assigned to an active team, and for a
+    # participant, one whose specific age group hasn't been benched — same
+    # eligibility rule the headcount helpers above use, just enforced at
+    # creation time instead of just at counting time.
+    if payload.team_id and not payload.participant_id and not _team_eligible(db, payload.team_id):
+        team = db.get(models.Team, payload.team_id)
+        raise HTTPException(400, f"{team.name} is marked inactive — can't be assigned accommodation")
+    if payload.participant_id and not _participant_eligible(db, payload.participant_id):
+        p = db.get(models.Participant, payload.participant_id)
+        team = db.get(models.Team, p.team_id) if p else None
+        if team and not team.is_active:
+            raise HTTPException(400, f"{team.name} is marked inactive — can't be assigned accommodation")
+        raise HTTPException(400, f"{p.full_name if p else 'This participant'}'s age group is marked inactive for {team.name if team else 'their team'} — can't be assigned accommodation")
 
     # Bed-level assignment: bed must belong to the room and be free
     if payload.bed_id:
