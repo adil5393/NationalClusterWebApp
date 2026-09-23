@@ -3622,6 +3622,17 @@ function LeagueSetup({
               <p className="mt-1 font-heading text-xl font-black text-white font-mono">
                 {summary.eligible_team_count}
               </p>
+              {(() => {
+                const activeCount = summary.eligible_teams.filter(
+                  (t) => teams.find((x) => x.id === t.id)?.is_active !== false,
+                ).length;
+                const inactiveCount = summary.eligible_team_count - activeCount;
+                return inactiveCount > 0 ? (
+                  <p className="mt-0.5 text-[10px] font-mono text-slate-500">
+                    {activeCount} active · <span className="text-amber-500">{inactiveCount} inactive</span>
+                  </p>
+                ) : null;
+              })()}
             </div>
             <div>
               <p className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400">
