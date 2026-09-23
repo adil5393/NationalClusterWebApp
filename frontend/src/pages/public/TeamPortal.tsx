@@ -103,21 +103,21 @@ function SectionCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-obsidian-900/90 p-5 sm:p-6 shadow-sm backdrop-blur-sm">
-      <div className="flex items-center justify-between border-b border-white/10 pb-3.5">
-        <div className="flex items-center gap-2.5">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-gold/15 text-gold border border-gold/30">
+    <div className="rounded-xl border border-white/10 bg-obsidian-900/90 p-5 sm:p-6 shadow-sm backdrop-blur-sm min-w-0 w-full max-w-full overflow-hidden">
+      <div className="flex items-center justify-between border-b border-white/10 pb-3.5 min-w-0 gap-2">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="grid h-8 w-8 place-items-center rounded-lg bg-gold/15 text-gold border border-gold/30 shrink-0">
             <Icon className="h-4 w-4" />
           </span>
-          <h2 className="font-heading text-base font-bold text-white tracking-tight">{title}</h2>
+          <h2 className="font-heading text-base font-bold text-white tracking-tight truncate">{title}</h2>
         </div>
         {badge && (
-          <span className="rounded bg-white/10 px-2 py-0.5 text-[10px] font-mono font-bold text-slate-300">
+          <span className="rounded bg-white/10 px-2 py-0.5 text-[10px] font-mono font-bold text-slate-300 shrink-0">
             {badge}
           </span>
         )}
       </div>
-      <div className="mt-4">{children}</div>
+      <div className="mt-4 min-w-0 w-full max-w-full">{children}</div>
     </div>
   );
 }
@@ -528,7 +528,7 @@ export default function TeamPortal() {
 
   return (
     <div
-      className="mx-auto max-w-6xl px-4 sm:px-6 md:px-8 py-10 md:py-14 text-slate-100 min-h-screen"
+      className="mx-auto max-w-6xl px-4 sm:px-6 md:px-8 py-10 md:py-14 text-slate-100 min-h-screen min-w-0 w-full max-w-full overflow-x-hidden"
       data-testid="team-portal"
     >
       {/* BACK LINK */}
@@ -864,13 +864,13 @@ export default function TeamPortal() {
                       {members.length} {members.length === 1 ? "Athlete" : "Athletes"}
                     </Badge>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-3.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-3.5 min-w-0 w-full">
                     {[...members]
                       .sort((a, b) => a.full_name.localeCompare(b.full_name))
                       .map((p, i) => (
                         <div
                           key={p.id}
-                          className="flex items-center gap-3 sm:gap-3.5 p-3 sm:p-3.5 rounded-xl border border-white/10 bg-obsidian-950/70 hover:border-gold/30 hover:bg-white/[0.04] transition-all min-h-[76px] sm:min-h-[84px]"
+                          className="flex items-center gap-3 sm:gap-3.5 p-3 sm:p-3.5 rounded-xl border border-white/10 bg-obsidian-950/70 hover:border-gold/30 hover:bg-white/[0.04] transition-all min-h-[76px] sm:min-h-[84px] min-w-0 w-full max-w-full overflow-hidden"
                         >
                           <button
                             type="button"
@@ -915,19 +915,19 @@ export default function TeamPortal() {
                               </div>
                             )}
                           </button>
-                          <div className="min-w-0 flex-1 flex flex-col justify-center">
+                          <div className="min-w-0 flex-1 flex flex-col justify-center overflow-hidden">
                             <h4
-                              className="font-heading font-bold text-white text-sm sm:text-[15px] leading-snug line-clamp-2"
+                              className="font-heading font-bold text-white text-sm sm:text-[15px] leading-snug line-clamp-2 break-words"
                               title={p.full_name}
                             >
                               {p.full_name}
                             </h4>
-                            <div className="mt-1 flex items-center gap-2">
+                            <div className="mt-1 flex items-center gap-2 min-w-0 flex-wrap">
                               <span className="font-mono text-[11px] font-medium text-slate-400 shrink-0">
                                 #{i + 1}
                               </span>
                               {p.role && (
-                                <span className="shrink-0 rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-mono font-medium uppercase tracking-wider text-slate-400 border border-white/5">
+                                <span className="shrink-0 truncate rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-mono font-medium uppercase tracking-wider text-slate-400 border border-white/5 max-w-[120px]">
                                   {p.role}
                                 </span>
                               )}

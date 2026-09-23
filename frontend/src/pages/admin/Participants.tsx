@@ -450,7 +450,7 @@ export default function Participants() {
   const setCoachField = (k: keyof Coach, v: string) => setCoachForm((f) => ({ ...f, [k]: v }));
 
   return (
-    <div data-testid="admin-participants" className="space-y-6">
+    <div data-testid="admin-participants" className="space-y-6 min-w-0 w-full max-w-full overflow-x-hidden">
       {/* PAGE HEADER */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between border-b border-white/10 pb-5">
         <div>
@@ -653,15 +653,15 @@ export default function Participants() {
         ) : (
           <div className="space-y-4">
             {/* MOBILE: CARD LIST */}
-            <div className="grid gap-2.5 lg:hidden">
+            <div className="grid gap-2.5 lg:hidden min-w-0 w-full max-w-full">
               {paged.map((p, i) => (
                 <div
                   key={p.id}
                   data-testid={`participant-card-${p.id}`}
-                  className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-2 shadow-sm"
+                  className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-2 shadow-sm min-w-0 w-full max-w-full overflow-hidden"
                 >
-                  <div className="flex items-start justify-between gap-2.5">
-                    <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="flex items-start justify-between gap-2.5 min-w-0">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
                       {p.photo_url ? (
                         <img
                           src={`${BASE_URL}${p.photo_url}`}
@@ -673,12 +673,12 @@ export default function Participants() {
                           {p.full_name.slice(0, 1).toUpperCase()}
                         </div>
                       )}
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <span className="text-[10px] font-mono text-slate-500">
                           #{(page - 1) * PAGE_SIZE + i + 1}
                         </span>
-                        <h3 className="font-heading font-bold text-white text-sm truncate">{p.full_name}</h3>
-                        <p className="text-xs text-gold font-body truncate">{teamName(p.team_id)}</p>
+                        <h3 className="font-heading font-bold text-white text-sm truncate" title={p.full_name}>{p.full_name}</h3>
+                        <p className="text-xs text-gold font-body truncate" title={teamName(p.team_id)}>{teamName(p.team_id)}</p>
                       </div>
                     </div>
 
@@ -836,12 +836,12 @@ export default function Participants() {
                     </p>
                   )}
 
-                  <div className="border-t border-white/10 pt-2.5 flex gap-2">
+                  <div className="border-t border-white/10 pt-2.5 flex items-center gap-2 min-w-0">
                     <a
                       href={!(p.is_active ?? true) || teamInactive(p.team_id) ? undefined : `${BASE_URL}/api/export/idcards/participant/${p.id}.pdf`}
                       aria-disabled={!(p.is_active ?? true) || teamInactive(p.team_id)}
                       className={cn(
-                        "inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md border text-xs font-semibold transition-colors",
+                        "inline-flex h-8 flex-1 min-w-0 items-center justify-center gap-1.5 rounded-md border text-xs font-semibold transition-colors px-2",
                         (!(p.is_active ?? true) || teamInactive(p.team_id))
                           ? "border-white/10 bg-white/5 text-slate-500 cursor-not-allowed pointer-events-none"
                           : p.photo_url
@@ -850,14 +850,16 @@ export default function Participants() {
                       )}
                       data-testid={`download-idcard-mobile-${p.id}`}
                     >
-                      <IdCard className={cn("h-3.5 w-3.5", p.photo_url ? "text-emerald-400" : "text-red-400")} />
-                      {(p.is_active ?? true) && !teamInactive(p.team_id) ? "Download ID Card" : "Inactive — No ID Card"}
+                      <IdCard className={cn("h-3.5 w-3.5 shrink-0", p.photo_url ? "text-emerald-400" : "text-red-400")} />
+                      <span className="truncate">
+                        {(p.is_active ?? true) && !teamInactive(p.team_id) ? "Download ID Card" : "Inactive — No ID Card"}
+                      </span>
                     </a>
                     {canEdit && (
                       <Button
                         variant="outline"
-                        size="sm"
-                        className="h-8 shrink-0"
+                        size="icon-sm"
+                        className="h-8 w-8 shrink-0 p-0"
                         onClick={() => togglePhotoLock(p)}
                         data-testid={`photo-lock-mobile-${p.id}`}
                         title={p.photo_uploads_locked_effective ? "Photo uploads locked — click to unlock" : "Lock photo uploads"}
@@ -868,8 +870,8 @@ export default function Participants() {
                     {canEdit && p.photo_url && (
                       <Button
                         variant="outline"
-                        size="sm"
-                        className="h-8 shrink-0"
+                        size="icon-sm"
+                        className="h-8 w-8 shrink-0 p-0"
                         onClick={() => removePhoto(p)}
                         data-testid={`remove-photo-mobile-${p.id}`}
                         title="Remove Uploaded Photo"
@@ -1206,16 +1208,16 @@ export default function Participants() {
           </div>
         ) : (
           <div className="space-y-4">
-            {/* MOBILE: CARD LIST */}
-            <div className="grid gap-2.5 lg:hidden">
+            {/* MOBILE: COACH CARD LIST */}
+            <div className="grid gap-2.5 lg:hidden min-w-0 w-full max-w-full">
               {pagedCoaches.map((c, i) => (
                 <div
                   key={c.id}
                   data-testid={`coach-card-${c.id}`}
-                  className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-2 shadow-sm"
+                  className="rounded-xl border border-white/10 bg-obsidian-900 p-3.5 space-y-2 shadow-sm min-w-0 w-full max-w-full overflow-hidden"
                 >
-                  <div className="flex items-start justify-between gap-2.5">
-                    <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="flex items-start justify-between gap-2.5 min-w-0">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
                       {c.photo_url ? (
                         <img
                           src={`${BASE_URL}${c.photo_url}`}
@@ -1227,12 +1229,12 @@ export default function Participants() {
                           {c.full_name.slice(0, 1).toUpperCase()}
                         </div>
                       )}
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <span className="text-[10px] font-mono text-slate-500">
                           #{(page - 1) * PAGE_SIZE + i + 1}
                         </span>
-                        <h3 className="font-heading font-bold text-white text-sm truncate">{c.full_name}</h3>
-                        <p className="text-xs text-gold font-body truncate">{teamName(c.team_id)}</p>
+                        <h3 className="font-heading font-bold text-white text-sm truncate" title={c.full_name}>{c.full_name}</h3>
+                        <p className="text-xs text-gold font-body truncate" title={teamName(c.team_id)}>{teamName(c.team_id)}</p>
                       </div>
                     </div>
 
@@ -1301,25 +1303,26 @@ export default function Participants() {
                     </p>
                   )}
 
-                  <div className="border-t border-white/10 pt-2.5 flex gap-2">
+                  <div className="border-t border-white/10 pt-2.5 flex items-center gap-2 min-w-0">
                     <a
                       href={teamInactive(c.team_id) ? undefined : `${BASE_URL}/api/export/idcards/coach/${c.id}.pdf`}
                       aria-disabled={teamInactive(c.team_id)}
                       className={cn(
-                        "inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md border text-xs font-semibold transition-colors",
+                        "inline-flex h-8 flex-1 min-w-0 items-center justify-center gap-1.5 rounded-md border text-xs font-semibold transition-colors px-2",
                         c.photo_url
                           ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
                           : "border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20",
                       )}
                       data-testid={`download-coach-idcard-mobile-${c.id}`}
                     >
-                      <IdCard className={cn("h-3.5 w-3.5", c.photo_url ? "text-emerald-400" : "text-red-400")} /> Download ID Card
+                      <IdCard className={cn("h-3.5 w-3.5 shrink-0", c.photo_url ? "text-emerald-400" : "text-red-400")} />
+                      <span className="truncate">Download ID Card</span>
                     </a>
                     {canEdit && (
                       <Button
                         variant="outline"
-                        size="sm"
-                        className="h-8 shrink-0"
+                        size="icon-sm"
+                        className="h-8 w-8 shrink-0 p-0"
                         onClick={() => toggleCoachPhotoLock(c)}
                         data-testid={`coach-photo-lock-mobile-${c.id}`}
                         title={c.photo_uploads_locked_effective ? "Photo uploads locked — click to unlock" : "Lock photo uploads"}
@@ -1330,8 +1333,8 @@ export default function Participants() {
                     {canEdit && c.photo_url && (
                       <Button
                         variant="outline"
-                        size="sm"
-                        className="h-8 shrink-0"
+                        size="icon-sm"
+                        className="h-8 w-8 shrink-0 p-0"
                         onClick={() => removeCoachPhoto(c)}
                         data-testid={`remove-coach-photo-mobile-${c.id}`}
                         title="Remove Uploaded Photo"

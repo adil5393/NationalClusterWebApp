@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
 import {
   Menu,
@@ -213,8 +213,8 @@ export function PublicLayout() {
         </header>
 
         {/* MAIN BODY OUTLET */}
-        <main className="flex-1 w-full">
-          <div className="mx-auto max-w-7xl min-h-full">
+        <main className="flex-1 w-full min-w-0">
+          <div className="mx-auto max-w-7xl min-h-full min-w-0 w-full">
             <Outlet />
           </div>
         </main>
