@@ -1914,13 +1914,23 @@ def _photo_path(participant: models.Participant):
     return ASSETS_PARTICIPANTS_DIR / participant.photo_filename
 
 
-def _idcard_filename(participant: models.Participant) -> str:
-    """One card's file name inside an individual-cards ZIP — registration_no
-    when available (stable/unique, matches the single-participant download's
-    naming), falling back to the DB id, plus the athlete's name for a
-    human-readable listing in the layout tool's file picker."""
-    slug = "".join(c if c.isalnum() or c in " -_" else "_" for c in participant.full_name).strip() or "participant"
-    return f"{participant.registration_no or participant.id}_{slug}.pdf"
+def _slug(text: str) -> str:
+    """Filesystem-safe stand-in for a name inside a download filename —
+    alnum/space/hyphen/underscore kept, everything else (commas, slashes,
+    punctuation) collapsed to underscore."""
+    return "".join(c if c.isalnum() or c in " -_" else "_" for c in (text or "")).strip()
+
+
+def _idcard_filename(participant: models.Participant, team: models.Team) -> str:
+    """One card's file name inside an individual-cards ZIP — the school name
+    first (so cards from different schools stay identifiable once extracted
+    out of the zip, e.g. from the all-teams bundle), then registration_no
+    when available (stable/unique, matches the single-participant
+    download's naming), falling back to the DB id, plus the athlete's name
+    for a human-readable listing in the layout tool's file picker."""
+    slug = _slug(participant.full_name) or "participant"
+    team_slug = _slug(team.name) or "team"
+    return f"{team_slug}_{participant.registration_no or participant.id}_{slug}.pdf"
 
 
 def _active_participants(participants: list[models.Participant]) -> list[models.Participant]:
@@ -1950,7 +1960,7 @@ def _individual_card_files(participants: list[models.Participant], team_by_id: d
         team = team_by_id[p.team_id]
         card = id_card.render_id_card_page(p, team, _photo_path(p))
         pdf = id_card.build_pdf([card])
-        name = _idcard_filename(p)
+        name = _idcard_filename(p, team)
         # Guard against a name collision (e.g. two participants sharing a
         # blank registration_no) silently overwriting one card in the zip.
         if name in seen_names:
@@ -1997,15 +2007,16 @@ def _team_staff_card_files(team: models.Team) -> list[tuple[str, bytes]]:
     coaches = [c for c in team.coaches if (c.role or "Coach") != "Manager"]
     managers = [c for c in team.coaches if c.role == "Manager"]
     files: list[tuple[str, bytes]] = []
+    team_slug = _slug(team.name) or "team"
 
     def _add(c: "models.Coach | None", role: str):
         if c is not None:
             page = id_card.render_staff_id_card_page(c, team, _coach_photo_path(c))
-            slug = "".join(ch if ch.isalnum() or ch in " -_" else "_" for ch in c.full_name).strip() or role.lower()
-            name = f"{role}_{c.id}_{slug}.pdf"
+            slug = _slug(c.full_name) or role.lower()
+            name = f"{team_slug}_{role}_{c.id}_{slug}.pdf"
         else:
             page = id_card.render_blank_staff_card_page(role)
-            name = f"{role}_blank.pdf"
+            name = f"{team_slug}_{role}_blank.pdf"
         files.append((name, id_card.build_pdf([page])))
 
     if coaches:
@@ -2053,7 +2064,7 @@ def export_idcard_participant(participant_id: int, db: Session = Depends(get_db)
         raise HTTPException(400, f"{participant.full_name}'s age group ({participant.age_group}) is inactive for this team — their ID card is not available.")
     card = id_card.render_id_card_page(participant, participant.team, _photo_path(participant))
     pdf = id_card.build_pdf([card])
-    return _pdf_response(pdf, f"idcard-{participant.registration_no or participant.id}.pdf")
+    return _pdf_response(pdf, f"idcard-{_slug(participant.team.name)}-{participant.registration_no or participant.id}.pdf")
 
 
 @router.get("/idcards/team/{team_id}.pdf", dependencies=[Depends(require_module("teams"))])
@@ -2073,7 +2084,7 @@ def export_idcard_team(team_id: int, db: Session = Depends(get_db)):
     # whenever there's room for them at that bigger size.
     groups = _team_card_groups(team.participants, team)
     pdf = id_card.build_pdf_sheets_with_staff_tail(groups, _team_staff_cards(team), layout=id_card.A4_SHEET, dpi=id_card.PRINT_DPI)
-    return _pdf_response(pdf, f"idcards-{team.school_code or team.id}.pdf")
+    return _pdf_response(pdf, f"idcards-{_slug(team.name)}-{team.school_code or team.id}.pdf")
 
 
 @router.get("/idcards/team/{team_id}/sheet-12x18.pdf", dependencies=[Depends(require_module("teams"))])
@@ -2090,7 +2101,7 @@ def export_idcard_team_12x18(team_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "This team has no participants to generate cards for")
     groups = _team_card_groups(team.participants, team)
     pdf = id_card.build_pdf_sheets_with_staff_tail(groups, _team_staff_cards(team), layout=id_card.SHEET_12X18, dpi=id_card.PRINT_DPI)
-    return _pdf_response(pdf, f"idcards-{team.school_code or team.id}-12x18.pdf")
+    return _pdf_response(pdf, f"idcards-{_slug(team.name)}-{team.school_code or team.id}-12x18.pdf")
 
 
 @router.get("/idcards/team/{team_id}/individual.zip", dependencies=[Depends(require_module("teams"))])
@@ -2107,7 +2118,7 @@ def export_idcard_team_individual(team_id: int, db: Session = Depends(get_db)):
     if not team.participants:
         raise HTTPException(404, "This team has no participants to generate cards for")
     files = _individual_card_files(team.participants, {team.id: team}) + _team_staff_card_files(team)
-    return _zip_response(files, f"idcards-{team.school_code or team.id}-individual.zip")
+    return _zip_response(files, f"idcards-{_slug(team.name)}-{team.school_code or team.id}-individual.zip")
 
 
 @router.get("/idcards/all.pdf", dependencies=[Depends(require_module("teams"))])
@@ -2184,7 +2195,7 @@ def export_idcard_coach(coach_id: int, db: Session = Depends(get_db)):
     page = id_card.render_staff_id_card_page(coach, coach.team, _coach_photo_path(coach))
     pdf = id_card.build_pdf([page])
     role_slug = (coach.role or "coach").lower()
-    return _pdf_response(pdf, f"{role_slug}-idcard-{coach.id}.pdf")
+    return _pdf_response(pdf, f"{role_slug}-idcard-{_slug(coach.team.name)}-{coach.id}.pdf")
 
 
 # Coach/Manager-sized grids (id_card.staff_sheet_layout), not the plain
