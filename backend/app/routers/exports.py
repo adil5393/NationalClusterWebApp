@@ -1929,8 +1929,14 @@ def _active_participants(participants: list[models.Participant]) -> list[models.
     password-gated POST /participants/{id}/active) never renders an ID
     card, in any export, without needing every call site to remember the
     filter itself. Members of an inactive team (Team.is_active) are
-    excluded too."""
-    return [p for p in participants if p.is_active and p.team.is_active]
+    excluded too, and so is anyone whose specific age group has been
+    individually benched (TeamInactiveAgeGroup) even though their team is
+    still active overall."""
+    return [
+        p for p in participants
+        if p.is_active and p.team.is_active
+        and not any(g.age_group == p.age_group for g in p.team.inactive_age_groups)
+    ]
 
 
 def _individual_card_files(participants: list[models.Participant], team_by_id: dict[int, models.Team]) -> list[tuple[str, bytes]]:
@@ -2043,6 +2049,8 @@ def export_idcard_participant(participant_id: int, db: Session = Depends(get_db)
         raise HTTPException(400, "This participant is inactive — their ID card is not available.")
     if not participant.team.is_active:
         raise HTTPException(400, "This team is inactive — ID cards are not available.")
+    if any(g.age_group == participant.age_group for g in participant.team.inactive_age_groups):
+        raise HTTPException(400, f"{participant.full_name}'s age group ({participant.age_group}) is inactive for this team — their ID card is not available.")
     card = id_card.render_id_card_page(participant, participant.team, _photo_path(participant))
     pdf = id_card.build_pdf([card])
     return _pdf_response(pdf, f"idcard-{participant.registration_no or participant.id}.pdf")

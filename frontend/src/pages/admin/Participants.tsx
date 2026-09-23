@@ -52,6 +52,7 @@ interface Team {
   id: number;
   name: string;
   is_active?: boolean;
+  inactive_age_groups?: string[];
 }
 
 const PAGE_SIZE = 25;
@@ -143,6 +144,14 @@ export default function Participants() {
 
   const teamName = (tid?: number) => teams.find((t) => t.id === tid)?.name || "—";
   const teamInactive = (tid?: number) => teams.find((t) => t.id === tid)?.is_active === false;
+  const ageGroupInactive = (tid?: number, ageGroup?: string) =>
+    !!ageGroup && !!teams.find((t) => t.id === tid)?.inactive_age_groups?.includes(ageGroup);
+  // ID cards never render for an inactive participant, an inactive team, or
+  // a participant whose specific age group has been individually benched
+  // (TeamInactiveAgeGroup) even though the team itself is still active —
+  // mirrors the same three checks the backend's _active_participants makes.
+  const idCardBlocked = (p: Participant) =>
+    !(p.is_active ?? true) || teamInactive(p.team_id) || ageGroupInactive(p.team_id, p.age_group);
   const presentCount = participants.filter((p) => p.is_present).length;
 
   const filtered = useMemo(() => {
@@ -838,11 +847,11 @@ export default function Participants() {
 
                   <div className="border-t border-white/10 pt-2.5 flex items-center gap-2 min-w-0">
                     <a
-                      href={!(p.is_active ?? true) || teamInactive(p.team_id) ? undefined : `${BASE_URL}/api/export/idcards/participant/${p.id}.pdf`}
-                      aria-disabled={!(p.is_active ?? true) || teamInactive(p.team_id)}
+                      href={idCardBlocked(p) ? undefined : `${BASE_URL}/api/export/idcards/participant/${p.id}.pdf`}
+                      aria-disabled={idCardBlocked(p)}
                       className={cn(
                         "inline-flex h-8 flex-1 min-w-0 items-center justify-center gap-1.5 rounded-md border text-xs font-semibold transition-colors px-2",
-                        (!(p.is_active ?? true) || teamInactive(p.team_id))
+                        idCardBlocked(p)
                           ? "border-white/10 bg-white/5 text-slate-500 cursor-not-allowed pointer-events-none"
                           : p.photo_url
                           ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
@@ -852,7 +861,7 @@ export default function Participants() {
                     >
                       <IdCard className={cn("h-3.5 w-3.5 shrink-0", p.photo_url ? "text-emerald-400" : "text-red-400")} />
                       <span className="truncate">
-                        {(p.is_active ?? true) && !teamInactive(p.team_id) ? "Download ID Card" : "Inactive — No ID Card"}
+                        {idCardBlocked(p) ? "Inactive — No ID Card" : "Download ID Card"}
                       </span>
                     </a>
                     {canEdit && (
@@ -1075,15 +1084,11 @@ export default function Participants() {
                       <TD className="text-right">
                         <div className="flex items-center justify-end gap-1">
                           <a
-                            href={
-                              (p.is_active ?? true) && !teamInactive(p.team_id)
-                                ? `${BASE_URL}/api/export/idcards/participant/${p.id}.pdf`
-                                : undefined
-                            }
-                            aria-disabled={!(p.is_active ?? true) || teamInactive(p.team_id)}
+                            href={idCardBlocked(p) ? undefined : `${BASE_URL}/api/export/idcards/participant/${p.id}.pdf`}
+                            aria-disabled={idCardBlocked(p)}
                             className={cn(
                               "inline-flex items-center justify-center gap-2 rounded-md font-body tracking-wide transition-colors h-8 w-8 p-0",
-                              !(p.is_active ?? true)
+                              idCardBlocked(p)
                                 ? "text-slate-600 cursor-not-allowed pointer-events-none"
                                 : p.photo_url
                                 ? "text-emerald-500 hover:bg-emerald-500/10 hover:text-emerald-400"
@@ -1091,7 +1096,7 @@ export default function Participants() {
                             )}
                             data-testid={`download-idcard-${p.id}`}
                             title={
-                              !(p.is_active ?? true) || teamInactive(p.team_id)
+                              idCardBlocked(p)
                                 ? "Inactive — ID card not available"
                                 : p.photo_url
                                 ? "Download ID Card (PDF) — photo uploaded"
