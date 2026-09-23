@@ -246,6 +246,10 @@ class TeamPublic(ORMModel):
     country: Optional[str] = None
     member_count: Optional[int] = None
     photos: List[TeamPhotoPublic] = []
+    # The CBSE cluster this team won/qualified through — public visitors see
+    # it as a badge on the Teams directory.
+    cluster: Optional[str] = None
+    is_active: bool = True
 
 
 # --- Buildings / Floors / Rooms ---

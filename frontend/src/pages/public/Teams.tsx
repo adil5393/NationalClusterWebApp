@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { SearchInput } from "@/components/ui/input";
 import { TeamAvatar } from "@/components/ui/team-badge";
 import { Tabs } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 
 interface Team {
   id: number;
@@ -18,6 +19,8 @@ interface Team {
   country?: string;
   member_count?: number;
   photos: { thumbnail: string; view: string }[];
+  cluster?: string | null;
+  is_active?: boolean;
 }
 
 function TeamCardPhoto({ team }: { team: Team }) {
@@ -43,6 +46,72 @@ function TeamCardPhoto({ team }: { team: Team }) {
         </div>
       )}
     </div>
+  );
+}
+
+function TeamCard({ team: t }: { team: Team }) {
+  const isIndia = (t.country || "").toLowerCase() === "india";
+  const inactive = t.is_active === false;
+  return (
+    <Link
+      to={`/teams/${t.id}`}
+      data-testid={`team-card-${t.id}`}
+      className={cn(
+        "group relative flex flex-col justify-between overflow-hidden rounded-xl border border-white/10 bg-obsidian-900/90 transition-all duration-200 hover:-translate-y-1 hover:border-gold/50 hover:bg-obsidian-800 shadow-sm",
+        inactive && "opacity-60 grayscale hover:opacity-100 hover:grayscale-0",
+      )}
+    >
+      <TeamCardPhoto team={t} />
+
+      <div className="flex flex-1 flex-col justify-between p-5">
+        <div>
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <TeamAvatar name={t.name} size="md" tone={isIndia ? "gold" : "coral"} />
+              <div className="min-w-0">
+                <h3 className="font-heading text-base font-bold text-white group-hover:text-gold transition-colors truncate">
+                  {t.name}
+                </h3>
+                {t.school && (
+                  <p className="text-xs text-slate-400 font-body truncate">{t.school}</p>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-col items-end gap-1 shrink-0">
+              {inactive && <Badge tone="coral">Inactive</Badge>}
+              <Badge tone={isIndia ? "gold" : "coral"}>{t.country || "General"}</Badge>
+            </div>
+          </div>
+
+          {(t.region || t.school_code || t.cluster) && (
+            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400 font-body">
+              {t.region && (
+                <span className="flex items-center gap-1.5">
+                  <Shield className="h-3.5 w-3.5 text-slate-500" /> {t.region}
+                </span>
+              )}
+              {t.cluster && (
+                <span className="flex items-center gap-1.5">
+                  <Flag className="h-3.5 w-3.5 text-slate-500" /> Cluster {t.cluster}
+                </span>
+              )}
+              {t.school_code && (
+                <span className="font-mono text-[11px] text-slate-500">#{t.school_code}</span>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-5 flex items-center justify-between border-t border-white/10 pt-3 text-xs">
+          <span className="font-body text-slate-400 flex items-center gap-1">
+            <Users className="h-3.5 w-3.5 text-slate-500" /> Squad Members:
+          </span>
+          <span className="font-heading font-black text-white tabular-nums">
+            {t.member_count ?? "—"}
+          </span>
+        </div>
+      </div>
+    </Link>
   );
 }
 
@@ -93,6 +162,13 @@ export default function PublicTeams() {
     );
   }, [teams, q, countryFilter]);
 
+  // Active and inactive delegations render in their own sections rather
+  // than mixed together — a withdrawn/benched school is still worth
+  // showing (visitors may still look it up), just clearly set apart from
+  // who's actually competing.
+  const activeTeams = useMemo(() => filtered.filter((t) => t.is_active !== false), [filtered]);
+  const inactiveTeams = useMemo(() => filtered.filter((t) => t.is_active === false), [filtered]);
+
   return (
     <div
       className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8 py-12 md:py-16 text-slate-100 min-h-screen"
@@ -121,7 +197,7 @@ export default function PublicTeams() {
           <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-obsidian-900 px-3.5 py-2">
             <Users className="h-4 w-4 text-gold" />
             <span className="text-xs font-bold text-white font-heading">
-              {teams.length} Registered Teams
+              {teams.filter((t) => t.is_active !== false).length} Active Teams
             </span>
           </div>
         </div>
@@ -160,73 +236,41 @@ export default function PublicTeams() {
           />
         </div>
       ) : (
-        <div
-          className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
-          data-testid="team-grid"
-        >
-          {filtered.map((t) => {
-            const isIndia = (t.country || "").toLowerCase() === "india";
-            return (
-              <Link
-                key={t.id}
-                to={`/teams/${t.id}`}
-                data-testid={`team-card-${t.id}`}
-                className="group relative flex flex-col justify-between overflow-hidden rounded-xl border border-white/10 bg-obsidian-900/90 transition-all duration-200 hover:-translate-y-1 hover:border-gold/50 hover:bg-obsidian-800 shadow-sm"
+        <>
+          {activeTeams.length > 0 && (
+            <div className="mt-8">
+              <div
+                className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+                data-testid="team-grid"
               >
-                <TeamCardPhoto team={t} />
+                {activeTeams.map((t) => (
+                  <TeamCard key={t.id} team={t} />
+                ))}
+              </div>
+            </div>
+          )}
 
-                <div className="flex flex-1 flex-col justify-between p-5">
-                  <div>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <TeamAvatar
-                          name={t.name}
-                          size="md"
-                          tone={isIndia ? "gold" : "coral"}
-                        />
-                        <div className="min-w-0">
-                          <h3 className="font-heading text-base font-bold text-white group-hover:text-gold transition-colors truncate">
-                            {t.name}
-                          </h3>
-                          {t.school && (
-                            <p className="text-xs text-slate-400 font-body truncate">
-                              {t.school}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      <Badge tone={isIndia ? "gold" : "coral"}>
-                        {t.country || "General"}
-                      </Badge>
-                    </div>
-
-                    {(t.region || t.school_code) && (
-                      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400 font-body">
-                        {t.region && (
-                          <span className="flex items-center gap-1.5">
-                            <Shield className="h-3.5 w-3.5 text-slate-500" /> {t.region}
-                          </span>
-                        )}
-                        {t.school_code && (
-                          <span className="font-mono text-[11px] text-slate-500">#{t.school_code}</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="mt-5 flex items-center justify-between border-t border-white/10 pt-3 text-xs">
-                    <span className="font-body text-slate-400 flex items-center gap-1">
-                      <Users className="h-3.5 w-3.5 text-slate-500" /> Squad Members:
-                    </span>
-                    <span className="font-heading font-black text-white tabular-nums">
-                      {t.member_count ?? "—"}
-                    </span>
-                  </div>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
+          {inactiveTeams.length > 0 && (
+            <div className="mt-10">
+              <div className="flex items-center gap-2 border-b border-white/10 pb-2.5">
+                <h2 className="font-heading text-sm font-bold uppercase tracking-wider text-slate-400">
+                  Inactive Teams
+                </h2>
+                <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-mono text-slate-500">
+                  {inactiveTeams.length}
+                </span>
+              </div>
+              <div
+                className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+                data-testid="team-grid-inactive"
+              >
+                {inactiveTeams.map((t) => (
+                  <TeamCard key={t.id} team={t} />
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

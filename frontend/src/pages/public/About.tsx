@@ -33,6 +33,7 @@ interface Team {
   region?: string | null;
   country?: string | null;
   member_count?: number | null;
+  is_active?: boolean;
 }
 
 interface Tournament {
@@ -64,7 +65,10 @@ export default function About() {
       api.get<ScheduleEvent[]>("/public/schedule"),
     ]).then(([teamsRes, tournsRes, schedRes]) => {
       if (teamsRes.status === "fulfilled" && Array.isArray(teamsRes.value.data)) {
-        setTeams(teamsRes.value.data);
+        // The public teams endpoint now returns inactive teams too (so
+        // Teams.tsx can show them in their own section) — these stats stay
+        // scoped to who's actually competing, same as before that change.
+        setTeams(teamsRes.value.data.filter((t) => t.is_active !== false));
       }
       if (tournsRes.status === "fulfilled" && Array.isArray(tournsRes.value.data)) {
         setTournaments(tournsRes.value.data);
