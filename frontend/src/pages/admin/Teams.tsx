@@ -545,6 +545,7 @@ export default function AdminTeams() {
   const [arrivalFilter, setArrivalFilter] = useState<"all" | "arrived" | "not_arrived">("all");
   const [awardFilter, setAwardFilter] = useState<"all" | "has_award" | "no_award">("all");
   const [clusterFilter, setClusterFilter] = useState("all");
+  const [ageGroupFilter, setAgeGroupFilter] = useState("all");
   const [globalPhotoLock, setGlobalPhotoLock] = useState(false);
   const [globalPhotoLockBusy, setGlobalPhotoLockBusy] = useState(false);
 
@@ -761,13 +762,22 @@ export default function AdminTeams() {
     [teams],
   );
 
+  const ageGroupOptions = useMemo(
+    () =>
+      Array.from(new Set(teams.flatMap((t) => Object.keys(t.age_group_counts ?? {})))).sort(
+        (a, b) => ageGroupRank(a) - ageGroupRank(b) || a.localeCompare(b),
+      ),
+    [teams],
+  );
+
   const filtersActive =
-    statusFilter !== "all" || arrivalFilter !== "all" || awardFilter !== "all" || clusterFilter !== "all";
+    statusFilter !== "all" || arrivalFilter !== "all" || awardFilter !== "all" || clusterFilter !== "all" || ageGroupFilter !== "all";
   const clearFilters = () => {
     setStatusFilter("all");
     setArrivalFilter("all");
     setAwardFilter("all");
     setClusterFilter("all");
+    setAgeGroupFilter("all");
   };
 
   const filtered = teams.filter((t) => {
@@ -785,6 +795,7 @@ export default function AdminTeams() {
     if (awardFilter === "has_award" && (t.last_year_awards?.length ?? 0) === 0) return false;
     if (awardFilter === "no_award" && (t.last_year_awards?.length ?? 0) > 0) return false;
     if (clusterFilter !== "all" && t.cluster !== clusterFilter) return false;
+    if (ageGroupFilter !== "all" && (t.age_group_counts?.[ageGroupFilter] ?? 0) === 0) return false;
     return true;
   });
 
@@ -948,6 +959,22 @@ export default function AdminTeams() {
             {clusterOptions.map((c) => (
               <option key={c} value={c}>
                 Cluster {c}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-heading font-bold uppercase tracking-wider text-slate-500">Age Group</span>
+          <select
+            value={ageGroupFilter}
+            onChange={(e) => setAgeGroupFilter(e.target.value)}
+            data-testid="age-group-filter-select"
+            className="rounded-lg border border-white/10 bg-obsidian-900 px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-gold/50"
+          >
+            <option value="all">All</option>
+            {ageGroupOptions.map((g) => (
+              <option key={g} value={g}>
+                {g}
               </option>
             ))}
           </select>
