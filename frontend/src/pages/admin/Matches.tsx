@@ -378,6 +378,7 @@ function RoundMatchesList({
         <Table className="mt-2">
           <THead>
             <TR>
+              <TH className="w-12">#</TH>
               <TH>Match Fixture</TH>
               <TH>Squad Attendance</TH>
               <TH className="min-w-[210px]">Court &amp; Schedule</TH>
@@ -393,6 +394,7 @@ function RoundMatchesList({
                 data-testid={`match-row-${m.id}`}
                 className={me?.assigned_match_ids?.includes(m.id) ? "bg-gold/5 border-l-2 border-l-gold" : undefined}
               >
+                <TD className="font-mono text-xs text-slate-500">{m.match_number}</TD>
                 <TD className="font-heading font-bold text-white text-sm">
                   {matchLabel(m)}
                   {m.winner_team_name && (
