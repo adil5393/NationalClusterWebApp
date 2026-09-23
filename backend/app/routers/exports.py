@@ -194,11 +194,18 @@ def export_teams_full_xlsx(db: Session = Depends(get_db)):
         m = re.search(r"(\d+)", g)
         return int(m.group(1)) if m else 999
 
+    def _age_group_code(g: str) -> str:
+        """"Under 14" -> "U14" — the short form used in the squad-breakdown
+        column, e.g. "U14-A" (Active) / "U14-B" (Benched)."""
+        m = re.search(r"(\d+)", g)
+        return f"U{m.group(1)}" if m else g
+
     def _squad_breakdown(team_id: int, team_active: bool) -> str:
         """Every age group this team either fields a roster in or has
         individually benched (the union — a bench entry with zero rostered
         players still matters, and so does a fielded squad with no bench
-        entry), each with its headcount and Active/Benched status. A wholly
+        entry), each as "U{age}-A" or "U{age}-B" (Active/Benched) with its
+        headcount alongside — e.g. "U14-B (8) | U17-A (10)". A wholly
         inactive team (Team.is_active False) shows every one of its groups
         as Benched regardless of TeamInactiveAgeGroup, since is_active
         benches everything at once; TeamInactiveAgeGroup only ever adds
@@ -210,8 +217,9 @@ def export_teams_full_xlsx(db: Session = Depends(get_db)):
             return "—"
         parts = []
         for g in groups:
-            status = "Benched" if (not team_active or g in benched) else "Active"
-            parts.append(f"{g}: {counts.get(g, 0)} ({status})")
+            is_benched = not team_active or g in benched
+            code = _age_group_code(g)
+            parts.append(f"{code}-{'B' if is_benched else 'A'} ({counts.get(g, 0)})")
         return " | ".join(parts)
 
     def _active_roster_size(team_id: int, team_active: bool) -> int:
@@ -271,7 +279,7 @@ def export_teams_full_xlsx(db: Session = Depends(get_db)):
         ("CLUSTER", 10, ALIGN_HEADER_CENTER),
         ("LABEL", 16, ALIGN_HEADER_LEFT),
         ("ACTIVE", 9, ALIGN_HEADER_CENTER),
-        ("AGE GROUP SQUADS (COUNT & STATUS)", 40, ALIGN_HEADER_LEFT),
+        ("AGE GROUP SQUADS (A=Active, B=Benched)", 40, ALIGN_HEADER_LEFT),
         ("ARRIVED", 9, ALIGN_HEADER_CENTER),
         ("ROSTER SIZE (ACTIVE)", 12, ALIGN_HEADER_CENTER),
         ("LAST YEAR AWARDS", 24, ALIGN_HEADER_LEFT),
