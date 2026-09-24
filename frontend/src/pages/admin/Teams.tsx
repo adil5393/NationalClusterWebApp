@@ -1032,9 +1032,17 @@ export default function AdminTeams() {
                 ? "1 team is Active but has every age group Inactive"
                 : `${teamsAllGroupsInactive.length} teams are Active but have every age group Inactive`}
             </p>
-            <p className="mt-0.5 text-amber-200/90 break-words">
-              {teamsAllGroupsInactive.map((t) => t.name).join(", ")}
-            </p>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {teamsAllGroupsInactive.map((t) => (
+                <span
+                  key={t.id}
+                  title={t.school && t.school !== t.name ? t.school : t.name}
+                  className="max-w-full truncate rounded-md border border-amber-500/30 bg-obsidian-900/70 px-2 py-1 font-heading font-semibold text-amber-100"
+                >
+                  {t.name}
+                </span>
+              ))}
+            </div>
             <p className="mt-0.5 text-amber-200/70">
               These teams get no matches or ID cards. Reactivate an age group, or mark the team Inactive.
             </p>
