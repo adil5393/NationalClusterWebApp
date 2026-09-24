@@ -46,13 +46,18 @@ interface Building {
 interface Team {
   id: number;
   name: string;
+  school?: string | null;
   cluster?: string | null;
   is_active?: boolean;
+  accommodation_status?: "none" | "partial" | "full";
+  age_group_counts?: Record<string, number>;
+  inactive_age_groups?: string[];
 }
 interface Participant {
   id: number;
   full_name: string;
   team_id: number;
+  age_group?: string | null;
 }
 
 interface RuleItem {
@@ -80,6 +85,23 @@ function romanToInt(roman: string) {
   return total;
 }
 
+function ageGroupRank(g: string) {
+  const m = g.match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : 999;
+}
+
+// AND, not OR: a team matches only if every selected age group is an
+// *active* one for it — it has players there and that age group hasn't been
+// benched (inactive_age_groups). U14 + U17 selected → only teams with both
+// active. An inactive team has no active age groups, so it never matches.
+// Empty `groups` means no age-group filter at all.
+function teamInAgeGroups(t: Team, groups: string[]) {
+  if (groups.length === 0) return true;
+  if (t.is_active === false) return false;
+  const inactive = new Set(t.inactive_age_groups ?? []);
+  return groups.every((g) => (t.age_group_counts?.[g] ?? 0) > 0 && !inactive.has(g));
+}
+
 export default function Accommodation() {
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [rooms, setRooms] = useState<RoomOpt[]>([]);
@@ -94,6 +116,9 @@ export default function Accommodation() {
   // downloads), so while allotting rooms for a cluster the report shows
   // exactly that cluster's allocations. "" = all clusters.
   const [cluster, setCluster] = useState("");
+  const [teamSearch, setTeamSearch] = useState("");
+  // Any number of age groups at once; empty = every age group.
+  const [ageGroups, setAgeGroups] = useState<string[]>([]);
   const [form, setForm] = useState({
     room_id: "",
     team_id: "",
@@ -144,6 +169,33 @@ export default function Accommodation() {
     [teams],
   );
   const clusterTeams = cluster ? teams.filter((t) => t.cluster === cluster) : teams;
+  const ageGroupOptions = useMemo(
+    () =>
+      Array.from(new Set(teams.flatMap((t) => Object.keys(t.age_group_counts ?? {})))).sort(
+        (a, b) => ageGroupRank(a) - ageGroupRank(b) || a.localeCompare(b),
+      ),
+    [teams],
+  );
+  const toggleAgeGroup = (g: string | null) => {
+    const next = g === null ? [] : ageGroups.includes(g) ? ageGroups.filter((x) => x !== g) : [...ageGroups, g];
+    setAgeGroups(next);
+    // Drop a team selection that no longer has every chosen age group active.
+    setForm((f) => {
+      const t = teams.find((x) => String(x.id) === f.team_id);
+      return t && !teamInAgeGroups(t, next) ? { ...f, team_id: "", participant_id: "" } : f;
+    });
+  };
+  const visibleParticipants =
+    ageGroups.length === 0 ? participants : participants.filter((p) => !!p.age_group && ageGroups.includes(p.age_group));
+  // Team picker cards: active teams first, then inactive, each alphabetical.
+  const pickerTeams = useMemo(() => {
+    const q = teamSearch.trim().toLowerCase();
+    return clusterTeams
+      .filter((t) => !q || [t.name, t.school].some((v) => v?.toLowerCase().includes(q)))
+      .filter((t) => teamInAgeGroups(t, ageGroups))
+      .sort((a, b) => Number(a.is_active === false) - Number(b.is_active === false) || a.name.localeCompare(b.name));
+  }, [clusterTeams, teamSearch, ageGroups]);
+  const allottedCount = pickerTeams.filter((t) => (t.accommodation_status ?? "none") !== "none").length;
   const visibleAssignments = cluster ? assignments.filter((a) => a.team_cluster === cluster) : assignments;
   const exportQuery = cluster ? `?cluster=${encodeURIComponent(cluster)}` : "";
 
@@ -398,34 +450,107 @@ export default function Accommodation() {
               ))}
             </Select>
           </div>
-
-          <div>
-            <Label>Team Delegation *</Label>
-            <Select
-              value={form.team_id}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, team_id: e.target.value, participant_id: "" }))
-              }
-              data-testid="assign-team-select"
-            >
-              <option value="">Select team…</option>
-              <optgroup label="Active Teams">
-                {clusterTeams.filter((t) => t.is_active !== false).map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Inactive Teams">
-                {clusterTeams.filter((t) => t.is_active === false).map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} (Inactive)
-                  </option>
-                ))}
-              </optgroup>
-            </Select>
+          <div className="sm:col-span-1 lg:col-span-3">
+            <Label>Find Team</Label>
+            <Input
+              value={teamSearch}
+              onChange={(e) => setTeamSearch(e.target.value)}
+              placeholder="Search team or school…"
+              data-testid="assign-team-search"
+            />
           </div>
+        </div>
 
+        {ageGroupOptions.length > 0 && (
+          <div data-testid="assign-age-group-filter">
+            <Label>Age Group <span className="text-slate-500 font-normal normal-case tracking-normal">(select one or more)</span></Label>
+            <div className="flex flex-wrap gap-1.5">
+              {[null, ...ageGroupOptions].map((g) => {
+                const on = g === null ? ageGroups.length === 0 : ageGroups.includes(g);
+                return (
+                  <button
+                    key={g ?? "all"}
+                    type="button"
+                    onClick={() => toggleAgeGroup(g)}
+                    aria-pressed={on}
+                    data-testid={`assign-age-group-${g ?? "all"}`}
+                    className={cn(
+                      "rounded-md border px-2.5 py-1 text-xs font-heading font-bold transition-colors",
+                      on
+                        ? "border-gold/50 bg-gold/15 text-gold"
+                        : "border-white/10 bg-obsidian-950 text-slate-400 hover:text-white",
+                    )}
+                  >
+                    {g === null ? "All" : g.replace(/under\s*(\d+)/i, "U$1")}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* TEAM PICKER — one card per team, green once it has a room allotted, red while it has none */}
+        <div data-testid="assign-team-picker">
+          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+            <Label className="mb-0">Team Delegation *</Label>
+            <div className="flex items-center gap-3 text-[10px] font-heading font-bold uppercase tracking-wider">
+              <span className="inline-flex items-center gap-1 text-emerald-400">
+                <span className="h-2 w-2 rounded-sm bg-emerald-500" /> Allotted ({allottedCount})
+              </span>
+              <span className="inline-flex items-center gap-1 text-red-400">
+                <span className="h-2 w-2 rounded-sm bg-red-500" /> Not Allotted ({pickerTeams.length - allottedCount})
+              </span>
+            </div>
+          </div>
+          {pickerTeams.length === 0 ? (
+            <p className="rounded-lg border border-white/10 bg-obsidian-950 p-3 text-xs text-slate-400 font-body">
+              No teams match{cluster ? ` in Cluster ${cluster}` : ""}
+              {ageGroups.length > 0 ? ` with all of ${ageGroups.join(" + ")} active` : ""}.
+            </p>
+          ) : (
+            <div className="grid max-h-72 gap-2 overflow-y-auto pr-1 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {pickerTeams.map((t) => {
+                const status = t.accommodation_status ?? "none";
+                const allotted = status !== "none";
+                const selected = form.team_id === String(t.id);
+                const inactive = t.is_active === false;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() =>
+                      setForm((f) => ({ ...f, team_id: selected ? "" : String(t.id), participant_id: "" }))
+                    }
+                    data-testid={`assign-team-card-${t.id}`}
+                    aria-pressed={selected}
+                    title={t.school && t.school !== t.name ? t.school : t.name}
+                    className={cn(
+                      "min-w-0 rounded-lg border px-2.5 py-2 text-left transition-all",
+                      allotted
+                        ? "border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20"
+                        : "border-red-500/40 bg-red-500/10 hover:bg-red-500/20",
+                      selected && "ring-2 ring-gold ring-offset-1 ring-offset-obsidian-900",
+                      inactive && "opacity-60",
+                    )}
+                  >
+                    <p className={cn("truncate font-heading text-xs font-bold", allotted ? "text-emerald-200" : "text-red-200")}>
+                      {t.name}
+                    </p>
+                    <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10px] font-mono">
+                      <span className={allotted ? "text-emerald-400" : "text-red-400"}>
+                        {status === "full" ? "Allotted" : status === "partial" ? "Partially allotted" : "Not allotted"}
+                      </span>
+                      {t.cluster && <span className="text-slate-400">· Cluster {t.cluster}</span>}
+                      {inactive && <span className="text-slate-400">· Inactive</span>}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
           {mode === "participant" && (
             <div>
               <Label>Individual Athlete *</Label>
@@ -438,7 +563,7 @@ export default function Accommodation() {
                 <option value="">
                   {form.team_id ? "Select participant…" : "Select team first"}
                 </option>
-                {participants.map((p) => (
+                {visibleParticipants.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.full_name}
                   </option>
