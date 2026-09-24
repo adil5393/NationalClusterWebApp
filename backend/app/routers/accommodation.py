@@ -206,6 +206,7 @@ def assignments(db: Session = Depends(get_db)):
             "building_name": building.name if building else None,
             "team_id": a.team_id,
             "team_name": a.team.name if a.team else None,
+            "team_cluster": a.team.cluster if a.team else None,
             "participant_id": a.participant_id,
             "participant_name": participant.full_name if participant else None,
             "bed_id": a.bed_id,

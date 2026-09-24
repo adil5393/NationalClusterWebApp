@@ -440,8 +440,22 @@ def export_teams_full_xlsx(db: Session = Depends(get_db)):
     )
 
 
+def _room_assignments(db: Session, cluster: "str | None") -> list[models.AccommodationAssignment]:
+    """Every accommodation assignment, or only those whose team belongs to
+    `cluster` — the admin Accommodation page passes its selected cluster
+    through so the downloaded report matches what's shown on screen."""
+    q = db.query(models.AccommodationAssignment)
+    if cluster:
+        q = q.join(models.Team, models.AccommodationAssignment.team_id == models.Team.id).filter(models.Team.cluster == cluster)
+    return q.all()
+
+
+def _cluster_suffix(cluster: "str | None") -> str:
+    return f"-cluster-{_slug(cluster)}" if cluster else ""
+
+
 @router.get("/rooms.csv", dependencies=[Depends(require_module("accommodation"))])
-def export_room_allocation(db: Session = Depends(get_db)):
+def export_room_allocation(cluster: "str | None" = Query(None), db: Session = Depends(get_db)):
     participant_counts = dict(
         db.query(models.Participant.team_id, func.count(models.Participant.id))
         .group_by(models.Participant.team_id)
@@ -454,7 +468,7 @@ def export_room_allocation(db: Session = Depends(get_db)):
         .all()
     )
     rows = []
-    for a in db.query(models.AccommodationAssignment).all():
+    for a in _room_assignments(db, cluster):
         room = a.room
         floor = room.floor if room else None
         building = floor.building if floor else None
@@ -466,17 +480,20 @@ def export_room_allocation(db: Session = Depends(get_db)):
             a.bed.label if a.bed else "",
             participant.full_name if participant else "(whole team)",
             a.team.name if a.team else "",
+            (a.team.cluster or "") if a.team else "",
             participant_counts.get(a.team_id, 0) if a.team_id else "",
             participant_present_counts.get(a.team_id, 0) if a.team_id else "",
         ])
     return _csv_response(
-        ["Building", "Floor", "Room", "Bed", "Occupant", "Team", "Allotted", "Filled"], rows, "room-allocation.csv"
+        ["Building", "Floor", "Room", "Bed", "Occupant", "Team", "Cluster", "Allotted", "Filled"],
+        rows,
+        f"room-allocation{_cluster_suffix(cluster)}.csv",
     )
 
 
 @router.get("/rooms.xlsx", dependencies=[Depends(require_module("accommodation"))])
-def export_room_allocation_xlsx(db: Session = Depends(get_db)):
-    assignments = db.query(models.AccommodationAssignment).all()
+def export_room_allocation_xlsx(cluster: "str | None" = Query(None), db: Session = Depends(get_db)):
+    assignments = _room_assignments(db, cluster)
     # Allotted = that assignment's team's total registered participants;
     # Filled = how many of those are actually checked in (Participant.
     # is_present) — lets an organizer see at a glance whether a room's team
@@ -496,12 +513,12 @@ def export_room_allocation_xlsx(db: Session = Depends(get_db)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Room Allocations"
-    max_cols = 8
+    max_cols = 9
 
     next_row = style_header_banner(
         ws,
         tournament_name="ACCOMMODATION & ROOM ALLOCATION",
-        subtitle="Building, Floor, Room, Bed & Assigned Occupant Details",
+        subtitle="Building, Floor, Room, Bed & Assigned Occupant Details" + (f" — Cluster {cluster}" if cluster else ""),
         badge_text="OFFICIAL ALLOCATION EXPORT",
         max_col=max_cols,
         start_row=1,
@@ -529,6 +546,7 @@ def export_room_allocation_xlsx(db: Session = Depends(get_db)):
         ("BED LABEL", 14, ALIGN_HEADER_CENTER),
         ("OCCUPANT NAME", 24, ALIGN_HEADER_LEFT),
         ("TEAM AFFILIATION", 24, ALIGN_HEADER_LEFT),
+        ("CLUSTER", 10, ALIGN_HEADER_CENTER),
         ("ALLOTTED", 12, ALIGN_HEADER_CENTER),
         ("FILLED", 12, ALIGN_HEADER_CENTER),
     ]
@@ -560,6 +578,7 @@ def export_room_allocation_xlsx(db: Session = Depends(get_db)):
             (a.bed.label if a.bed else "(Any Bed)", ALIGN_CENTER, FONT_TD),
             (participant.full_name if participant else "(Whole Team)", ALIGN_LEFT, FONT_TD_BOLD),
             (a.team.name if a.team else "—", ALIGN_LEFT, FONT_TD),
+            ((a.team.cluster or "—") if a.team else "—", ALIGN_CENTER, FONT_TD),
             (allotted if a.team_id else "—", ALIGN_CENTER, FONT_TD),
             (filled if a.team_id else "—", ALIGN_CENTER, FONT_TD_BOLD),
         ]
@@ -585,16 +604,16 @@ def export_room_allocation_xlsx(db: Session = Depends(get_db)):
     return StreamingResponse(
         iter([buf.getvalue()]),
         media_type=XLSX_MEDIA_TYPE,
-        headers={"Content-Disposition": 'attachment; filename="room_allocations.xlsx"'},
+        headers={"Content-Disposition": f'attachment; filename="room_allocations{_cluster_suffix(cluster)}.xlsx"'},
     )
 
 
 @router.get("/rooms.pdf", dependencies=[Depends(require_module("accommodation"))])
-def export_room_allocation_pdf(db: Session = Depends(get_db)):
+def export_room_allocation_pdf(cluster: "str | None" = Query(None), db: Session = Depends(get_db)):
     """Printable PDF twin of rooms.xlsx above — same per-occupant Accommodation
     Report (who's in which bed), same source query, just laid out as a
     paginated table instead of a workbook."""
-    assignments = db.query(models.AccommodationAssignment).all()
+    assignments = _room_assignments(db, cluster)
     participant_counts = dict(
         db.query(models.Participant.team_id, func.count(models.Participant.id))
         .group_by(models.Participant.team_id)
@@ -620,16 +639,21 @@ def export_room_allocation_pdf(db: Session = Depends(get_db)):
             a.bed.label if a.bed else "(Any Bed)",
             participant.full_name if participant else "(Whole Team)",
             a.team.name if a.team else "—",
+            (a.team.cluster or "—") if a.team else "—",
             participant_counts.get(a.team_id, 0) if a.team_id else "—",
             participant_present_counts.get(a.team_id, 0) if a.team_id else "—",
         ])
 
     pdf = build_table_pdf(
         title="ACCOMMODATION REPORT",
-        subtitle="Building, Floor, Room, Bed & Assigned Occupant Detail — Every Active Allocation",
-        headers=["Building", "Floor", "Room", "Bed", "Occupant", "Team", "Allotted", "Present"],
+        subtitle=(
+            f"Building, Floor, Room, Bed & Assigned Occupant Detail — Cluster {cluster}"
+            if cluster
+            else "Building, Floor, Room, Bed & Assigned Occupant Detail — Every Active Allocation"
+        ),
+        headers=["Building", "Floor", "Room", "Bed", "Occupant", "Team", "Cluster", "Allotted", "Present"],
         rows=rows,
-        col_widths=[3.5, 2.8, 2.2, 2.5, 4.5, 4.5, 2.2, 2.2],
+        col_widths=[3.5, 2.8, 2.2, 2.5, 4.5, 4.5, 1.8, 2.2, 2.2],
         kpis=[
             ("Total Allocations", str(len(assignments))),
             ("Rooms Assigned", str(len({a.room_id for a in assignments if a.room_id}))),
@@ -639,7 +663,7 @@ def export_room_allocation_pdf(db: Session = Depends(get_db)):
     return Response(
         content=pdf,
         media_type=PDF_MEDIA_TYPE,
-        headers={"Content-Disposition": 'attachment; filename="accommodation_report.pdf"'},
+        headers={"Content-Disposition": f'attachment; filename="accommodation_report{_cluster_suffix(cluster)}.pdf"'},
     )
 
 

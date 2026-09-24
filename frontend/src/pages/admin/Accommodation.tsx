@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus, Trash2, Pencil, BedDouble, Building, Users, CheckCircle2, AlertTriangle, Layers, ScrollText, Download, FileSpreadsheet, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
@@ -23,6 +23,7 @@ interface Assignment {
   floor_name?: string;
   building_name?: string;
   team_name?: string;
+  team_cluster?: string | null;
   participant_name?: string;
   bed_label?: string;
   notes?: string;
@@ -45,6 +46,7 @@ interface Building {
 interface Team {
   id: number;
   name: string;
+  cluster?: string | null;
   is_active?: boolean;
 }
 interface Participant {
@@ -65,6 +67,19 @@ const emptyRuleForm = { title: "", description: "", sequence: "0", is_published:
 
 type Mode = "team" | "participant";
 
+// Clusters are Roman numerals ("I".."XX") — a plain string sort would put
+// "X" before "IX", so this decodes each one for a proper numeric sort.
+function romanToInt(roman: string) {
+  const values: Record<string, number> = { I: 1, V: 5, X: 10, L: 50, C: 100 };
+  let total = 0;
+  for (let i = 0; i < roman.length; i++) {
+    const v = values[roman[i]] ?? 0;
+    const next = values[roman[i + 1]] ?? 0;
+    total += next > v ? -v : v;
+  }
+  return total;
+}
+
 export default function Accommodation() {
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [rooms, setRooms] = useState<RoomOpt[]>([]);
@@ -74,6 +89,11 @@ export default function Accommodation() {
   const [loading, setLoading] = useState(true);
 
   const [mode, setMode] = useState<Mode>("team");
+  // One cluster selection drives both the allocation form's team list and
+  // the Accommodation Report below (on screen and in its CSV/XLSX/PDF
+  // downloads), so while allotting rooms for a cluster the report shows
+  // exactly that cluster's allocations. "" = all clusters.
+  const [cluster, setCluster] = useState("");
   const [form, setForm] = useState({
     room_id: "",
     team_id: "",
@@ -115,6 +135,17 @@ export default function Accommodation() {
       .finally(() => setLoading(false));
   };
   useEffect(load, []);
+
+  const clusterOptions = useMemo(
+    () =>
+      Array.from(new Set(teams.map((t) => t.cluster).filter((c): c is string => !!c))).sort(
+        (a, b) => romanToInt(a) - romanToInt(b) || a.localeCompare(b),
+      ),
+    [teams],
+  );
+  const clusterTeams = cluster ? teams.filter((t) => t.cluster === cluster) : teams;
+  const visibleAssignments = cluster ? assignments.filter((a) => a.team_cluster === cluster) : assignments;
+  const exportQuery = cluster ? `?cluster=${encodeURIComponent(cluster)}` : "";
 
   // When assigning a participant, load that team's participants.
   useEffect(() => {
@@ -345,6 +376,30 @@ export default function Accommodation() {
 
         <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
           <div>
+            <Label>Cluster</Label>
+            <Select
+              value={cluster}
+              onChange={(e) => {
+                const v = e.target.value;
+                setCluster(v);
+                // Drop a team selection that isn't in the newly chosen cluster.
+                setForm((f) => {
+                  const t = teams.find((x) => String(x.id) === f.team_id);
+                  return v && t && t.cluster !== v ? { ...f, team_id: "", participant_id: "" } : f;
+                });
+              }}
+              data-testid="assign-cluster-select"
+            >
+              <option value="">All clusters</option>
+              {clusterOptions.map((c) => (
+                <option key={c} value={c}>
+                  Cluster {c}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <div>
             <Label>Team Delegation *</Label>
             <Select
               value={form.team_id}
@@ -355,14 +410,14 @@ export default function Accommodation() {
             >
               <option value="">Select team…</option>
               <optgroup label="Active Teams">
-                {teams.filter((t) => t.is_active !== false).map((t) => (
+                {clusterTeams.filter((t) => t.is_active !== false).map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name}
                   </option>
                 ))}
               </optgroup>
               <optgroup label="Inactive Teams">
-                {teams.filter((t) => t.is_active === false).map((t) => (
+                {clusterTeams.filter((t) => t.is_active === false).map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name} (Inactive)
                   </option>
@@ -537,25 +592,26 @@ export default function Accommodation() {
       <div>
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h2 className="font-heading text-xs font-bold uppercase tracking-wider text-slate-400">
-            Active Allocations ({assignments.length}) — Accommodation Report
+            Active Allocations ({visibleAssignments.length}) — Accommodation Report
+            {cluster && <span className="ml-1.5 text-gold">· Cluster {cluster}</span>}
           </h2>
           <div className="flex items-center gap-2">
             <a
-              href={`${BASE_URL}/api/export/rooms.csv`}
+              href={`${BASE_URL}/api/export/rooms.csv${exportQuery}`}
               className="inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-white/5 px-2.5 py-1.5 text-xs font-heading font-bold text-slate-200 hover:bg-white/10 hover:text-white transition-colors"
               data-testid="export-accommodation-csv-btn"
             >
               <Download className="h-3.5 w-3.5 text-slate-400" /> CSV
             </a>
             <a
-              href={`${BASE_URL}/api/export/rooms.xlsx`}
+              href={`${BASE_URL}/api/export/rooms.xlsx${exportQuery}`}
               className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-heading font-bold text-emerald-300 hover:bg-emerald-500/20 transition-colors"
               data-testid="export-accommodation-xlsx-btn"
             >
               <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" /> XLSX
             </a>
             <a
-              href={`${BASE_URL}/api/export/rooms.pdf`}
+              href={`${BASE_URL}/api/export/rooms.pdf${exportQuery}`}
               className="inline-flex items-center gap-1.5 rounded-md border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-xs font-heading font-bold text-red-300 hover:bg-red-500/20 transition-colors"
               data-testid="export-accommodation-pdf-btn"
             >
@@ -564,10 +620,10 @@ export default function Accommodation() {
           </div>
         </div>
 
-        {assignments.length === 0 ? (
+        {visibleAssignments.length === 0 ? (
           <div className="rounded-xl border border-white/10 bg-obsidian-900 p-6">
             <EmptyState
-              title="No room assignments yet"
+              title={cluster ? `No room assignments for Cluster ${cluster} yet` : "No room assignments yet"}
               hint="Use the allocation workspace above to assign teams or athletes."
             />
           </div>
@@ -575,7 +631,7 @@ export default function Accommodation() {
           <>
             {/* MOBILE: CARD LIST */}
             <div className="grid gap-2.5 lg:hidden">
-              {assignments.map((a, i) => (
+              {visibleAssignments.map((a, i) => (
                 <div
                   key={a.id}
                   data-testid={`assignment-card-${a.id}`}
@@ -600,6 +656,11 @@ export default function Accommodation() {
                     </Button>
                   </div>
                   <div className="flex flex-wrap gap-1.5 border-t border-white/5 pt-2 text-[11px]">
+                    {a.team_cluster && (
+                      <span className="rounded bg-white/5 px-2 py-0.5 text-slate-300 font-mono" title="Cluster">
+                        Cluster {a.team_cluster}
+                      </span>
+                    )}
                     <span className="rounded bg-white/5 px-2 py-0.5 text-slate-300 font-mono">
                       {a.building_name || "Building"}
                     </span>
@@ -621,6 +682,7 @@ export default function Accommodation() {
                   <TR>
                     <TH className="w-12">#</TH>
                     <TH>Team Delegation</TH>
+                    <TH>Cluster</TH>
                     <TH>Athlete / Allocation</TH>
                     <TH>Building</TH>
                     <TH>Floor</TH>
@@ -629,10 +691,11 @@ export default function Accommodation() {
                   </TR>
                 </THead>
                 <TBody>
-                  {assignments.map((a, i) => (
+                  {visibleAssignments.map((a, i) => (
                     <TR key={a.id} data-testid={`assignment-row-${a.id}`}>
                       <TD className="text-slate-500 font-mono text-xs">{i + 1}</TD>
                       <TD className="font-bold text-white text-sm">{a.team_name || "—"}</TD>
+                      <TD className="text-slate-300 text-xs font-mono">{a.team_cluster || "—"}</TD>
                       <TD>
                         {a.participant_name ? (
                           <span className="text-slate-200 text-xs font-body">
