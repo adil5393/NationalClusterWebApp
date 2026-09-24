@@ -17,7 +17,7 @@ from .. import id_card, models
 from ..config import to_event_tz
 from ..database import get_db
 from ..pdf_report import build_table_pdf
-from .accommodation import room_report_rows
+from .accommodation import assignment_age_group, room_report_rows
 from .event_locations import resolve_duty_location_hierarchy
 from ..excel_styler import (
     ALIGN_CENTER,
@@ -481,11 +481,12 @@ def export_room_allocation(cluster: "str | None" = Query(None), db: Session = De
             participant.full_name if participant else "(whole team)",
             a.team.name if a.team else "",
             (a.team.cluster or "") if a.team else "",
+            assignment_age_group(a, participant),
             participant_counts.get(a.team_id, 0) if a.team_id else "",
             participant_present_counts.get(a.team_id, 0) if a.team_id else "",
         ])
     return _csv_response(
-        ["Building", "Floor", "Room", "Bed", "Occupant", "Team", "Cluster", "Allotted", "Filled"],
+        ["Building", "Floor", "Room", "Bed", "Occupant", "Team", "Cluster", "Age Group", "Allotted", "Filled"],
         rows,
         f"room-allocation{_cluster_suffix(cluster)}.csv",
     )
@@ -513,7 +514,7 @@ def export_room_allocation_xlsx(cluster: "str | None" = Query(None), db: Session
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Room Allocations"
-    max_cols = 9
+    max_cols = 10
 
     next_row = style_header_banner(
         ws,
@@ -547,6 +548,7 @@ def export_room_allocation_xlsx(cluster: "str | None" = Query(None), db: Session
         ("OCCUPANT NAME", 24, ALIGN_HEADER_LEFT),
         ("TEAM AFFILIATION", 24, ALIGN_HEADER_LEFT),
         ("CLUSTER", 10, ALIGN_HEADER_CENTER),
+        ("AGE GROUP", 14, ALIGN_HEADER_CENTER),
         ("ALLOTTED", 12, ALIGN_HEADER_CENTER),
         ("FILLED", 12, ALIGN_HEADER_CENTER),
     ]
@@ -579,6 +581,7 @@ def export_room_allocation_xlsx(cluster: "str | None" = Query(None), db: Session
             (participant.full_name if participant else "(Whole Team)", ALIGN_LEFT, FONT_TD_BOLD),
             (a.team.name if a.team else "—", ALIGN_LEFT, FONT_TD),
             ((a.team.cluster or "—") if a.team else "—", ALIGN_CENTER, FONT_TD),
+            (assignment_age_group(a, participant) or "—", ALIGN_CENTER, FONT_TD),
             (allotted if a.team_id else "—", ALIGN_CENTER, FONT_TD),
             (filled if a.team_id else "—", ALIGN_CENTER, FONT_TD_BOLD),
         ]
@@ -640,6 +643,7 @@ def export_room_allocation_pdf(cluster: "str | None" = Query(None), db: Session 
             participant.full_name if participant else "(Whole Team)",
             a.team.name if a.team else "—",
             (a.team.cluster or "—") if a.team else "—",
+            assignment_age_group(a, participant) or "—",
             participant_counts.get(a.team_id, 0) if a.team_id else "—",
             participant_present_counts.get(a.team_id, 0) if a.team_id else "—",
         ])
@@ -651,9 +655,9 @@ def export_room_allocation_pdf(cluster: "str | None" = Query(None), db: Session 
             if cluster
             else "Building, Floor, Room, Bed & Assigned Occupant Detail — Every Active Allocation"
         ),
-        headers=["Building", "Floor", "Room", "Bed", "Occupant", "Team", "Cluster", "Allotted", "Present"],
+        headers=["Building", "Floor", "Room", "Bed", "Occupant", "Team", "Cluster", "Age Group", "Allotted", "Present"],
         rows=rows,
-        col_widths=[3.5, 2.8, 2.2, 2.5, 4.5, 4.5, 1.8, 2.2, 2.2],
+        col_widths=[3.2, 2.5, 2.0, 2.2, 4.2, 4.2, 1.7, 2.7, 2.0, 2.0],
         kpis=[
             ("Total Allocations", str(len(assignments))),
             ("Rooms Assigned", str(len({a.room_id for a in assignments if a.room_id}))),

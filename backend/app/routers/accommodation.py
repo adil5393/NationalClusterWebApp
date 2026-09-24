@@ -1,4 +1,6 @@
 """Accommodation: assign teams/participants to rooms + live occupancy per building."""
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -6,6 +8,28 @@ from .. import models, schemas
 from ..database import get_db
 
 router = APIRouter(prefix="/api/accommodation", tags=["accommodation"])
+
+
+def _age_group_code(g: str) -> str:
+    """"Under 14" -> "U14"."""
+    m = re.search(r"(\d+)", g)
+    return f"U{m.group(1)}" if m else g
+
+
+def assignment_age_group(a: models.AccommodationAssignment, participant: "models.Participant | None") -> str:
+    """The Accommodation Report's Age Group cell, shared by the on-screen
+    report (GET /assignments) and its CSV/XLSX/PDF exports. An individual
+    (bed) allotment shows that athlete's own age group; a whole-team one
+    shows every age group the team currently fields as active — has players
+    in it and hasn't benched it (TeamInactiveAgeGroup) — e.g. "U14, U17"."""
+    if participant is not None:
+        return _age_group_code(participant.age_group) if participant.age_group else ""
+    if not a.team:
+        return ""
+    benched = {g.age_group for g in a.team.inactive_age_groups}
+    groups = {p.age_group for p in a.team.participants if p.age_group and p.age_group not in benched}
+    ranked = sorted(groups, key=lambda g: (int(m.group(1)) if (m := re.search(r"(\d+)", g)) else 999, g))
+    return ", ".join(_age_group_code(g) for g in ranked)
 
 
 def _room_context(room: models.Room):
@@ -207,6 +231,7 @@ def assignments(db: Session = Depends(get_db)):
             "team_id": a.team_id,
             "team_name": a.team.name if a.team else None,
             "team_cluster": a.team.cluster if a.team else None,
+            "age_group": assignment_age_group(a, participant) or None,
             "participant_id": a.participant_id,
             "participant_name": participant.full_name if participant else None,
             "bed_id": a.bed_id,

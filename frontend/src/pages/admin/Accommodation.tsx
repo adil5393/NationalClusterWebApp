@@ -24,6 +24,9 @@ interface Assignment {
   building_name?: string;
   team_name?: string;
   team_cluster?: string | null;
+  // "U14" for an individual allotment, the team's active age groups
+  // ("U14, U17") for a whole-team one — see accommodation.assignment_age_group.
+  age_group?: string | null;
   participant_name?: string;
   bed_label?: string;
   notes?: string;
@@ -786,6 +789,11 @@ export default function Accommodation() {
                         Cluster {a.team_cluster}
                       </span>
                     )}
+                    {a.age_group && (
+                      <span className="rounded bg-white/5 px-2 py-0.5 text-slate-300 font-mono" title="Age Group">
+                        {a.age_group}
+                      </span>
+                    )}
                     <span className="rounded bg-white/5 px-2 py-0.5 text-slate-300 font-mono">
                       {a.building_name || "Building"}
                     </span>
@@ -808,6 +816,7 @@ export default function Accommodation() {
                     <TH className="w-12">#</TH>
                     <TH>Team Delegation</TH>
                     <TH>Cluster</TH>
+                    <TH>Age Group</TH>
                     <TH>Athlete / Allocation</TH>
                     <TH>Building</TH>
                     <TH>Floor</TH>
@@ -821,6 +830,7 @@ export default function Accommodation() {
                       <TD className="text-slate-500 font-mono text-xs">{i + 1}</TD>
                       <TD className="font-bold text-white text-sm">{a.team_name || "—"}</TD>
                       <TD className="text-slate-300 text-xs font-mono">{a.team_cluster || "—"}</TD>
+                      <TD className="text-slate-300 text-xs font-mono">{a.age_group || "—"}</TD>
                       <TD>
                         {a.participant_name ? (
                           <span className="text-slate-200 text-xs font-body">
