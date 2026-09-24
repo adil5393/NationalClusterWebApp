@@ -245,11 +245,21 @@ class TeamPublic(ORMModel):
     region: Optional[str] = None
     country: Optional[str] = None
     member_count: Optional[int] = None
+    active_participant_count: int = 0
     photos: List[TeamPhotoPublic] = []
     # The CBSE cluster this team won/qualified through — public visitors see
     # it as a badge on the Teams directory.
     cluster: Optional[str] = None
     is_active: bool = True
+    has_arrived: bool = False
+    age_groups: List[str] = []
+    age_group_counts: dict[str, int] = {}
+    gender: Optional[str] = None
+    genders: List[str] = []
+    inactive_age_groups: List[str] = []
+    is_accommodation_set: bool = False
+    accommodation_status: str = "Not Set"
+
 
 
 # --- Buildings / Floors / Rooms ---

@@ -19,6 +19,8 @@ import {
   Camera,
   CheckCircle2,
   Crop,
+  Flag,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import Cropper, { type Area } from "react-easy-crop";
@@ -47,9 +49,13 @@ interface TeamDetail {
   id: number;
   name: string;
   school?: string;
+  school_code?: string;
+  affiliation_number?: string | null;
+  cluster?: string | null;
   region?: string;
   country?: string;
   member_count?: number;
+  active_participant_count?: number;
   photos: { thumbnail: string; view: string }[];
   coaches: Coach[];
   has_hidden_contacts?: boolean;
@@ -58,10 +64,13 @@ interface TeamDetail {
     full_name: string;
     role?: string;
     age_group?: string;
+    is_active?: boolean;
     photo_uploads_locked?: boolean;
     photo_url?: string | null;
     photo_finalized?: boolean;
   }[];
+  is_accommodation_set?: boolean;
+  accommodation_status?: string;
   accommodation: { room?: string; floor?: string; building?: string; notes?: string }[];
   transport: {
     vehicle?: string;
@@ -72,11 +81,61 @@ interface TeamDetail {
   }[];
   schedule: { title: string; venue?: string; start_time?: string; end_time?: string }[];
   photo_uploads_locked?: boolean;
+  is_active?: boolean;
+  has_arrived?: boolean;
+  inactive_age_groups?: string[];
+  age_groups?: string[];
+  age_group_counts?: Record<string, number>;
+  gender?: string | null;
+  genders?: string[];
+}
+
+function normalizeAgeGroup(ag?: string): string {
+  if (!ag) return "";
+  const s = ag.trim();
+  const m = s.match(/under\s*(\d+)/i) || s.match(/u[-]?(\d+)/i);
+  return m ? `U-${m[1]}` : s;
 }
 
 function ageGroupRank(g: string) {
   const m = g.match(/(\d+)/);
   return m ? parseInt(m[1], 10) : 999;
+}
+
+function getAllTeamAgeGroups(team: TeamDetail): string[] {
+  const groups = new Set<string>();
+
+  if (team.age_groups && Array.isArray(team.age_groups)) {
+    team.age_groups.forEach((g) => {
+      const norm = normalizeAgeGroup(g);
+      if (norm) groups.add(norm);
+    });
+  }
+
+  if (team.age_group_counts) {
+    Object.keys(team.age_group_counts).forEach((g) => {
+      const norm = normalizeAgeGroup(g);
+      if (norm) groups.add(norm);
+    });
+  }
+
+  if (team.inactive_age_groups && Array.isArray(team.inactive_age_groups)) {
+    team.inactive_age_groups.forEach((g) => {
+      const norm = normalizeAgeGroup(g);
+      if (norm) groups.add(norm);
+    });
+  }
+
+  if (team.participants) {
+    team.participants.forEach((p) => {
+      if (p.age_group) {
+        const norm = normalizeAgeGroup(p.age_group);
+        if (norm) groups.add(norm);
+      }
+    });
+  }
+
+  return Array.from(groups).sort((a, b) => ageGroupRank(a) - ageGroupRank(b) || a.localeCompare(b));
 }
 
 function groupByAge(participants: TeamDetail["participants"]) {
@@ -525,6 +584,29 @@ export default function TeamPortal() {
   }
 
   const isIndia = (team.country || "").toLowerCase() === "india";
+  const isTeamInactive = team.is_active === false;
+
+  const inactiveAgeGroupsSet = new Set(
+    (team.inactive_age_groups ?? []).map(normalizeAgeGroup)
+  );
+  const allAgeGroups = getAllTeamAgeGroups(team);
+  const activeAgeGroups = allAgeGroups.filter(
+    (ag) => !isTeamInactive && !inactiveAgeGroupsSet.has(ag)
+  );
+  const inactiveAgeGroups = allAgeGroups.filter(
+    (ag) => isTeamInactive || inactiveAgeGroupsSet.has(ag)
+  );
+
+  const activeParticipantsCount =
+    isTeamInactive
+      ? 0
+      : team.participants && team.participants.length > 0
+        ? team.participants.filter(
+            (p) => p.is_active !== false && !inactiveAgeGroupsSet.has(normalizeAgeGroup(p.age_group))
+          ).length
+        : typeof team.active_participant_count === "number"
+          ? team.active_participant_count
+          : team.member_count ?? 0;
 
   return (
     <div
@@ -546,10 +628,10 @@ export default function TeamPortal() {
             <TeamAvatar
               name={team.name}
               size="lg"
-              tone={isIndia ? "gold" : "coral"}
+              tone={isTeamInactive ? "neutral" : isIndia ? "gold" : "coral"}
               className="h-16 w-16 text-xl sm:h-20 sm:w-20 sm:text-2xl"
             />
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <div className="flex flex-wrap items-center gap-2.5">
                 <h1 className="font-heading text-2xl sm:text-3xl md:text-4xl font-black tracking-tight text-white">
                   {team.name}
@@ -557,22 +639,107 @@ export default function TeamPortal() {
                 <Badge tone={isIndia ? "gold" : "coral"}>
                   {team.country || "General"}
                 </Badge>
+                {isTeamInactive ? (
+                  <span className="inline-flex items-center rounded border border-red-500/40 bg-red-500/15 px-2.5 py-0.5 text-xs font-mono font-extrabold uppercase tracking-wide text-red-400">
+                    INACTIVE DELEGATION
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center rounded border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-0.5 text-xs font-mono font-extrabold uppercase tracking-wide text-emerald-400">
+                    ACTIVE DELEGATION
+                  </span>
+                )}
+                {team.has_arrived && (
+                  <span className="inline-flex items-center gap-1 rounded border border-emerald-500/35 bg-emerald-500/10 px-2 py-0.5 text-xs font-mono font-bold text-emerald-300">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                    ARRIVED
+                  </span>
+                )}
               </div>
               <p className="text-sm sm:text-base text-slate-300 font-body">
                 {team.school || "School Delegation"}
               </p>
-              <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-slate-400 font-body">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-1 text-xs text-slate-400 font-body">
+                {team.cluster && (
+                  <span className="flex items-center gap-1 text-slate-200 font-heading font-semibold">
+                    <Flag className="h-3.5 w-3.5 text-gold" />
+                    Cluster {team.cluster.replace(/^CLUSTER\s*/i, "")}
+                  </span>
+                )}
+                {(team.school_code || team.affiliation_number) && (
+                  <span className="font-mono text-slate-300 bg-white/5 border border-white/10 px-2 py-0.5 rounded">
+                    Code: <strong className="text-white">{team.school_code || team.affiliation_number}</strong>
+                  </span>
+                )}
                 {team.region && (
-                  <span className="flex items-center gap-1">
+                  <span className="flex items-center gap-1 text-slate-300">
                     <Shield className="h-3.5 w-3.5 text-gold" /> {team.region}
                   </span>
                 )}
-                <span>·</span>
-                <span className="flex items-center gap-1">
-                  <Users className="h-3.5 w-3.5 text-slate-400" />
-                  <strong className="text-white font-bold">{team.member_count ?? 0}</strong> Registered Members
+                <span className="flex items-center gap-1.5">
+                  <Users className="h-3.5 w-3.5 text-gold" />
+                  <strong className="text-white font-bold">{activeParticipantsCount}</strong> Active Participants
+                  {team.member_count !== undefined && team.member_count > activeParticipantsCount && (
+                    <span className="text-slate-500 font-mono text-[11px] ml-1">
+                      ({team.member_count} registered)
+                    </span>
+                  )}
                 </span>
+                {(() => {
+                  const isAccomSet = Boolean(
+                    team.is_accommodation_set ||
+                    team.accommodation_status === "Accomodation-Set" ||
+                    (team.accommodation && team.accommodation.length > 0)
+                  );
+                  return (
+                    <span
+                      title={isAccomSet ? "Accommodation is set for this team" : "Accommodation is not set"}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-xs font-mono font-bold tracking-wide",
+                        isAccomSet
+                          ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
+                          : "border-white/10 bg-white/5 text-slate-400"
+                      )}
+                    >
+                      <BedDouble className={cn("h-3.5 w-3.5", isAccomSet ? "text-emerald-400" : "text-slate-500")} />
+                      {isAccomSet ? "Accomodation-Set" : "Not Set"}
+                    </span>
+                  );
+                })()}
               </div>
+
+              {/* DEDICATED SQUAD CATEGORIES (ACTIVE VS INACTIVE AGE GROUPS) */}
+              {(activeAgeGroups.length > 0 || inactiveAgeGroups.length > 0) && (
+                <div className="mt-3.5 pt-3.5 border-t border-white/10 flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-heading font-bold uppercase tracking-wider text-slate-400">
+                    Squad Categories:
+                  </span>
+                  {activeAgeGroups.map((ag) => (
+                    <span
+                      key={`hero-act-${ag}`}
+                      title={`${ag}: Active competing squad`}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-gold/45 bg-gold/15 px-2.5 py-1 text-xs font-heading font-bold text-gold shadow-sm shadow-gold/5"
+                    >
+                      <span className="h-2 w-2 rounded-full bg-emerald-400 shrink-0" />
+                      {ag}
+                      <span className="text-[10px] font-mono uppercase font-black text-emerald-400 bg-emerald-500/15 px-1.5 py-0.2 rounded ml-0.5">
+                        Active
+                      </span>
+                    </span>
+                  ))}
+                  {inactiveAgeGroups.map((ag) => (
+                    <span
+                      key={`hero-inact-${ag}`}
+                      title={`${ag}: Inactive / Benched squad`}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/35 bg-red-500/10 px-2.5 py-1 text-xs font-heading font-semibold text-red-300"
+                    >
+                      <span className="line-through text-slate-400">{ag}</span>
+                      <span className="text-[10px] font-mono uppercase font-black text-red-400 bg-red-500/20 px-1.5 py-0.2 rounded ml-0.5">
+                        Benched / Inactive
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -760,28 +927,47 @@ export default function TeamPortal() {
         </SectionCard>
 
         {/* ACCOMMODATION */}
-        <SectionCard icon={BedDouble} title="Hostel & Room Allocation" badge={`${team.accommodation.length} Rooms`}>
-          {team.accommodation.length === 0 ? (
-            <p className="text-xs text-slate-400">Room assignments are currently being processed by organizing committee.</p>
-          ) : (
-            <ul className="space-y-2.5">
-              {team.accommodation.map((a, i) => (
-                <li key={i} className="rounded-lg border border-white/5 bg-white/[0.02] p-3 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-heading font-black text-sm text-gold">
-                      Room {a.room}
-                    </span>
-                    <span className="rounded bg-white/10 px-2 py-0.5 text-[10px] text-slate-300 font-mono">
-                      {a.building || "Hostel Block"}
-                    </span>
+        {(() => {
+          const isAccomSet = Boolean(
+            team.is_accommodation_set ||
+            team.accommodation_status === "Accomodation-Set" ||
+            (team.accommodation && team.accommodation.length > 0)
+          );
+
+          return (
+            <SectionCard
+              icon={BedDouble}
+              title="Accommodation"
+              badge={isAccomSet ? "Accomodation-Set" : "Not Set"}
+            >
+              {isAccomSet ? (
+                <div className="flex items-center gap-3.5 rounded-xl border border-emerald-500/35 bg-emerald-500/10 p-4 text-xs text-emerald-300">
+                  <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
+                  <div>
+                    <p className="font-heading text-sm font-bold text-emerald-300">
+                      Accomodation-Set
+                    </p>
+                    <p className="mt-0.5 text-slate-300 font-body">
+                      Hostel accommodation has been arranged and set for this school delegation.
+                    </p>
                   </div>
-                  {a.floor && <p className="text-slate-400 mt-1 font-body">Floor: {a.floor}</p>}
-                  {a.notes && <p className="text-slate-400 mt-1 font-body italic">{a.notes}</p>}
-                </li>
-              ))}
-            </ul>
-          )}
-        </SectionCard>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3.5 rounded-xl border border-white/10 bg-white/[0.02] p-4 text-xs text-slate-400">
+                  <BedDouble className="h-5 w-5 text-slate-500 shrink-0" />
+                  <div>
+                    <p className="font-heading text-sm font-bold text-slate-300">
+                      Not Set
+                    </p>
+                    <p className="mt-0.5 text-slate-400 font-body">
+                      Accommodation is currently not set for this school delegation.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </SectionCard>
+          );
+        })()}
 
         {/* TRANSPORT */}
         <SectionCard icon={Bus} title="Transit & Vehicle Assignments" badge={`${team.transport.length} Routes`}>
@@ -851,19 +1037,55 @@ export default function TeamPortal() {
             <p className="text-xs text-slate-400">Athlete roster verification in progress.</p>
           ) : (
             <div className="space-y-6 sm:space-y-8">
-              {groupByAge(team.participants).map(([group, members]) => (
-                <div key={group} className="space-y-3.5">
-                  <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
-                    <div className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-gold shadow-[0_0_8px_rgba(234,179,8,0.5)]" />
-                      <h3 className="font-heading text-xs sm:text-sm font-bold text-gold uppercase tracking-wider">
-                        {group}
-                      </h3>
+              {groupByAge(team.participants).map(([group, members]) => {
+                const normGroup = normalizeAgeGroup(group);
+                const isGroupInactive =
+                  isTeamInactive ||
+                  (team.inactive_age_groups ?? []).map(normalizeAgeGroup).includes(normGroup);
+
+                return (
+                  <div key={group} className="space-y-3.5">
+                    <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <span
+                          className={cn(
+                            "h-2.5 w-2.5 rounded-full shrink-0",
+                            isGroupInactive
+                              ? "bg-red-400 shadow-[0_0_8px_rgba(248,113,113,0.5)]"
+                              : "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]",
+                          )}
+                        />
+                        <h3
+                          className={cn(
+                            "font-heading text-xs sm:text-sm font-bold uppercase tracking-wider",
+                            isGroupInactive ? "text-slate-300" : "text-gold",
+                          )}
+                        >
+                          {group}
+                        </h3>
+                        {isGroupInactive ? (
+                          <span className="inline-flex items-center gap-1 rounded border border-red-500/40 bg-red-500/15 px-2 py-0.5 text-[10px] font-mono font-bold text-red-400 uppercase tracking-wide">
+                            <AlertTriangle className="h-3 w-3" /> Inactive / Benched
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded border border-emerald-500/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wide">
+                            <CheckCircle2 className="h-3 w-3" /> Active Squad
+                          </span>
+                        )}
+                      </div>
+                      <Badge tone={isGroupInactive ? "red" : "neutral"} size="sm">
+                        {isGroupInactive ? 0 : members.filter((m) => m.is_active !== false).length} Active / {members.length} {members.length === 1 ? "Athlete" : "Athletes"}
+                      </Badge>
                     </div>
-                    <Badge tone="neutral" size="sm">
-                      {members.length} {members.length === 1 ? "Athlete" : "Athletes"}
-                    </Badge>
-                  </div>
+
+                    {isGroupInactive && (
+                      <div className="rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-2.5 text-xs text-red-300 flex items-center gap-2.5 font-body">
+                        <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
+                        <span>
+                          This <strong>{group}</strong> squad is currently marked inactive or benched from tournament play.
+                        </span>
+                      </div>
+                    )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-3.5 min-w-0 w-full">
                     {[...members]
                       .sort((a, b) => a.full_name.localeCompare(b.full_name))
@@ -931,13 +1153,19 @@ export default function TeamPortal() {
                                   {p.role}
                                 </span>
                               )}
+                              {p.is_active === false && (
+                                <span className="shrink-0 rounded bg-red-500/20 text-red-400 px-1.5 py-0.5 text-[9px] font-mono font-bold uppercase tracking-wider border border-red-500/30">
+                                  Inactive
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
                       ))}
                   </div>
                 </div>
-              ))}
+              );
+            })}
             </div>
           )}
         </SectionCard>

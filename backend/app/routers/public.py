@@ -8,6 +8,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
@@ -38,22 +39,168 @@ def _drive_urls(raw: "str | None") -> "tuple[str | None, str | None]":
     return f"https://drive.google.com/thumbnail?id={file_id}&sz=w1000", f"https://drive.google.com/file/d/{file_id}/view"
 
 
+def _normalize_age_group(g: str) -> str:
+    s = (g or "").strip()
+    m = re.search(r"under\s*(\d+)", s, re.IGNORECASE)
+    if m:
+        return f"U-{m.group(1)}"
+    m2 = re.search(r"u[-]?(\d+)", s, re.IGNORECASE)
+    if m2:
+        return f"U-{m2.group(1)}"
+    return s
+
+
 @router.get("/teams", response_model=list[schemas.TeamPublic])
 def public_teams(db: Session = Depends(get_db)):
     """The public directory/listing — every team, active and inactive alike,
     each carrying its own is_active flag so the frontend can render them in
     separate sections (Teams.tsx: Active/Competing vs Inactive) rather than
     the backend deciding what a visitor gets to see. Also includes cluster
-    (the CBSE cluster this team won/qualified through). The single-team
-    portal (GET /teams/{id}) is unaffected either way — that's a direct
-    link shared with the team itself, not something a visitor browses to."""
+    (the CBSE cluster this team won/qualified through), age groups, gender,
+    and arrival status. The single-team portal (GET /teams/{id}) is unaffected
+    either way — that's a direct link shared with the team itself, not
+    something a visitor browses to."""
+    from .teams import _age_group_counts_map
+    from ..seed_cluster_winners_active import WINNERS
+
     teams = db.query(models.Team).order_by(models.Team.name).all()
+    team_ids = [t.id for t in teams]
+    age_group_counts = _age_group_counts_map(db, team_ids)
+
+    # Index CBSE winners by affiliation number and school name for fallbacks
+    winners_by_aff: dict[str, list[str]] = {}
+    winners_by_name: dict[str, list[str]] = {}
+    cluster_by_aff: dict[str, str] = {}
+    for w_cluster, w_age, w_aff, w_name in WINNERS:
+        if w_aff:
+            winners_by_aff.setdefault(str(w_aff).strip(), []).append(w_age)
+            cluster_by_aff[str(w_aff).strip()] = w_cluster
+        if w_name:
+            winners_by_name.setdefault(w_name.lower().strip(), []).append(w_age)
+
+    # Distinct participant genders per team
+    genders_by_team: dict[int, list[str]] = {}
+    if team_ids:
+        for team_id, gender in (
+            db.query(models.Participant.team_id, models.Participant.gender)
+            .filter(models.Participant.team_id.in_(team_ids), models.Participant.gender.isnot(None))
+            .distinct()
+            .all()
+        ):
+            if gender and str(gender).strip():
+                g = str(gender).strip()
+                norm = "Boys" if g.lower() in ("male", "boy", "boys") else ("Girls" if g.lower() in ("female", "girl", "girls") else g)
+                if norm not in genders_by_team.setdefault(team_id, []):
+                    genders_by_team[team_id].append(norm)
+
+    # Inactive age groups per team
+    inactive_groups_by_team: dict[int, list[str]] = {}
+    if team_ids:
+        for row in (
+            db.query(models.TeamInactiveAgeGroup)
+            .filter(models.TeamInactiveAgeGroup.team_id.in_(team_ids))
+            .all()
+        ):
+            norm_ag = _normalize_age_group(row.age_group)
+            if norm_ag not in inactive_groups_by_team.setdefault(row.team_id, []):
+                inactive_groups_by_team[row.team_id].append(norm_ag)
+
+    # Active participant counts (Participant.is_active is True and Participant.age_group is not None)
+    active_participant_counts: dict[int, dict[str, int]] = {}
+    if team_ids:
+        for team_id, age_group, count in (
+            db.query(models.Participant.team_id, models.Participant.age_group, func.count(models.Participant.id))
+            .filter(
+                models.Participant.team_id.in_(team_ids),
+                models.Participant.age_group.isnot(None),
+                models.Participant.is_active.isnot(False),
+            )
+            .group_by(models.Participant.team_id, models.Participant.age_group)
+            .all()
+        ):
+            active_participant_counts.setdefault(team_id, {})[age_group] = count
+
+    # Accommodation status per team
+    teams_with_accommodation = set()
+    if team_ids:
+        for (t_id,) in (
+            db.query(models.AccommodationAssignment.team_id)
+            .filter(models.AccommodationAssignment.team_id.in_(team_ids))
+            .distinct()
+            .all()
+        ):
+            if t_id:
+                teams_with_accommodation.add(t_id)
+
+        for (t_id,) in (
+            db.query(models.Participant.team_id)
+            .join(models.AccommodationAssignment, models.AccommodationAssignment.participant_id == models.Participant.id)
+            .filter(models.Participant.team_id.in_(team_ids))
+            .distinct()
+            .all()
+        ):
+            if t_id:
+                teams_with_accommodation.add(t_id)
+
     result = []
     for t in teams:
         photos = []
         for p in t.photos:
             thumbnail, view = _drive_urls(p.url)
             photos.append({"thumbnail": thumbnail, "view": view})
+
+        t_age_counts = age_group_counts.get(t.id, {})
+        normalized_counts: dict[str, int] = {}
+        for k, v in t_age_counts.items():
+            norm_k = _normalize_age_group(k)
+            normalized_counts[norm_k] = normalized_counts.get(norm_k, 0) + v
+
+        age_groups = list(normalized_counts.keys())
+        if not age_groups and t.affiliation_number:
+            aff_clean = str(t.affiliation_number).strip()
+            if aff_clean in winners_by_aff:
+                age_groups = [_normalize_age_group(g) for g in winners_by_aff[aff_clean]]
+        if not age_groups and t.name:
+            name_clean = t.name.lower().strip()
+            if name_clean in winners_by_name:
+                age_groups = [_normalize_age_group(g) for g in winners_by_name[name_clean]]
+        if not age_groups:
+            found_groups = re.findall(r"\bU-?(14|17|19)\b", f"{t.name} {t.school or ''}", re.IGNORECASE)
+            if found_groups:
+                age_groups = [f"U-{num}" for num in dict.fromkeys(found_groups)]
+
+        cluster_val = t.cluster
+        if not cluster_val and t.affiliation_number:
+            cluster_val = cluster_by_aff.get(str(t.affiliation_number).strip())
+
+        t_genders = genders_by_team.get(t.id, [])
+        if not t_genders:
+            t_genders = ["Boys"]
+        t_gender = t_genders[0] if len(t_genders) == 1 else ("Mixed" if len(t_genders) > 1 else "Boys")
+
+        t_inactive_groups = inactive_groups_by_team.get(t.id, [])
+
+        # Active participants in active age groups only
+        t_active_counts = active_participant_counts.get(t.id, {})
+        normalized_active_counts: dict[str, int] = {}
+        for k, v in t_active_counts.items():
+            norm_k = _normalize_age_group(k)
+            normalized_active_counts[norm_k] = normalized_active_counts.get(norm_k, 0) + v
+
+        if not t.is_active:
+            active_participant_count = 0
+        else:
+            active_participant_count = sum(
+                cnt for ag, cnt in normalized_active_counts.items()
+                if ag not in t_inactive_groups
+            )
+            # Fallback if no participant rows registered in DB yet:
+            if not normalized_counts and not t_inactive_groups:
+                active_participant_count = t.member_count or 0
+
+        is_accom_set = t.id in teams_with_accommodation
+        accom_status = "Accomodation-Set" if is_accom_set else "Not Set"
+
         result.append({
             "id": t.id,
             "name": t.name,
@@ -62,10 +209,19 @@ def public_teams(db: Session = Depends(get_db)):
             "affiliation_number": t.affiliation_number,
             "region": t.region,
             "country": t.country,
-            "member_count": t.member_count,
+            "member_count": active_participant_count,
+            "active_participant_count": active_participant_count,
             "photos": photos,
-            "cluster": t.cluster,
+            "cluster": cluster_val,
             "is_active": t.is_active,
+            "has_arrived": bool(t.has_arrived),
+            "age_groups": sorted(list(set(age_groups))),
+            "age_group_counts": normalized_counts,
+            "gender": t_gender,
+            "genders": t_genders,
+            "inactive_age_groups": t_inactive_groups,
+            "is_accommodation_set": is_accom_set,
+            "accommodation_status": accom_status,
         })
     return result
 
@@ -393,6 +549,7 @@ def public_team_detail(team_id: int, db: Session = Depends(get_db)):
             "full_name": p.full_name,
             "role": p.role,
             "age_group": p.age_group,
+            "is_active": p.is_active,
             "photo_url": p.photo_url,
             "photo_finalized": p.photo_finalized,
             "photo_uploads_locked": p.photo_uploads_locked_effective,
@@ -400,17 +557,15 @@ def public_team_detail(team_id: int, db: Session = Depends(get_db)):
         for p in team.participants
     ]
 
-    accommodation = []
-    for a in team.accommodation:
-        room = a.room
-        floor = room.floor if room else None
-        building = floor.building if floor else None
-        accommodation.append({
-            "room": room.name if room else None,
-            "floor": floor.name if floor else None,
-            "building": building.name if building else None,
-            "notes": a.notes,
-        })
+    # Check if accommodation is set for this team (no further details exposed for privacy/security)
+    has_accommodation = (
+        len(team.accommodation) > 0
+        or db.query(models.AccommodationAssignment)
+        .join(models.Participant, models.AccommodationAssignment.participant_id == models.Participant.id)
+        .filter(models.Participant.team_id == team.id)
+        .first() is not None
+    )
+    accom_status = "Accomodation-Set" if has_accommodation else "Not Set"
 
     transport = []
     for t in team.transport:
@@ -444,21 +599,80 @@ def public_team_detail(team_id: int, db: Session = Depends(get_db)):
         thumbnail, view = _drive_urls(p.url)
         photos.append({"thumbnail": thumbnail, "view": view})
 
+    # Inactive age groups
+    inactive_groups = [_normalize_age_group(r.age_group) for r in team.inactive_age_groups]
+
+    # Age groups & counts from participants
+    participant_age_counts: dict[str, int] = {}
+    for p in team.participants:
+        if p.age_group:
+            norm = _normalize_age_group(p.age_group)
+            participant_age_counts[norm] = participant_age_counts.get(norm, 0) + 1
+
+    age_groups = list(participant_age_counts.keys())
+    if not age_groups and team.affiliation_number:
+        from ..seed_cluster_winners_active import WINNERS
+        for w_cluster, w_age, w_aff, w_name in WINNERS:
+            if w_aff and str(w_aff).strip() == str(team.affiliation_number).strip():
+                norm = _normalize_age_group(w_age)
+                if norm not in age_groups:
+                    age_groups.append(norm)
+
+    cluster_val = team.cluster
+    if not cluster_val and team.affiliation_number:
+        from ..seed_cluster_winners_active import WINNERS
+        for w_cluster, w_age, w_aff, w_name in WINNERS:
+            if w_aff and str(w_aff).strip() == str(team.affiliation_number).strip():
+                cluster_val = w_cluster
+                break
+
+    genders = list(dict.fromkeys(
+        "Boys" if (p.gender or "").lower() in ("male", "boy", "boys")
+        else ("Girls" if (p.gender or "").lower() in ("female", "girl", "girls") else p.gender)
+        for p in team.participants if p.gender
+    ))
+    if not genders:
+        genders = ["Boys"]
+    gender_val = genders[0] if len(genders) == 1 else ("Mixed" if len(genders) > 1 else "Boys")
+
+    active_participant_count = 0
+    if team.is_active:
+        inactive_set = set(inactive_groups)
+        for p in team.participants:
+            norm_ag = _normalize_age_group(p.age_group) if p.age_group else ""
+            if p.is_active and norm_ag not in inactive_set:
+                active_participant_count += 1
+        if not team.participants and not inactive_groups:
+            active_participant_count = team.member_count or 0
+
     return {
         "id": team.id,
         "name": team.name,
         "school": team.school,
+        "school_code": team.school_code,
+        "affiliation_number": team.affiliation_number,
+        "cluster": cluster_val,
         "region": team.region,
         "country": team.country,
-        "member_count": team.member_count,
+        "member_count": active_participant_count,
+        "active_participant_count": active_participant_count,
         "photos": photos,
         "coaches": coaches,
         "has_hidden_contacts": has_hidden_contacts,
         "participants": participants,
-        "accommodation": accommodation,
+        "accommodation": [],  # no further details about accommodation
+        "is_accommodation_set": has_accommodation,
+        "accommodation_status": accom_status,
         "transport": transport,
         "schedule": schedule,
         "photo_uploads_locked": team.photo_uploads_locked_effective,
+        "is_active": team.is_active,
+        "has_arrived": bool(team.has_arrived),
+        "inactive_age_groups": inactive_groups,
+        "age_groups": sorted(list(set(age_groups))),
+        "age_group_counts": participant_age_counts,
+        "gender": gender_val,
+        "genders": genders,
     }
 
 
