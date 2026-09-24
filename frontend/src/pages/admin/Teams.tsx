@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, QrCode, Upload, Trophy, X, Shield, Users, Search, ImageIcon, IdCard, Receipt, Printer, FileArchive, Bus, Lock, Unlock, Phone, Mail, Calendar, Clock, MapPin } from "lucide-react";
+import { Plus, Pencil, Trash2, QrCode, Upload, Trophy, X, Shield, Users, Search, ImageIcon, IdCard, Receipt, Printer, FileArchive, Bus, Lock, Unlock, Phone, Mail, Calendar, Clock, MapPin, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -76,6 +76,30 @@ const MIN_SQUAD_SIZE = 12;
 function ageGroupRank(g: string) {
   const m = g.match(/(\d+)/);
   return m ? parseInt(m[1], 10) : 999;
+}
+
+// An active team whose every age group has been benched is effectively out
+// of the event (no matches, no ID cards) while still reading "Active" — worth
+// flagging so it's either reactivated per group or marked inactive outright.
+// Teams with no participants (no age groups at all) aren't flagged.
+function allAgeGroupsInactive(team: Team) {
+  if (team.is_active === false) return false;
+  const groups = Object.keys(team.age_group_counts ?? {});
+  if (groups.length === 0) return false;
+  const inactive = new Set(team.inactive_age_groups ?? []);
+  return groups.every((g) => inactive.has(g));
+}
+
+function AllAgeGroupsInactiveChip() {
+  return (
+    <span
+      title="Team is Active, but every age group is Inactive — no matches or ID cards for this team."
+      className="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-heading font-bold text-amber-300 text-left leading-tight"
+    >
+      <AlertTriangle className="h-3 w-3" />
+      All age groups inactive
+    </span>
+  );
 }
 
 // Clusters are Roman numerals ("I".."XX") — a plain string sort would put
@@ -291,6 +315,7 @@ function AgeGroupActiveCell({
           </button>
         );
       })}
+      {allAgeGroupsInactive(team) && <AllAgeGroupsInactiveChip />}
     </div>
   );
 }
@@ -780,6 +805,10 @@ export default function AdminTeams() {
     setAgeGroupFilter("all");
   };
 
+  // Across all teams, not just the filtered view — the banner shouldn't vanish
+  // just because a search or filter happens to hide the affected team.
+  const teamsAllGroupsInactive = teams.filter(allAgeGroupsInactive);
+
   const filtered = teams.filter((t) => {
     if (search.trim()) {
       const s = search.toLowerCase();
@@ -991,6 +1020,28 @@ export default function AdminTeams() {
         )}
       </div>
 
+      {!loading && teamsAllGroupsInactive.length > 0 && (
+        <div
+          data-testid="all-age-groups-inactive-warning"
+          className="flex items-start gap-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200"
+        >
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-400" />
+          <div className="min-w-0">
+            <p className="font-heading font-bold text-amber-300">
+              {teamsAllGroupsInactive.length === 1
+                ? "1 team is Active but has every age group Inactive"
+                : `${teamsAllGroupsInactive.length} teams are Active but have every age group Inactive`}
+            </p>
+            <p className="mt-0.5 text-amber-200/90 break-words">
+              {teamsAllGroupsInactive.map((t) => t.name).join(", ")}
+            </p>
+            <p className="mt-0.5 text-amber-200/70">
+              These teams get no matches or ID cards. Reactivate an age group, or mark the team Inactive.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* TEAMS CONTENT */}
       <div className="w-full min-w-0">
         {loading ? (
@@ -1159,6 +1210,7 @@ export default function AdminTeams() {
 
                     {/* ROW 3: CONSOLIDATED AGE GROUPS, SQUAD SIZES & AWARDS */}
                     <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                      {allAgeGroupsInactive(t) && <AllAgeGroupsInactiveChip />}
                       {ageEntries.map(([group, count]) => {
                         const active = !inactiveGroups.has(group);
                         const shortGroup = group.replace(/under\s*(\d+)/i, "U$1");
