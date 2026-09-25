@@ -576,6 +576,8 @@ def test_updating_staff_reflects_in_contacts(client, base_data):
             "phone": "+91 99999 77777",
             "languages": ["Hindi"],
             "designation": "Director of Logistics",
+            # Staff numbers are hidden on the public page unless marked public.
+            "phone_public": True,
         },
     )
     assert put_res.status_code == 200

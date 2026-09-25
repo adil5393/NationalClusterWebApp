@@ -232,11 +232,6 @@ export function Contacts() {
       return;
     }
 
-    if (form.primary_type === "staff" && !form.primary_staff_id) {
-      toast.error("Please select a primary staff member");
-      return;
-    }
-
     if (form.primary_type === "external" && !form.primary_name.trim()) {
       toast.error("Please enter a primary contact name");
       return;
@@ -256,7 +251,8 @@ export function Contacts() {
       };
 
       if (form.primary_type === "staff") {
-        payload.primary_staff_id = Number(form.primary_staff_id);
+        // Optional: a topic can rely on its backup contact / shift in-charge alone.
+        payload.primary_staff_id = form.primary_staff_id ? Number(form.primary_staff_id) : null;
         payload.primary_name = null;
         payload.primary_phone = null;
         payload.primary_email = null;
@@ -669,7 +665,7 @@ export function Contacts() {
 
             {form.primary_type === "staff" ? (
               <div className="space-y-2">
-                <Label htmlFor="primary_staff">Select Staff Member *</Label>
+                <Label htmlFor="primary_staff">Select Staff Member (optional)</Label>
                 <Select
                   id="primary_staff"
                   value={form.primary_staff_id}
@@ -682,9 +678,8 @@ export function Contacts() {
                       primary_role: st?.designation || "",
                     });
                   }}
-                  required
                 >
-                  <option value="">-- Choose from Staff Directory --</option>
+                  <option value="">-- None --</option>
                   {staffList.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.full_name} {s.phone ? `(${s.phone})` : ""} {s.designation ? `• ${s.designation}` : ""}

@@ -1019,7 +1019,24 @@ def public_contacts(db: Session = Depends(get_db)):
         .order_by(models.ContactGroup.display_order, models.ContactGroup.id)
         .all()
     )
-    return [_serialize_group(g, db, include_category_staff=False) for g in groups]
+    # A staff member's number only goes public when they're marked
+    # phone_public (Staff directory); everyone else's is blanked here, in every
+    # place a staff person can appear. External contacts (no staff record —
+    # hospitals, police, ...) keep their numbers.
+    public_phone_ids = {
+        sid for (sid,) in db.query(models.StaffMember.id).filter(models.StaffMember.phone_public.is_(True)).all()
+    }
+    out = []
+    for g in groups:
+        data = _serialize_group(g, db, include_category_staff=False)
+        for person in (data.current_incharge, data.primary_contact, data.secondary_contact):
+            if person and not person.is_external and person.id not in public_phone_ids:
+                person.phone = ""
+        for person in data.contacts:
+            if not person.is_external and person.id not in public_phone_ids:
+                person.phone = ""
+        out.append(data)
+    return out
 
 
 

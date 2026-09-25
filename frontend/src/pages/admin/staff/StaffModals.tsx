@@ -48,6 +48,7 @@ export function MemberFormDialog({
     category_ids: [] as number[],
     notes: "",
     languages: [] as string[],
+    phone_public: false,
   });
   const [saving, setSaving] = useState(false);
 
@@ -71,6 +72,7 @@ export function MemberFormDialog({
         category_ids: finalIds,
         notes: staffMember.notes || "",
         languages: staffMember.languages ?? [],
+        phone_public: !!staffMember.phone_public,
       });
     } else {
       setForm({
@@ -82,6 +84,7 @@ export function MemberFormDialog({
         category_ids: [],
         notes: "",
         languages: [],
+        phone_public: false,
       });
     }
   }, [staffMember, open, operationalCategories]);
@@ -98,6 +101,7 @@ export function MemberFormDialog({
       category_ids: form.category_ids,
       notes: form.notes.trim() || null,
       languages: form.languages,
+      phone_public: form.phone_public,
     };
     try {
       if (staffMember) {
@@ -154,6 +158,16 @@ export function MemberFormDialog({
               value={form.phone}
               onChange={(e) => setForm((m) => ({ ...m, phone: e.target.value }))}
             />
+            <label className="mt-1.5 flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={form.phone_public}
+                onChange={(e) => setForm((m) => ({ ...m, phone_public: e.target.checked }))}
+                className="rounded border-white/20 text-gold focus:ring-gold"
+                data-testid="staff-phone-public-checkbox"
+              />
+              Show this number on the public Contacts page
+            </label>
           </div>
         </div>
 

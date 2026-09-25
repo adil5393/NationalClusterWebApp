@@ -832,6 +832,10 @@ class StaffMember(TimestampMixin, Base):
     # Staff directory; later drives which contacts the public site shows for
     # a visitor's preferred language.
     languages = Column(JSON, nullable=False, default=list, server_default="[]")
+    # Whether `phone` may appear on the public Contacts page (see
+    # routers/public.py public_contacts). Off by default: staff numbers are
+    # organizer-only unless explicitly made public.
+    phone_public = Column(Boolean, nullable=False, default=False, server_default="false")
 
     categories = relationship(
         "OperationalCategory",

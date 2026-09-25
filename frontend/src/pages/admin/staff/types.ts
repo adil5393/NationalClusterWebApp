@@ -21,6 +21,8 @@ export interface StaffMember {
   category_ids?: number[];
   notes?: string | null;
   languages?: string[];
+  // Phone shown on the public Contacts page (backend StaffMember.phone_public).
+  phone_public?: boolean;
   login_username?: string | null;
 }
 

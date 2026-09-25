@@ -873,6 +873,8 @@ class StaffBase(BaseModel):
     notes: Optional[str] = None
     # Languages this person can communicate in (see STAFF_LANGUAGES).
     languages: List[str] = []
+    # Show `phone` on the public Contacts page (models.StaffMember.phone_public).
+    phone_public: bool = False
 
     _norm_languages = field_validator("languages", mode="before")(lambda cls, v: _normalize_languages(v))
 
@@ -890,6 +892,7 @@ class StaffUpdate(BaseModel):
     category_ids: Optional[List[int]] = None
     notes: Optional[str] = None
     languages: Optional[List[str]] = None
+    phone_public: Optional[bool] = None
 
     _norm_languages = field_validator("languages", mode="before")(
         lambda cls, v: None if v is None else _normalize_languages(v)
