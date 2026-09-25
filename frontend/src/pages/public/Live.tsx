@@ -1889,26 +1889,6 @@ export default function Live() {
           </p>
         </div>
 
-        {/* TOURNAMENT SELECTOR DROPDOWN */}
-        {tournaments.length > 0 && (
-          <div className="shrink-0">
-            <label className="block text-[10px] font-heading font-bold uppercase tracking-wider text-slate-400 mb-1">
-              Select Category
-            </label>
-            <select
-              value={selected ?? ""}
-              onChange={(e) => setSelected(Number(e.target.value))}
-              className="rounded-lg border border-white/15 bg-obsidian-900 px-4 py-2 text-xs sm:text-sm font-heading font-bold text-white transition-colors hover:border-gold focus:outline-none focus:ring-2 focus:ring-gold"
-              data-testid="public-tournament-select"
-            >
-              {tournaments.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
       </div>
 
       {/* LIVE NOW SECTION */}
@@ -1952,12 +1932,44 @@ export default function Live() {
               Championship Tournament Progression
             </h2>
           </div>
-          {selectedTournament && (
-            <span className="font-heading font-bold text-xs text-gold">
-              {selectedTournament.name}
-            </span>
-          )}
         </div>
+
+        {/* CATEGORY TABS — pick which category's bracket/pools show below */}
+        {tournaments.length > 1 && (
+          <div
+            className="-mx-4 px-4 sm:mx-0 sm:px-0 overflow-x-auto scrollbar-none"
+            role="tablist"
+            aria-label="Tournament category"
+            data-testid="public-tournament-tabs"
+          >
+            <div className="flex w-max min-w-full gap-1.5 rounded-xl border border-white/10 bg-obsidian-900/70 p-1">
+              {tournaments.map((t) => {
+                const active = t.id === selected;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setSelected(t.id)}
+                    className={cn(
+                      "shrink-0 whitespace-nowrap rounded-lg px-3.5 py-2 text-xs sm:text-sm font-heading font-bold transition-colors",
+                      active
+                        ? "bg-gold text-obsidian shadow-sm"
+                        : "text-slate-300 hover:bg-white/5 hover:text-white",
+                    )}
+                    data-testid={`public-tournament-tab-${t.id}`}
+                  >
+                    {t.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {tournaments.length === 1 && selectedTournament && (
+          <p className="font-heading font-bold text-xs text-gold">{selectedTournament.name}</p>
+        )}
 
         {!loading && tournaments.length === 0 && (
           <div className="rounded-xl border border-white/10 bg-obsidian-900 p-8 text-center text-xs text-slate-400">
