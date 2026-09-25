@@ -557,14 +557,33 @@ def public_team_detail(team_id: int, db: Session = Depends(get_db)):
         for p in team.participants
     ]
 
-    # Check if accommodation is set for this team (no further details exposed for privacy/security)
-    has_accommodation = (
-        len(team.accommodation) > 0
-        or db.query(models.AccommodationAssignment)
+    # Where this team is housed — building/floor/room only, one entry per
+    # distinct room, covering both whole-team allotments and individual (bed)
+    # allotments of its athletes. The public /campus "Find My Room" map and the
+    # Team Portal need these to pin/show the room. Deliberately NOT exposed:
+    # the organizer's free-text notes and which athlete sleeps in which bed.
+    individual_assignments = (
+        db.query(models.AccommodationAssignment)
         .join(models.Participant, models.AccommodationAssignment.participant_id == models.Participant.id)
         .filter(models.Participant.team_id == team.id)
-        .first() is not None
+        .all()
     )
+    accommodation = []
+    seen_rooms: set[int] = set()
+    for a in list(team.accommodation) + individual_assignments:
+        room = a.room
+        if not room or room.id in seen_rooms:
+            continue
+        seen_rooms.add(room.id)
+        floor = room.floor
+        building = floor.building if floor else None
+        accommodation.append({
+            "room": room.name,
+            "floor": floor.name if floor else None,
+            "building": building.name if building else None,
+        })
+    accommodation.sort(key=lambda r: (r["building"] or "", r["floor"] or "", r["room"] or ""))
+    has_accommodation = bool(team.accommodation) or bool(individual_assignments)
     accom_status = "Accomodation-Set" if has_accommodation else "Not Set"
 
     transport = []
@@ -660,7 +679,7 @@ def public_team_detail(team_id: int, db: Session = Depends(get_db)):
         "coaches": coaches,
         "has_hidden_contacts": has_hidden_contacts,
         "participants": participants,
-        "accommodation": [],  # no further details about accommodation
+        "accommodation": accommodation,
         "is_accommodation_set": has_accommodation,
         "accommodation_status": accom_status,
         "transport": transport,
