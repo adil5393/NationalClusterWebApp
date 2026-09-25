@@ -45,6 +45,8 @@ export default function AdminGallery() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  // "3 of 12" while a multi-photo upload is in progress.
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [uploadTag, setUploadTag] = useState("Day 1");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -72,25 +74,40 @@ export default function AdminGallery() {
     return Array.from(map.entries()).sort((a, b) => naturalCompare(a[0], b[0]));
   }, [photos]);
 
+  // One request per photo rather than all selected photos in one: keeps each
+  // request well under the server's per-request size limit however many are
+  // picked, and one bad/oversized photo only fails itself, not the batch.
   const uploadFiles = async (files: File[]) => {
     if (files.length === 0) return;
+    const tag = uploadTag.trim() || "General";
     setUploading(true);
+    setUploadProgress({ done: 0, total: files.length });
+    let uploadedCount = 0;
     try {
-      const fd = new FormData();
-      for (const f of files) fd.append("files", f);
-      fd.append("tag", uploadTag.trim() || "General");
-      const r = await api.post<{ uploaded: Photo[]; errors: string[] }>("/gallery/photos", fd, {
-        headers: { "Content-Type": undefined } as any,
-      });
-      if (r.data.uploaded.length > 0) {
-        setPhotos((prev) => [...prev, ...r.data.uploaded]);
-        toast.success(`${r.data.uploaded.length} photo${r.data.uploaded.length === 1 ? "" : "s"} uploaded to "${uploadTag}"`);
+      for (const [i, f] of files.entries()) {
+        try {
+          const fd = new FormData();
+          fd.append("files", f);
+          fd.append("tag", tag);
+          const r = await api.post<{ uploaded: Photo[]; errors: string[] }>("/gallery/photos", fd, {
+            headers: { "Content-Type": undefined } as any,
+          });
+          if (r.data.uploaded.length > 0) {
+            uploadedCount += r.data.uploaded.length;
+            setPhotos((prev) => [...prev, ...r.data.uploaded]);
+          }
+          for (const err of r.data.errors) toast.error(err);
+        } catch (e: any) {
+          toast.error(`${f.name}: ${e?.response?.data?.detail ?? "upload failed"}`);
+        }
+        setUploadProgress({ done: i + 1, total: files.length });
       }
-      for (const err of r.data.errors) toast.error(err);
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail ?? "Upload failed");
+      if (uploadedCount > 0) {
+        toast.success(`${uploadedCount} photo${uploadedCount === 1 ? "" : "s"} uploaded to "${tag}"`);
+      }
     } finally {
       setUploading(false);
+      setUploadProgress(null);
     }
   };
 
@@ -198,7 +215,11 @@ export default function AdminGallery() {
             className="text-xs font-bold"
             data-testid="bulk-upload-btn"
           >
-            <UploadCloud className="h-4 w-4" /> {uploading ? "Uploading…" : "Bulk Upload Photos"}
+            <UploadCloud className="h-4 w-4" /> {uploading
+              ? uploadProgress && uploadProgress.total > 1
+                ? `Uploading ${uploadProgress.done} of ${uploadProgress.total}…`
+                : "Uploading…"
+              : "Bulk Upload Photos"}
           </Button>
           <Button
             variant="outline"

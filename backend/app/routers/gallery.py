@@ -32,8 +32,11 @@ def list_photos(db: Session = Depends(get_db)):
     )
 
 
+# Plain `def`, not `async def` (same for every photo upload): FastAPI then runs
+# it in its worker thread pool, so the image decode/resize below never blocks
+# the single event loop serving everyone else (live scores, other pages).
 @router.post("/photos", status_code=201)
-async def upload_photos(files: list[UploadFile] = File(...), tag: str = Form("General"), db: Session = Depends(get_db)):
+def upload_photos(files: list[UploadFile] = File(...), tag: str = Form("General"), db: Session = Depends(get_db)):
     """Accepts one or many files in one request — the same endpoint serves
     both the admin panel's bulk-upload picker and the mobile app's
     take-a-photo button (which just uploads a single captured image), each
@@ -52,7 +55,7 @@ async def upload_photos(files: list[UploadFile] = File(...), tag: str = Form("Ge
         # disk — sidesteps both collisions (two "IMG_0001.jpg" from
         # different phones) and path-traversal-via-filename entirely.
         name = f"{stem}-{uuid.uuid4().hex[:8]}{ext}"
-        content = optimize_image(await f.read(), ext)
+        content = optimize_image(f.file.read(), ext)
         (ASSETS_ABOUT_DIR / name).write_bytes(content)
         photo = models.GalleryPhoto(filename=name, tag=tag)
         db.add(photo)

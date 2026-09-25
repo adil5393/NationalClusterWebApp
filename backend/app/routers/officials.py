@@ -75,7 +75,7 @@ def delete_official(official_id: int, db: Session = Depends(get_db)):
 
 # --- Photo (admin-side upload, like gallery.py) ---------------------------
 @router.post("/{official_id}/photo", response_model=schemas.OfficialRead)
-async def upload_official_photo(official_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+def upload_official_photo(official_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
     v = db.get(models.Official, official_id)
     if not v:
         raise HTTPException(404, "Official not found")
@@ -84,7 +84,7 @@ async def upload_official_photo(official_id: int, file: UploadFile = File(...), 
         raise HTTPException(400, "Unsupported file type (use JPG, PNG, or WEBP)")
 
     ASSETS_OFFICIALS_DIR.mkdir(parents=True, exist_ok=True)
-    content = optimize_image(await file.read(), ext)
+    content = optimize_image(file.file.read(), ext)
     name = f"{uuid.uuid4().hex}{ext}"
     (ASSETS_OFFICIALS_DIR / name).write_bytes(content)
 

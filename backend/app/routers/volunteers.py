@@ -103,7 +103,7 @@ def create_volunteer_credential(volunteer_id: int, db: Session = Depends(get_db)
 
 # --- Photo (admin-side upload, like gallery.py) ---------------------------
 @router.post("/{volunteer_id}/photo", response_model=schemas.VolunteerRead)
-async def upload_volunteer_photo(volunteer_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+def upload_volunteer_photo(volunteer_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
     v = db.get(models.Volunteer, volunteer_id)
     if not v:
         raise HTTPException(404, "Volunteer not found")
@@ -112,7 +112,7 @@ async def upload_volunteer_photo(volunteer_id: int, file: UploadFile = File(...)
         raise HTTPException(400, "Unsupported file type (use JPG, PNG, or WEBP)")
 
     ASSETS_VOLUNTEERS_DIR.mkdir(parents=True, exist_ok=True)
-    content = optimize_image(await file.read(), ext)
+    content = optimize_image(file.file.read(), ext)
     name = f"{uuid.uuid4().hex}{ext}"
     (ASSETS_VOLUNTEERS_DIR / name).write_bytes(content)
 

@@ -812,7 +812,7 @@ _MAX_CROP_SUGGESTION_BYTES = 20 * 1024 * 1024
 
 
 @router.post("/participants/photo-crop-suggestion")
-async def photo_crop_suggestion(file: UploadFile = File(...)):
+def photo_crop_suggestion(file: UploadFile = File(...)):
     """Runs face detection on a not-yet-uploaded photo and returns a
     suggested crop box (as 0-1 fractions of the image) for the manual
     cropper in the upload dialog to start from — this never saves or
@@ -822,7 +822,7 @@ async def photo_crop_suggestion(file: UploadFile = File(...)):
     if ext not in VALID_IMAGE_EXTENSIONS:
         raise HTTPException(400, "Unsupported file type (use JPG, PNG, or WEBP)")
 
-    content = await file.read()
+    content = file.file.read()
     if len(content) > _MAX_CROP_SUGGESTION_BYTES:
         raise HTTPException(400, "Image is too large")
 
@@ -830,7 +830,7 @@ async def photo_crop_suggestion(file: UploadFile = File(...)):
 
 
 @router.post("/participants/{participant_id}/photo")
-async def upload_participant_photo(
+def upload_participant_photo(
     participant_id: int,
     date_of_birth: "str | None" = Form(None),
     admin_password: "str | None" = Form(None),
@@ -882,7 +882,7 @@ async def upload_participant_photo(
         raise HTTPException(400, "Unsupported file type (use JPG, PNG, or WEBP)")
 
     ASSETS_PARTICIPANTS_DIR.mkdir(parents=True, exist_ok=True)
-    content = optimize_image(await file.read(), ext)
+    content = optimize_image(file.file.read(), ext)
     name = f"participant-{participant_id}-{uuid.uuid4().hex[:8]}{ext}"
 
     old_filename = participant.photo_filename
@@ -938,7 +938,7 @@ def _global_photo_uploads_locked(db: Session) -> bool:
 
 
 @router.post("/coaches/{coach_id}/photo")
-async def upload_coach_photo(
+def upload_coach_photo(
     coach_id: int,
     phone: "str | None" = Form(None),
     admin_password: "str | None" = Form(None),
@@ -984,7 +984,7 @@ async def upload_coach_photo(
         raise HTTPException(400, "Unsupported file type (use JPG, PNG, or WEBP)")
 
     ASSETS_COACHES_DIR.mkdir(parents=True, exist_ok=True)
-    content = optimize_image(await file.read(), ext)
+    content = optimize_image(file.file.read(), ext)
     name = f"coach-{coach_id}-{uuid.uuid4().hex[:8]}{ext}"
 
     old_filename = coach.photo_filename
