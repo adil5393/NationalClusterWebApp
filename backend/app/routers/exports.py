@@ -1,5 +1,6 @@
 """Spreadsheet (CSV & Executive XLSX) exports for room allocation and participant lists."""
 import csv
+from dataclasses import dataclass
 import io
 import itertools
 import re
@@ -481,22 +482,70 @@ def export_teams_full_xlsx(db: Session = Depends(get_db)):
     )
 
 
-def _room_assignments(db: Session, cluster: "str | None") -> list[models.AccommodationAssignment]:
-    """Every accommodation assignment, or only those whose team belongs to
-    `cluster` — the admin Accommodation page passes its selected cluster
-    through so the downloaded report matches what's shown on screen."""
-    q = db.query(models.AccommodationAssignment)
-    if cluster:
-        q = q.join(models.Team, models.AccommodationAssignment.team_id == models.Team.id).filter(models.Team.cluster == cluster)
-    return q.all()
+@dataclass
+class RoomReportFilters:
+    """The admin Accommodation page's report filters, passed through to the
+    CSV/XLSX/PDF downloads so a download always matches what's on screen
+    (frontend Accommodation.tsx applies the same rules client-side)."""
+    cluster: "str | None" = None
+    building: "str | None" = None
+    kind: "str | None" = None  # "team" (whole delegation) | "individual" (bed)
+    age_group: "str | None" = None  # short code, e.g. "U14"
+    q: "str | None" = None  # team / athlete / room name contains
+
+    @property
+    def narrowed(self) -> bool:
+        """Anything beyond the cluster filter is set."""
+        return any((self.building, self.kind, self.age_group, (self.q or "").strip()))
 
 
-def _cluster_suffix(cluster: "str | None") -> str:
-    return f"-cluster-{_slug(cluster)}" if cluster else ""
+def _room_report_filters(
+    cluster: "str | None" = Query(None),
+    building: "str | None" = Query(None),
+    kind: "str | None" = Query(None),
+    age_group: "str | None" = Query(None),
+    q: "str | None" = Query(None),
+) -> RoomReportFilters:
+    return RoomReportFilters(cluster=cluster, building=building, kind=kind, age_group=age_group, q=q)
+
+
+def _room_assignments(db: Session, f: RoomReportFilters) -> list[models.AccommodationAssignment]:
+    """Every accommodation assignment matching the report filters `f`."""
+    query = db.query(models.AccommodationAssignment)
+    if f.cluster:
+        query = query.join(models.Team, models.AccommodationAssignment.team_id == models.Team.id).filter(models.Team.cluster == f.cluster)
+    if f.kind == "team":
+        query = query.filter(models.AccommodationAssignment.participant_id.is_(None))
+    elif f.kind == "individual":
+        query = query.filter(models.AccommodationAssignment.participant_id.isnot(None))
+    rows = query.all()
+    needle = (f.q or "").strip().lower()
+    out = []
+    for a in rows:
+        room = a.room
+        building = room.floor.building if room and room.floor else None
+        if f.building and (building.name if building else None) != f.building:
+            continue
+        participant = db.get(models.Participant, a.participant_id) if a.participant_id else None
+        if f.age_group and f.age_group not in [g.strip() for g in assignment_age_group(a, participant).split(",")]:
+            continue
+        if needle:
+            haystack = " ".join(
+                x for x in (a.team.name if a.team else "", participant.full_name if participant else "", room.name if room else "") if x
+            ).lower()
+            if needle not in haystack:
+                continue
+        out.append(a)
+    return out
+
+
+def _room_report_suffix(f: RoomReportFilters) -> str:
+    return (f"-cluster-{_slug(f.cluster)}" if f.cluster else "") + ("-filtered" if f.narrowed else "")
 
 
 @router.get("/rooms.csv", dependencies=[Depends(require_report("accommodation"))])
-def export_room_allocation(cluster: "str | None" = Query(None), db: Session = Depends(get_db)):
+def export_room_allocation(filters: RoomReportFilters = Depends(_room_report_filters), db: Session = Depends(get_db)):
+    cluster = filters.cluster
     participant_counts = dict(
         db.query(models.Participant.team_id, func.count(models.Participant.id))
         .group_by(models.Participant.team_id)
@@ -509,7 +558,7 @@ def export_room_allocation(cluster: "str | None" = Query(None), db: Session = De
         .all()
     )
     rows = []
-    for a in _room_assignments(db, cluster):
+    for a in _room_assignments(db, filters):
         room = a.room
         floor = room.floor if room else None
         building = floor.building if floor else None
@@ -529,13 +578,14 @@ def export_room_allocation(cluster: "str | None" = Query(None), db: Session = De
     return _csv_response(
         ["Building", "Floor", "Room", "Bed", "Occupant", "Team", "Cluster", "Age Group", "Allotted", "Filled"],
         rows,
-        f"room-allocation{_cluster_suffix(cluster)}.csv",
+        f"room-allocation{_room_report_suffix(filters)}.csv",
     )
 
 
 @router.get("/rooms.xlsx", dependencies=[Depends(require_report("accommodation"))])
-def export_room_allocation_xlsx(cluster: "str | None" = Query(None), db: Session = Depends(get_db)):
-    assignments = _room_assignments(db, cluster)
+def export_room_allocation_xlsx(filters: RoomReportFilters = Depends(_room_report_filters), db: Session = Depends(get_db)):
+    cluster = filters.cluster
+    assignments = _room_assignments(db, filters)
     # Allotted = that assignment's team's total registered participants;
     # Filled = how many of those are actually checked in (Participant.
     # is_present) — lets an organizer see at a glance whether a room's team
@@ -648,16 +698,17 @@ def export_room_allocation_xlsx(cluster: "str | None" = Query(None), db: Session
     return StreamingResponse(
         iter([buf.getvalue()]),
         media_type=XLSX_MEDIA_TYPE,
-        headers={"Content-Disposition": f'attachment; filename="room_allocations{_cluster_suffix(cluster)}.xlsx"'},
+        headers={"Content-Disposition": f'attachment; filename="room_allocations{_room_report_suffix(filters)}.xlsx"'},
     )
 
 
 @router.get("/rooms.pdf", dependencies=[Depends(require_report("accommodation"))])
-def export_room_allocation_pdf(cluster: "str | None" = Query(None), db: Session = Depends(get_db)):
+def export_room_allocation_pdf(filters: RoomReportFilters = Depends(_room_report_filters), db: Session = Depends(get_db)):
+    cluster = filters.cluster
     """Printable PDF twin of rooms.xlsx above — same per-occupant Accommodation
     Report (who's in which bed), same source query, just laid out as a
     paginated table instead of a workbook."""
-    assignments = _room_assignments(db, cluster)
+    assignments = _room_assignments(db, filters)
     participant_counts = dict(
         db.query(models.Participant.team_id, func.count(models.Participant.id))
         .group_by(models.Participant.team_id)
@@ -708,7 +759,7 @@ def export_room_allocation_pdf(cluster: "str | None" = Query(None), db: Session 
     return Response(
         content=pdf,
         media_type=PDF_MEDIA_TYPE,
-        headers={"Content-Disposition": f'attachment; filename="accommodation_report{_cluster_suffix(cluster)}.pdf"'},
+        headers={"Content-Disposition": f'attachment; filename="accommodation_report{_room_report_suffix(filters)}.pdf"'},
     )
 
 

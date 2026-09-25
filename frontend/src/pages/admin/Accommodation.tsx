@@ -24,6 +24,7 @@ interface Assignment {
   building_name?: string;
   team_name?: string;
   team_cluster?: string | null;
+  participant_id?: number | null;
   // "U14" for an individual allotment, the team's active age groups
   // ("U14, U17") for a whole-team one — see accommodation.assignment_age_group.
   age_group?: string | null;
@@ -119,6 +120,13 @@ export default function Accommodation() {
   // downloads), so while allotting rooms for a cluster the report shows
   // exactly that cluster's allocations. "" = all clusters.
   const [cluster, setCluster] = useState("");
+  // Accommodation Report filters (cluster above is shared with the allocation
+  // form). The downloads get the same filters — see exportQuery below and the
+  // backend's exports.RoomReportFilters.
+  const [reportSearch, setReportSearch] = useState("");
+  const [reportBuilding, setReportBuilding] = useState("");
+  const [reportKind, setReportKind] = useState<"" | "team" | "individual">("");
+  const [reportAgeGroup, setReportAgeGroup] = useState("");
   const [teamSearch, setTeamSearch] = useState("");
   // Any number of age groups at once; empty = every age group.
   const [ageGroups, setAgeGroups] = useState<string[]>([]);
@@ -199,8 +207,46 @@ export default function Accommodation() {
       .sort((a, b) => Number(a.is_active === false) - Number(b.is_active === false) || a.name.localeCompare(b.name));
   }, [clusterTeams, teamSearch, ageGroups]);
   const allottedCount = pickerTeams.filter((t) => (t.accommodation_status ?? "none") !== "none").length;
-  const visibleAssignments = cluster ? assignments.filter((a) => a.team_cluster === cluster) : assignments;
-  const exportQuery = cluster ? `?cluster=${encodeURIComponent(cluster)}` : "";
+  const reportBuildingOptions = useMemo(
+    () => Array.from(new Set(assignments.map((a) => a.building_name).filter((b): b is string => !!b))).sort(),
+    [assignments],
+  );
+  const reportAgeGroupOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(assignments.flatMap((a) => (a.age_group ?? "").split(",").map((g) => g.trim()).filter(Boolean))),
+      ).sort((a, b) => ageGroupRank(a) - ageGroupRank(b) || a.localeCompare(b)),
+    [assignments],
+  );
+  const visibleAssignments = assignments.filter((a) => {
+    if (cluster && a.team_cluster !== cluster) return false;
+    if (reportBuilding && a.building_name !== reportBuilding) return false;
+    const individual = a.participant_id != null;
+    if (reportKind === "team" && individual) return false;
+    if (reportKind === "individual" && !individual) return false;
+    if (reportAgeGroup && !(a.age_group ?? "").split(",").map((g) => g.trim()).includes(reportAgeGroup)) return false;
+    const q = reportSearch.trim().toLowerCase();
+    if (q && ![a.team_name, a.participant_name, a.room_name].some((v) => v?.toLowerCase().includes(q))) return false;
+    return true;
+  });
+  const reportFiltered = !!(cluster || reportBuilding || reportKind || reportAgeGroup || reportSearch.trim());
+  const clearReportFilters = () => {
+    setCluster("");
+    setReportBuilding("");
+    setReportKind("");
+    setReportAgeGroup("");
+    setReportSearch("");
+  };
+  const exportQuery = (() => {
+    const params = new URLSearchParams();
+    if (cluster) params.set("cluster", cluster);
+    if (reportBuilding) params.set("building", reportBuilding);
+    if (reportKind) params.set("kind", reportKind);
+    if (reportAgeGroup) params.set("age_group", reportAgeGroup);
+    if (reportSearch.trim()) params.set("q", reportSearch.trim());
+    const qs = params.toString();
+    return qs ? `?${qs}` : "";
+  })();
 
   // When assigning a participant, load that team's participants.
   useEffect(() => {
@@ -720,7 +766,8 @@ export default function Accommodation() {
       <div>
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h2 className="font-heading text-xs font-bold uppercase tracking-wider text-slate-400">
-            Active Allocations ({visibleAssignments.length}) — Accommodation Report
+            Active Allocations ({visibleAssignments.length}
+            {reportFiltered ? ` of ${assignments.length}` : ""}) — Accommodation Report
             {cluster && <span className="ml-1.5 text-gold">· Cluster {cluster}</span>}
           </h2>
           <div className="flex items-center gap-2">
@@ -748,11 +795,100 @@ export default function Accommodation() {
           </div>
         </div>
 
+        {/* REPORT FILTERS — downloads above follow these too */}
+        <div
+          className="mb-3 grid gap-2 rounded-xl border border-white/10 bg-obsidian-900 p-3 sm:grid-cols-2 lg:grid-cols-6"
+          data-testid="accommodation-report-filters"
+        >
+          <div className="sm:col-span-2">
+            <Label>Search</Label>
+            <Input
+              value={reportSearch}
+              onChange={(e) => setReportSearch(e.target.value)}
+              placeholder="Team, athlete or room…"
+              data-testid="report-filter-search"
+            />
+          </div>
+          <div>
+            <Label>Cluster</Label>
+            <Select value={cluster} onChange={(e) => setCluster(e.target.value)} data-testid="report-filter-cluster">
+              <option value="">All clusters</option>
+              {clusterOptions.map((c) => (
+                <option key={c} value={c}>
+                  Cluster {c}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <Label>Building</Label>
+            <Select value={reportBuilding} onChange={(e) => setReportBuilding(e.target.value)} data-testid="report-filter-building">
+              <option value="">All buildings</option>
+              {reportBuildingOptions.map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <Label>Allocation</Label>
+            <Select
+              value={reportKind}
+              onChange={(e) => setReportKind(e.target.value as "" | "team" | "individual")}
+              data-testid="report-filter-kind"
+            >
+              <option value="">All types</option>
+              <option value="team">Whole delegation</option>
+              <option value="individual">Individual (bed)</option>
+            </Select>
+          </div>
+          <div>
+            <Label>Age Group</Label>
+            <div className="flex gap-1.5">
+              <Select
+                value={reportAgeGroup}
+                onChange={(e) => setReportAgeGroup(e.target.value)}
+                data-testid="report-filter-age-group"
+              >
+                <option value="">All</option>
+                {reportAgeGroupOptions.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </Select>
+              {reportFiltered && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-10 shrink-0 text-xs"
+                  onClick={clearReportFilters}
+                  data-testid="report-filter-clear"
+                  title="Clear all report filters"
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+
         {visibleAssignments.length === 0 ? (
           <div className="rounded-xl border border-white/10 bg-obsidian-900 p-6">
             <EmptyState
-              title={cluster ? `No room assignments for Cluster ${cluster} yet` : "No room assignments yet"}
-              hint="Use the allocation workspace above to assign teams or athletes."
+              title={
+                reportFiltered && assignments.length > 0
+                  ? "No allocations match these filters"
+                  : cluster
+                    ? `No room assignments for Cluster ${cluster} yet`
+                    : "No room assignments yet"
+              }
+              hint={
+                reportFiltered && assignments.length > 0
+                  ? "Change or clear the filters above."
+                  : "Use the allocation workspace above to assign teams or athletes."
+              }
             />
           </div>
         ) : (
