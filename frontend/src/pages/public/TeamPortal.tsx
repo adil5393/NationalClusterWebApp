@@ -259,7 +259,7 @@ export default function TeamPortal() {
   }, [photoCount]);
 
   const revealContacts = async () => {
-    if (!revealPassword.trim()) return toast.error("Enter the admin password");
+    if (!revealPassword) return toast.error("Enter your password");
     setRevealBusy(true);
     try {
       const r = await api.post<{ coaches: Coach[] }>(`/public/teams/${id}/reveal-contacts`, {
@@ -271,7 +271,14 @@ export default function TeamPortal() {
       setRevealPassword("");
       toast.success("Contact numbers revealed");
     } catch (e: any) {
-      toast.error(e?.response?.status === 401 ? "Incorrect password" : "Could not verify password");
+      const status = e?.response?.status;
+      toast.error(
+        status === 401
+          ? "Incorrect password"
+          : status === 429
+            ? "Too many attempts — try again later"
+            : "Could not verify password",
+      );
     } finally {
       setRevealBusy(false);
     }
@@ -1171,7 +1178,7 @@ export default function TeamPortal() {
         </SectionCard>
       </div>
 
-      {/* CONTACT REVEAL — admin password gate */}
+      {/* CONTACT REVEAL — any organizer account's own password */}
       <Dialog
         open={revealOpen}
         onClose={() => setRevealOpen(false)}
@@ -1180,13 +1187,14 @@ export default function TeamPortal() {
       >
         <div className="space-y-4">
           <p className="text-xs text-slate-400 font-body">
-            Coach and manager contact numbers are hidden from public view. Enter the organizer admin password
-            to reveal them.
+            Coach and manager contact numbers are hidden from public view. Organizer staff: enter your own
+            Organizer Portal password to reveal them.
           </p>
           <div>
             <Input
               type="password"
-              placeholder="Admin password"
+              placeholder="Your password"
+              autoComplete="current-password"
               value={revealPassword}
               onChange={(e) => setRevealPassword(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && revealContacts()}

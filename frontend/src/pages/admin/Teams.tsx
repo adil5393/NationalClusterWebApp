@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, QrCode, Upload, Trophy, X, Shield, Users, Search, ImageIcon, IdCard, Receipt, Printer, FileArchive, Bus, Lock, Unlock, Phone, Mail, Calendar, Clock, MapPin, AlertTriangle } from "lucide-react";
+import { Plus, Pencil, Trash2, QrCode, Upload, Trophy, X, Shield, Users, Search, ImageIcon, IdCard, Receipt, Printer, FileArchive, Bus, Lock, Unlock, Phone, Mail, Calendar, Clock, MapPin, AlertTriangle, MoreVertical, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -577,6 +577,7 @@ export default function AdminTeams() {
   const [ageGroupFilter, setAgeGroupFilter] = useState("all");
   const [globalPhotoLock, setGlobalPhotoLock] = useState(false);
   const [globalPhotoLockBusy, setGlobalPhotoLockBusy] = useState(false);
+  const [openActionMenuId, setOpenActionMenuId] = useState<number | null>(null);
 
   const load = (silent = false) => {
     // silent=true skips the full-page loading spinner (which unmounts the
@@ -1070,7 +1071,7 @@ export default function AdminTeams() {
         ) : (
           <>
             {/* MOBILE: HIGH-DENSITY COMPACT OPERATIONS CARD LIST */}
-            <div className="w-full min-w-0 grid gap-2.5 sm:gap-3 lg:hidden">
+            <div className="w-full min-w-0 space-y-4 lg:hidden">
               {filtered.map((t, i) => {
                 const ageEntries = Object.entries(t.age_group_counts ?? {}).sort(
                   ([a], [b]) => ageGroupRank(a) - ageGroupRank(b) || a.localeCompare(b),
@@ -1084,81 +1085,98 @@ export default function AdminTeams() {
                   <div
                     key={t.id}
                     data-testid={`team-card-${t.id}`}
-                    className="w-full min-w-0 max-w-full rounded-xl border border-white/10 bg-obsidian-900/90 p-3 sm:p-3.5 space-y-2.5 shadow-sm"
+                    className={cn(
+                      "w-full min-w-0 max-w-full rounded-2xl border transition-all duration-200 overflow-visible",
+                      "bg-gradient-to-b from-obsidian-900 via-obsidian-900/95 to-obsidian-950 p-4 space-y-3.5 shadow-xl shadow-black/60",
+                      t.is_active === false
+                        ? "border-red-500/35 border-l-4 border-l-red-500/80"
+                        : t.has_arrived
+                          ? "border-white/15 border-l-4 border-l-emerald-500 hover:border-white/30"
+                          : "border-white/15 border-l-4 border-l-gold hover:border-gold/40 hover:shadow-gold/5",
+                    )}
                   >
-                    {/* ROW 1: IDENTITY & PRIMARY STATUSES */}
-                    <div className="flex items-start justify-between gap-2.5 min-w-0">
-                      <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                        <div className="relative shrink-0 mt-0.5">
-                          <TeamAvatar name={t.name} size="sm" tone={isIndia ? "gold" : "coral"} />
-                          <span className="absolute -bottom-1 -right-1 rounded bg-obsidian-950/90 border border-white/15 px-1 text-[9px] font-mono font-bold text-slate-400">
-                            #{i + 1}
-                          </span>
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <h3
-                            className="font-heading font-bold text-white text-sm leading-snug truncate"
-                            title={t.name}
+                    {/* CARD HEADER STRIP: INDEX, CLUSTER & STATUS TOGGLES */}
+                    <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-white/10">
+                      <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                        <span className="rounded-md bg-white/10 border border-white/10 px-2 py-0.5 text-[11px] font-mono font-bold text-slate-300">
+                          #{i + 1}
+                        </span>
+                        {t.cluster && (
+                          <span
+                            className="rounded-md bg-gold/15 border border-gold/30 px-2 py-0.5 text-[10px] font-heading font-extrabold text-gold tracking-wider shrink-0"
+                            title={`Cluster ${t.cluster}`}
                           >
-                            {t.name}
-                          </h3>
-                          {t.school && t.school !== t.name && (
-                            <p
-                              className="text-xs text-slate-400 truncate font-body leading-tight mt-0.5"
-                              title={t.school}
-                            >
-                              {t.school}
-                            </p>
-                          )}
-                          {(t.school_code || t.affiliation_number) && (
-                            <div className="flex flex-wrap items-center gap-x-2 text-[10px] font-mono text-slate-500 leading-tight mt-0.5">
-                              {t.school_code && <span>Code: {t.school_code}</span>}
-                              {t.school_code && t.affiliation_number && <span>·</span>}
-                              {t.affiliation_number && <span>Affil: {t.affiliation_number}</span>}
-                            </div>
-                          )}
-                        </div>
+                            CLUSTER {t.cluster}
+                          </span>
+                        )}
+                        <Badge tone={isIndia ? "gold" : "coral"} size="sm">
+                          {t.country || "General"}
+                        </Badge>
                       </div>
 
                       {/* Primary status badges */}
-                      <div className="shrink-0 flex flex-col items-end gap-1">
+                      <div className="shrink-0 flex items-center gap-1.5">
                         <ActiveCell team={t} canEdit={canEdit && canToggleActive} onToggle={toggleActive} />
                         <ArrivedCell team={t} canEdit={canSetArrived && t.is_active !== false} onToggle={toggleArrived} />
                       </div>
                     </div>
 
-                    {/* ROW 2: CONSOLIDATED METADATA CHIPS */}
+                    {/* TEAM IDENTITY */}
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className="shrink-0 mt-0.5">
+                        <TeamAvatar name={t.name} size="sm" tone={isIndia ? "gold" : "coral"} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h3
+                          className="font-heading font-extrabold text-white text-base leading-snug truncate"
+                          title={t.name}
+                        >
+                          {t.name}
+                        </h3>
+                        {t.school && t.school !== t.name && (
+                          <p
+                            className="text-xs text-slate-400 truncate font-body leading-tight mt-0.5"
+                            title={t.school}
+                          >
+                            {t.school}
+                          </p>
+                        )}
+                        {(t.school_code || t.affiliation_number) && (
+                          <div className="flex flex-wrap items-center gap-x-2 text-[10px] font-mono text-slate-500 leading-tight mt-1">
+                            {t.school_code && <span>Code: #{t.school_code}</span>}
+                            {t.school_code && t.affiliation_number && <span>·</span>}
+                            {t.affiliation_number && <span>Affil: {t.affiliation_number}</span>}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* METADATA CHIPS & STATS */}
                     <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                      <Badge tone={isIndia ? "gold" : "coral"} size="sm">
-                        {t.country || "General"}
-                      </Badge>
-                      {t.cluster && (
-                        <span className="rounded bg-white/5 px-2 py-0.5 text-[10px] font-mono text-slate-300" title="Cluster">
-                          Cluster {t.cluster}
-                        </span>
-                      )}
                       {t.region && (
-                        <span className="rounded bg-white/5 px-2 py-0.5 text-[10px] font-mono text-slate-300">
+                        <span className="rounded bg-white/5 border border-white/5 px-2 py-0.5 text-[10px] font-mono text-slate-300">
                           {t.region}
                         </span>
                       )}
-                      <span className="rounded bg-white/5 px-2 py-0.5 text-[10px] font-mono text-slate-300">
+                      <span className="rounded bg-white/5 border border-white/5 px-2 py-0.5 text-[10px] font-mono text-slate-300">
                         {t.member_count ?? 0} members
                       </span>
                       <Badge tone={ACCOMMODATION_TONE[accStatus]} size="sm">
                         {ACCOMMODATION_LABEL[accStatus]}
                       </Badge>
                       {t.stay && (
-                        <span className="rounded bg-white/5 px-2 py-0.5 text-[10px] font-mono text-slate-300">
+                        <span className="rounded bg-white/5 border border-white/5 px-2 py-0.5 text-[10px] font-mono text-slate-300">
                           Stay: <strong className="text-white font-semibold">{t.stay}</strong>
                         </span>
                       )}
                     </div>
 
-                    {/* ROW 2B: ACCOMMODATION ROOMS & LOCATIONS */}
+                    {/* ACCOMMODATION ROOMS & LOCATIONS */}
                     {t.accommodation_locations && t.accommodation_locations.length > 0 && (
-                      <div className="flex flex-wrap items-center gap-1 text-[11px] text-slate-300">
-                        <span className="text-[10px] text-slate-400 font-medium">Rooms:</span>
+                      <div className="flex flex-wrap items-center gap-1 text-[11px] text-slate-300 bg-white/[0.02] p-2 rounded-lg border border-white/5">
+                        <span className="text-[10px] font-heading font-bold uppercase tracking-wider text-slate-400 mr-1">
+                          Rooms:
+                        </span>
                         {t.accommodation_locations.map((loc, idx) => (
                           <span key={idx} className="rounded bg-white/5 border border-white/10 px-1.5 py-0.5 text-[10px] font-mono">
                             <strong className="text-white font-semibold">{loc.room ?? "Room"}</strong>
@@ -1169,9 +1187,9 @@ export default function AdminTeams() {
                       </div>
                     )}
 
-                    {/* ROW 2C: CONTACT DETAILS & ARRIVAL INFO */}
+                    {/* CONTACT DETAILS & ARRIVAL INFO */}
                     {(t.contact_name || t.contact_phone || t.contact_email || t.arrival_date || t.arrival_time || t.arrival_location) && (
-                      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs pt-0.5">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs pt-1 border-t border-white/5">
                         {t.contact_name && (
                           <span className="text-slate-300 text-[11px]">
                             Contact: <strong className="text-white font-semibold">{t.contact_name}</strong>
@@ -1180,7 +1198,7 @@ export default function AdminTeams() {
                         {t.contact_phone && (
                           <a
                             href={`tel:${t.contact_phone}`}
-                            className="inline-flex items-center gap-1 rounded bg-white/5 hover:bg-white/10 px-1.5 py-0.5 font-mono text-[10px] text-gold transition-colors"
+                            className="inline-flex items-center gap-1 rounded bg-white/5 hover:bg-white/10 px-2 py-0.5 font-mono text-[10px] text-gold transition-colors"
                             title="Call Contact"
                           >
                             <Phone className="h-2.5 w-2.5" />
@@ -1190,7 +1208,7 @@ export default function AdminTeams() {
                         {t.contact_email && (
                           <a
                             href={`mailto:${t.contact_email}`}
-                            className="inline-flex items-center gap-1 rounded bg-white/5 hover:bg-white/10 px-1.5 py-0.5 text-[10px] text-slate-300 transition-colors"
+                            className="inline-flex items-center gap-1 rounded bg-white/5 hover:bg-white/10 px-2 py-0.5 text-[10px] text-slate-300 transition-colors"
                             title="Email Contact"
                           >
                             <Mail className="h-2.5 w-2.5 text-slate-400" />
@@ -1206,7 +1224,7 @@ export default function AdminTeams() {
                               </span>
                             )}
                             {t.arrival_time && (
-                              <span className="inline-flex items-center gap-1 text-gold">
+                              <span className="inline-flex items-center gap-1 text-gold font-bold">
                                 <Clock className="h-2.5 w-2.5" /> {t.arrival_time}
                               </span>
                             )}
@@ -1220,8 +1238,8 @@ export default function AdminTeams() {
                       </div>
                     )}
 
-                    {/* ROW 3: CONSOLIDATED AGE GROUPS, SQUAD SIZES & AWARDS */}
-                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                    {/* SQUAD BY AGE & AWARDS */}
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
                       {allAgeGroupsInactive(t) && <AllAgeGroupsInactiveChip />}
                       {ageEntries.map(([group, count]) => {
                         const active = !inactiveGroups.has(group);
@@ -1307,108 +1325,182 @@ export default function AdminTeams() {
                       )}
                     </div>
 
-                    {/* ROW 4: COMPLETE OPERATIONS ACTION BUTTONS */}
-                    <div className="space-y-1.5 border-t border-white/10 pt-2.5 min-w-0">
-                      {/* Operational tools */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8 text-xs min-w-0 px-2 font-heading font-bold"
-                          onClick={() => (t.is_active === false ? toast.error("Team is inactive — ID cards are not available") : setIdCardTeam(t))}
-                          data-testid={`download-team-idcards-mobile-${t.id}`}
-                          title="Team ID Cards"
-                        >
-                          <IdCard className={cn(
-                            "h-3.5 w-3.5 shrink-0 mr-1",
+                    {/* ACTIONS FOOTER WITH UNIFIED QUICK-ACTIONS AND DROPDOWN */}
+                    <div className="relative border-t border-white/10 pt-3 flex items-center gap-2 min-w-0">
+                      {/* 1. ID CARDS BUTTON */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 h-9 text-xs min-w-0 px-2.5 font-heading font-bold justify-center border-white/15 bg-white/[0.04] hover:bg-white/10 hover:text-white"
+                        onClick={() => (t.is_active === false ? toast.error("Team is inactive — ID cards are not available") : setIdCardTeam(t))}
+                        data-testid={`download-team-idcards-mobile-${t.id}`}
+                        title="Team ID Cards"
+                      >
+                        <IdCard
+                          className={cn(
+                            "h-3.5 w-3.5 shrink-0 mr-1.5",
                             t.all_photos_uploaded
                               ? "text-emerald-400"
                               : (t.participants_with_photo_count ?? 0) >= 1
-                              ? "text-red-400"
-                              : "text-slate-400"
-                          )} />
-                          <span className="truncate">ID Cards</span>
-                        </Button>
+                                ? "text-red-400"
+                                : "text-slate-400",
+                          )}
+                        />
+                        <span className="truncate">ID Cards</span>
+                        {t.all_photos_uploaded ? (
+                          <span className="ml-1.5 rounded bg-emerald-500/20 px-1 py-0.2 text-[9px] font-mono font-bold text-emerald-400">
+                            Ready
+                          </span>
+                        ) : (t.participants_with_photo_count ?? 0) > 0 ? (
+                          <span className="ml-1.5 rounded bg-amber-500/20 px-1 py-0.2 text-[9px] font-mono font-bold text-amber-300">
+                            {t.participants_with_photo_count}/{t.participant_count ?? 0}
+                          </span>
+                        ) : null}
+                      </Button>
+
+                      {/* 2. PHOTOS BUTTON */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9 text-xs min-w-0 px-3 font-heading font-bold border-white/15 bg-white/[0.04] hover:bg-white/10 hover:text-white shrink-0"
+                        onClick={() => setPhotosTeam(t)}
+                        data-testid={`manage-photos-mobile-${t.id}`}
+                        title={`Manage Photos (${t.photos?.length ?? 0})`}
+                      >
+                        <ImageIcon className="h-3.5 w-3.5 text-gold shrink-0 mr-1.5" />
+                        <span>Photos ({t.photos?.length ?? 0})</span>
+                      </Button>
+
+                      {/* 3. MORE ACTIONS DROPDOWN TRIGGER */}
+                      <div className="relative shrink-0">
                         <Button
                           variant="outline"
                           size="sm"
-                          className="h-8 text-xs min-w-0 px-2 font-heading font-bold"
-                          onClick={() => setPhotosTeam(t)}
-                          data-testid={`manage-photos-mobile-${t.id}`}
-                          title={`Manage Photos (${t.photos?.length ?? 0})`}
+                          className={cn(
+                            "h-9 px-2.5 text-xs font-heading font-bold border-white/15 transition-colors",
+                            openActionMenuId === t.id
+                              ? "bg-gold text-obsidian border-gold"
+                              : "bg-white/[0.04] text-slate-200 hover:bg-white/10 hover:text-white",
+                          )}
+                          onClick={() => setOpenActionMenuId(openActionMenuId === t.id ? null : t.id)}
+                          data-testid={`team-actions-menu-mobile-${t.id}`}
+                          title="More actions"
                         >
-                          <ImageIcon className="h-3.5 w-3.5 text-gold shrink-0 mr-1" />
-                          <span className="truncate">Photos ({t.photos?.length ?? 0})</span>
+                          <MoreVertical className="h-3.5 w-3.5 shrink-0" />
+                          <span className="text-[11px] ml-0.5">Actions</span>
+                          <ChevronDown className={cn("h-3 w-3 ml-0.5 transition-transform", openActionMenuId === t.id && "rotate-180")} />
                         </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8 text-xs min-w-0 px-2 font-heading font-bold"
-                          onClick={() => setQrTeam({ id: t.id, name: t.name })}
-                          data-testid={`qr-team-mobile-${t.id}`}
-                        >
-                          <QrCode className="h-3.5 w-3.5 text-gold shrink-0 mr-1" /> <span className="truncate">QR</span>
-                        </Button>
-                        {billingAccess.canView && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 text-xs min-w-0 px-2 font-heading font-bold"
-                            onClick={() => (t.is_active === false ? toast.error("Team is inactive — billing is not available") : setReceiptTeam({ id: t.id, name: t.name }))}
-                            data-testid={`receipt-team-mobile-${t.id}`}
-                            title="Billing & Receipts"
-                          >
-                            <Receipt className="h-3.5 w-3.5 text-slate-300 shrink-0 mr-1" /> <span className="truncate">Billing</span>
-                          </Button>
+
+                        {/* FLOATING DROPDOWN MENU */}
+                        {openActionMenuId === t.id && (
+                          <>
+                            {/* BACKDROP TO CLOSE ON OUTSIDE CLICK */}
+                            <div
+                              className="fixed inset-0 z-30 bg-transparent"
+                              onClick={() => setOpenActionMenuId(null)}
+                            />
+
+                            <div className="absolute right-0 bottom-full mb-1.5 z-40 w-52 overflow-hidden rounded-xl border border-white/20 bg-obsidian-900 shadow-2xl backdrop-blur-xl p-1 animate-in fade-in zoom-in-95 space-y-0.5">
+                              <div className="px-2.5 py-1.5 text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400 border-b border-white/10 mb-1 flex items-center justify-between">
+                                <span>Team Operations</span>
+                                <span className="text-gold font-mono">#{i + 1}</span>
+                              </div>
+
+                              {/* QR Code */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenActionMenuId(null);
+                                  setQrTeam({ id: t.id, name: t.name });
+                                }}
+                                data-testid={`qr-team-mobile-${t.id}`}
+                                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-heading font-semibold text-slate-200 hover:bg-white/10 hover:text-white transition-colors text-left"
+                              >
+                                <QrCode className="h-4 w-4 text-gold shrink-0" />
+                                <span className="flex-1">Show QR Code</span>
+                              </button>
+
+                              {/* Billing & Receipts */}
+                              {billingAccess.canView && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenActionMenuId(null);
+                                    if (t.is_active === false) {
+                                      toast.error("Team is inactive — billing is not available");
+                                    } else {
+                                      setReceiptTeam({ id: t.id, name: t.name });
+                                    }
+                                  }}
+                                  data-testid={`receipt-team-mobile-${t.id}`}
+                                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-heading font-semibold text-slate-200 hover:bg-white/10 hover:text-white transition-colors text-left"
+                                >
+                                  <Receipt className="h-4 w-4 text-emerald-400 shrink-0" />
+                                  <span className="flex-1">Billing & Receipts</span>
+                                </button>
+                              )}
+
+                              {/* Photo Lock / Unlock */}
+                              {canEdit && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenActionMenuId(null);
+                                    toggleTeamPhotoLock(t);
+                                  }}
+                                  data-testid={`team-photo-lock-mobile-${t.id}`}
+                                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-heading font-semibold text-slate-200 hover:bg-white/10 hover:text-white transition-colors text-left"
+                                >
+                                  {t.photo_uploads_locked_effective ? (
+                                    <>
+                                      <Lock className="h-4 w-4 text-amber-400 shrink-0" />
+                                      <span className="flex-1 text-amber-300">Unlock Photo Uploads</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Unlock className="h-4 w-4 text-slate-400 shrink-0" />
+                                      <span className="flex-1">Lock Photo Uploads</span>
+                                    </>
+                                  )}
+                                </button>
+                              )}
+
+                              {/* Edit Team */}
+                              {canEdit && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenActionMenuId(null);
+                                    setForm(t);
+                                    setOpen(true);
+                                  }}
+                                  data-testid={`edit-team-mobile-${t.id}`}
+                                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-heading font-semibold text-slate-200 hover:bg-white/10 hover:text-white transition-colors text-left border-t border-white/5 pt-1.5"
+                                >
+                                  <Pencil className="h-4 w-4 text-sky-400 shrink-0" />
+                                  <span className="flex-1">Edit Team Details</span>
+                                </button>
+                              )}
+
+                              {/* Delete Team */}
+                              {canEdit && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenActionMenuId(null);
+                                    remove(t.id);
+                                  }}
+                                  data-testid={`delete-team-mobile-${t.id}`}
+                                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-heading font-semibold text-red-400 hover:bg-red-500/15 hover:text-red-300 transition-colors text-left"
+                                >
+                                  <Trash2 className="h-4 w-4 text-red-400 shrink-0" />
+                                  <span className="flex-1">Delete Team</span>
+                                </button>
+                              )}
+                            </div>
+                          </>
                         )}
                       </div>
-
-                      {/* Photo lock & Admin actions */}
-                      {canEdit && (
-                        <div className="grid grid-cols-3 gap-1.5">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 text-xs min-w-0 px-2 font-heading font-bold"
-                            onClick={() => toggleTeamPhotoLock(t)}
-                            data-testid={`team-photo-lock-mobile-${t.id}`}
-                            title={t.photo_uploads_locked_effective ? "Unlock photo uploads" : "Lock photo uploads"}
-                          >
-                            {t.photo_uploads_locked_effective ? (
-                              <>
-                                <Lock className="h-3.5 w-3.5 text-amber-400 shrink-0 mr-1" />
-                                <span className="truncate text-amber-400">Locked</span>
-                              </>
-                            ) : (
-                              <>
-                                <Unlock className="h-3.5 w-3.5 text-slate-300 shrink-0 mr-1" />
-                                <span className="truncate">Lockable</span>
-                              </>
-                            )}
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 text-xs min-w-0 px-2 font-heading font-bold"
-                            onClick={() => {
-                              setForm(t);
-                              setOpen(true);
-                            }}
-                            data-testid={`edit-team-mobile-${t.id}`}
-                          >
-                            <Pencil className="h-3.5 w-3.5 shrink-0 mr-1 text-slate-300" /> <span className="truncate">Edit</span>
-                          </Button>
-                          <Button
-                            variant="danger"
-                            size="sm"
-                            className="h-8 text-xs min-w-0 px-2 font-heading font-bold"
-                            onClick={() => remove(t.id)}
-                            data-testid={`delete-team-mobile-${t.id}`}
-                          >
-                            <Trash2 className="h-3.5 w-3.5 shrink-0 mr-1" /> <span className="truncate">Delete</span>
-                          </Button>
-                        </div>
-                      )}
                     </div>
                   </div>
                 );

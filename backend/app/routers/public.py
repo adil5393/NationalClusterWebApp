@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -699,19 +699,35 @@ class RevealContactsRequest(BaseModel):
     password: str
 
 
+# Wrong-password attempts per visitor address (nginx's X-Real-IP, see
+# frontend/nginx.conf), in-memory only — same window/limit and "resets on
+# restart" tradeoff as the photo-upload limiter below. Needed because any
+# active account's password unlocks this, so it's far easier to guess than
+# one specific account's.
+_REVEAL_WINDOW_SECONDS = 15 * 60
+_REVEAL_MAX_ATTEMPTS = 5
+_failed_reveal_attempts: dict[str, list[float]] = {}
+
+
 @router.post("/teams/{team_id}/reveal-contacts")
-def reveal_team_contacts(team_id: int, payload: RevealContactsRequest, db: Session = Depends(get_db)):
-    """A public visitor proves they're staff by typing an admin account's
-    password (not logging in — this stays a one-off unlock on this page) to
-    see coach/manager phone numbers. Doesn't reveal which account matched, or
-    whether the team even has any — same response shape either way."""
-    is_admin_password = (
-        db.query(models.OrganizerUser)
-        .filter(models.OrganizerUser.is_active.is_(True), models.OrganizerUser.is_admin.is_(True))
-        .all()
-    )
-    if not any(verify_password(payload.password, u.password_hash) for u in is_admin_password):
+def reveal_team_contacts(team_id: int, payload: RevealContactsRequest, request: Request, db: Session = Depends(get_db)):
+    """A public visitor proves they're organizer staff by typing their own
+    Organizer Portal password — any active account's, no username (not
+    logging in, this stays a one-off unlock on this page) — to see
+    coach/manager phone numbers. Doesn't reveal which account matched, or
+    whether the team even has any contacts — same response shape either way."""
+    visitor = request.headers.get("x-real-ip") or (request.client.host if request.client else "unknown")
+    now = time.time()
+    attempts = [t for t in _failed_reveal_attempts.get(visitor, []) if now - t < _REVEAL_WINDOW_SECONDS]
+    _failed_reveal_attempts[visitor] = attempts
+    if len(attempts) >= _REVEAL_MAX_ATTEMPTS:
+        raise HTTPException(429, "Too many attempts — try again later")
+
+    accounts = db.query(models.OrganizerUser).filter(models.OrganizerUser.is_active.is_(True)).all()
+    if not payload.password or not any(verify_password(payload.password, u.password_hash) for u in accounts):
+        attempts.append(now)
         raise HTTPException(401, "Incorrect password")
+    _failed_reveal_attempts.pop(visitor, None)
 
     team = db.get(models.Team, team_id)
     if not team:
