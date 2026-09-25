@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { FileText, Wallet, Download, Undo2, Printer } from "lucide-react";
+import { FileText, Wallet, Download, Undo2, Printer, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { useMe } from "@/lib/permissions";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
@@ -85,10 +86,14 @@ export function ReceiptDialog({
   open,
   onClose,
   team,
+  canEdit = true,
 }: {
   open: boolean;
   onClose: () => void;
   team: { id: number; name: string } | null;
+  // "billing":"view" accounts: summary + invoice/refund-receipt downloads only;
+  // raising bills, recording payments and refunds need "billing":"edit".
+  canEdit?: boolean;
 }) {
   const [tab, setTab] = useState<"bill" | "invoice" | "refund">("bill");
   const [summary, setSummary] = useState<BillingSummary | null>(null);
@@ -109,6 +114,31 @@ export function ReceiptDialog({
   const [refundMode, setRefundMode] = useState<"Cash" | "UPI">("Cash");
   const [refundTxnId, setRefundTxnId] = useState("");
   const [refundDate, setRefundDate] = useState(todayLocal);
+
+  // Admin-only "wipe this team's billing" — same admin-password confirmation
+  // as the Reports page's clear-all (payments.clear_team_payments).
+  const isAdmin = !!useMe()?.is_admin;
+  const [clearOpen, setClearOpen] = useState(false);
+  const [clearPassword, setClearPassword] = useState("");
+  const [clearBusy, setClearBusy] = useState(false);
+  const clearTeamBilling = async () => {
+    if (!team) return;
+    if (!clearPassword.trim()) return toast.error("Enter the admin password");
+    setClearBusy(true);
+    try {
+      const r = await api.delete<{ deleted: number }>(`/teams/${team.id}/payments/clear`, {
+        data: { admin_password: clearPassword.trim() },
+      });
+      toast.success(`Cleared ${r.data.deleted} billing record${r.data.deleted === 1 ? "" : "s"} for ${team.name}`);
+      setClearOpen(false);
+      setClearPassword("");
+      loadSummary();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not clear billing data");
+    } finally {
+      setClearBusy(false);
+    }
+  };
 
   const loadSummary = async () => {
     if (!team) return;
@@ -139,6 +169,8 @@ export function ReceiptDialog({
       setRefundMode("Cash");
       setRefundTxnId("");
       setRefundDate(todayLocal());
+      setClearOpen(false);
+      setClearPassword("");
       loadSummary();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -274,6 +306,11 @@ export function ReceiptDialog({
       testId="receipt-dialog"
     >
       <div className="space-y-4">
+        {!canEdit && (
+          <p className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-300 font-body" data-testid="billing-view-only">
+            View only — you can see billing and download invoices and receipts, but can't create bills or record payments or refunds.
+          </p>
+        )}
         <div className="flex gap-1.5 rounded-lg border border-white/10 bg-obsidian-950 p-1" data-testid="receipt-tabs">
           <button
             type="button"
@@ -423,7 +460,7 @@ export function ReceiptDialog({
                   <Button variant="outline" size="sm" onClick={onClose}>
                     Close
                   </Button>
-                  <Button
+                  {canEdit && <Button
                     variant="gold"
                     size="sm"
                     onClick={submitBill}
@@ -431,7 +468,7 @@ export function ReceiptDialog({
                     data-testid="submit-bill-btn"
                   >
                     <FileText className="h-3.5 w-3.5" /> {busy ? "Creating…" : "Create Bill"}
-                  </Button>
+                  </Button>}
                 </div>
               </div>
             )}
@@ -444,7 +481,7 @@ export function ReceiptDialog({
                   </p>
                 ) : (
                   <>
-                    {canPay && (
+                    {canPay && canEdit && (
                       <div className="space-y-3 rounded-xl border border-white/10 bg-obsidian-950 p-3.5">
                         <p className="text-xs font-heading font-bold text-white">
                           Record Payment (up to Rs. {summary?.balance_due.toLocaleString()})
@@ -589,7 +626,7 @@ export function ReceiptDialog({
                   <Button variant="outline" size="sm" onClick={onClose}>
                     Close
                   </Button>
-                  <Button
+                  {canEdit && <Button
                     variant="gold"
                     size="sm"
                     onClick={submitRefund}
@@ -597,7 +634,7 @@ export function ReceiptDialog({
                     data-testid="submit-refund-btn"
                   >
                     <Undo2 className="h-3.5 w-3.5" /> {busy ? "Recording…" : "Refund & Download Voucher"}
-                  </Button>
+                  </Button>}
                 </div>
               </div>
             )}
@@ -640,6 +677,65 @@ export function ReceiptDialog({
               </div>
             )}
           </>
+        )}
+
+        {isAdmin && summary && summary.payments.length > 0 && (
+          <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3 space-y-2" data-testid="clear-team-billing">
+            {!clearOpen ? (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[11px] text-slate-400 font-body">
+                  Admin: wipe every bill, payment and refund for this team.
+                </p>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => setClearOpen(true)}
+                  data-testid="clear-team-billing-btn"
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Clear Team Billing
+                </Button>
+              </div>
+            ) : (
+              <>
+                <p className="text-xs text-red-300 font-body">
+                  This permanently deletes all {summary.payments.length} billing record
+                  {summary.payments.length === 1 ? "" : "s"} for {team?.name} — bills, payments and refunds. It can't be
+                  undone. The team's present members can then be billed again from scratch.
+                </p>
+                <Label>Admin Password</Label>
+                <Input
+                  type="password"
+                  value={clearPassword}
+                  onChange={(e) => setClearPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && clearTeamBilling()}
+                  autoFocus
+                  data-testid="clear-team-billing-password"
+                />
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setClearOpen(false);
+                      setClearPassword("");
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={clearTeamBilling}
+                    disabled={clearBusy}
+                    data-testid="confirm-clear-team-billing-btn"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> {clearBusy ? "Clearing…" : "Delete Billing Data"}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
         )}
       </div>
     </Dialog>

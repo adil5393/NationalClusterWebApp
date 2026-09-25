@@ -41,7 +41,7 @@ from ..excel_styler import (
     style_section_bar,
 )
 from openpyxl.styles import PatternFill
-from ..security import require_admin, require_auth, require_module
+from ..security import has_reports_access, require_admin, require_auth, require_module, require_report
 from .payments import _billed_keys, _present_members
 from .public import ASSETS_COACHES_DIR, ASSETS_PARTICIPANTS_DIR
 
@@ -49,6 +49,45 @@ router = APIRouter(prefix="/api/export", tags=["export"])
 
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 PDF_MEDIA_TYPE = "application/pdf"
+
+
+def _weight(p: models.Participant, blank="—"):
+    """A participant's weigh-in (kg) for a report cell, or `blank` if not weighed yet."""
+    return float(p.weight) if p.weight is not None else blank
+
+
+# Light grey row fill for an inactive team / benched age group on the
+# attendance & arrival sheets — deliberately not the amber FILL_ROW_UNBILLED
+# already means "someone here isn't billed yet".
+FILL_ROW_INACTIVE = PatternFill("solid", fgColor="E2E8F0")
+
+
+def _age_group_code(g: str) -> str:
+    """"Under 14" -> "U14"."""
+    m = re.search(r"(\d+)", g)
+    return f"U{m.group(1)}" if m else g
+
+
+def _age_group_active(team: "models.Team | None", age_group: "str | None") -> bool:
+    """Whether this age group competes for this team: the team itself is
+    active and hasn't individually benched the group (TeamInactiveAgeGroup)
+    — the same rule ID cards, fixtures and accommodation counts use."""
+    if team is None or not team.is_active:
+        return False
+    if not age_group:
+        return True
+    return all(g.age_group != age_group for g in team.inactive_age_groups)
+
+
+def _team_age_group_statuses(team: models.Team) -> str:
+    """Every age group the team fields or has benched, each with its status —
+    e.g. "U14 Active | U17 Inactive". An inactive team shows every group
+    Inactive."""
+    groups = {p.age_group for p in team.participants if p.age_group} | {g.age_group for g in team.inactive_age_groups}
+    if not groups:
+        return "—"
+    ranked = sorted(groups, key=lambda g: (int(m.group(1)) if (m := re.search(r"(\d+)", g)) else 999, g))
+    return " | ".join(f"{_age_group_code(g)} {'Active' if _age_group_active(team, g) else 'Inactive'}" for g in ranked)
 
 
 def _csv_response(header, rows, filename):
@@ -64,17 +103,17 @@ def _csv_response(header, rows, filename):
     )
 
 
-@router.get("/participants.csv", dependencies=[Depends(require_module("teams"))])
+@router.get("/participants.csv", dependencies=[Depends(require_report("teams"))])
 def export_participants(db: Session = Depends(get_db)):
     teams = {t.id: t.name for t in db.query(models.Team).all()}
     rows = [
-        [p.full_name, teams.get(p.team_id, ""), p.role or "", p.gender or "", p.age or ""]
+        [p.full_name, teams.get(p.team_id, ""), p.role or "", p.gender or "", p.age or "", _weight(p, "")]
         for p in db.query(models.Participant).order_by(models.Participant.team_id, models.Participant.full_name).all()
     ]
-    return _csv_response(["Full Name", "Team", "Role", "Gender", "Age"], rows, "participants.csv")
+    return _csv_response(["Full Name", "Team", "Role", "Gender", "Age", "Weight (kg)"], rows, "participants.csv")
 
 
-@router.get("/participants.xlsx", dependencies=[Depends(require_module("teams"))])
+@router.get("/participants.xlsx", dependencies=[Depends(require_report("teams"))])
 def export_participants_xlsx(db: Session = Depends(get_db)):
     teams = {t.id: t.name for t in db.query(models.Team).all()}
     participants = db.query(models.Participant).order_by(models.Participant.team_id, models.Participant.full_name).all()
@@ -82,7 +121,7 @@ def export_participants_xlsx(db: Session = Depends(get_db)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Participants Roster"
-    max_cols = 6
+    max_cols = 7
 
     # Header Banner
     next_row = style_header_banner(
@@ -118,6 +157,7 @@ def export_participants_xlsx(db: Session = Depends(get_db)):
         ("ROLE", 14, ALIGN_HEADER_CENTER),
         ("GENDER", 10, ALIGN_HEADER_CENTER),
         ("AGE", 8, ALIGN_HEADER_CENTER),
+        ("WEIGHT (KG)", 11, ALIGN_HEADER_CENTER),
     ]
 
     ws.row_dimensions[next_row].height = 22
@@ -140,6 +180,7 @@ def export_participants_xlsx(db: Session = Depends(get_db)):
             (p.role or "Player", ALIGN_CENTER, FONT_TD),
             (p.gender or "—", ALIGN_CENTER, FONT_TD),
             (p.age or "—", ALIGN_CENTER, FONT_TD),
+            (_weight(p), ALIGN_CENTER, FONT_TD),
         ]
 
         for col_idx, (val, align, font) in enumerate(row_data, start=1):
@@ -167,7 +208,7 @@ def export_participants_xlsx(db: Session = Depends(get_db)):
     )
 
 
-@router.get("/teams-full.xlsx", dependencies=[Depends(require_module("teams"))])
+@router.get("/teams-full.xlsx", dependencies=[Depends(require_report("teams"))])
 def export_teams_full_xlsx(db: Session = Depends(get_db)):
     """The single most complete team report: every organizer-set flag per
     team (active/arrived/cluster/label/benched age groups/last-year awards/
@@ -454,7 +495,7 @@ def _cluster_suffix(cluster: "str | None") -> str:
     return f"-cluster-{_slug(cluster)}" if cluster else ""
 
 
-@router.get("/rooms.csv", dependencies=[Depends(require_module("accommodation"))])
+@router.get("/rooms.csv", dependencies=[Depends(require_report("accommodation"))])
 def export_room_allocation(cluster: "str | None" = Query(None), db: Session = Depends(get_db)):
     participant_counts = dict(
         db.query(models.Participant.team_id, func.count(models.Participant.id))
@@ -492,7 +533,7 @@ def export_room_allocation(cluster: "str | None" = Query(None), db: Session = De
     )
 
 
-@router.get("/rooms.xlsx", dependencies=[Depends(require_module("accommodation"))])
+@router.get("/rooms.xlsx", dependencies=[Depends(require_report("accommodation"))])
 def export_room_allocation_xlsx(cluster: "str | None" = Query(None), db: Session = Depends(get_db)):
     assignments = _room_assignments(db, cluster)
     # Allotted = that assignment's team's total registered participants;
@@ -611,7 +652,7 @@ def export_room_allocation_xlsx(cluster: "str | None" = Query(None), db: Session
     )
 
 
-@router.get("/rooms.pdf", dependencies=[Depends(require_module("accommodation"))])
+@router.get("/rooms.pdf", dependencies=[Depends(require_report("accommodation"))])
 def export_room_allocation_pdf(cluster: "str | None" = Query(None), db: Session = Depends(get_db)):
     """Printable PDF twin of rooms.xlsx above — same per-occupant Accommodation
     Report (who's in which bed), same source query, just laid out as a
@@ -671,7 +712,7 @@ def export_room_allocation_pdf(cluster: "str | None" = Query(None), db: Session 
     )
 
 
-@router.get("/rooms-detailed.csv", dependencies=[Depends(require_module("accommodation"))])
+@router.get("/rooms-detailed.csv", dependencies=[Depends(require_report("accommodation"))])
 def export_room_map_report_csv(db: Session = Depends(get_db)):
     """Room Map Report — one row per Room across every Building/Floor (see
     accommodation.room_report_rows), unlike rooms.csv above which is one row
@@ -689,7 +730,7 @@ def export_room_map_report_csv(db: Session = Depends(get_db)):
     )
 
 
-@router.get("/rooms-detailed.xlsx", dependencies=[Depends(require_module("accommodation"))])
+@router.get("/rooms-detailed.xlsx", dependencies=[Depends(require_report("accommodation"))])
 def export_room_map_report_xlsx(db: Session = Depends(get_db)):
     rows = room_report_rows(db)
 
@@ -779,7 +820,7 @@ def export_room_map_report_xlsx(db: Session = Depends(get_db)):
     )
 
 
-@router.get("/rooms-detailed.pdf", dependencies=[Depends(require_module("accommodation"))])
+@router.get("/rooms-detailed.pdf", dependencies=[Depends(require_report("accommodation"))])
 def export_room_map_report_pdf(db: Session = Depends(get_db)):
     rows = room_report_rows(db)
     table_rows = [
@@ -806,9 +847,10 @@ def export_room_map_report_pdf(db: Session = Depends(get_db)):
     )
 
 
-@router.get("/attendance.xlsx", dependencies=[Depends(require_module("attendance"))])
+@router.get("/attendance.xlsx", dependencies=[Depends(require_report("attendance"))])
 def export_attendance_xlsx(db: Session = Depends(get_db)):
-    teams = {t.id: t.name for t in db.query(models.Team).all()}
+    team_by_id = {t.id: t for t in db.query(models.Team).all()}
+    teams = {tid: t.name for tid, t in team_by_id.items()}
     participants = (
         db.query(models.Participant)
         .order_by(models.Participant.age_group, models.Participant.team_id, models.Participant.full_name)
@@ -818,7 +860,7 @@ def export_attendance_xlsx(db: Session = Depends(get_db)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Attendance"
-    max_cols = 6
+    max_cols = 9
 
     next_row = style_header_banner(
         ws,
@@ -833,11 +875,13 @@ def export_attendance_xlsx(db: Session = Depends(get_db)):
     present_p = sum(1 for p in participants if p.is_present)
     absent_p = total_p - present_p
     rate = f"{round(100 * present_p / total_p)}%" if total_p else "—"
+    inactive_p = sum(1 for p in participants if not _age_group_active(team_by_id.get(p.team_id), p.age_group))
 
     cards = [
         ("Total Participants", total_p, "Registered"),
         ("Present", present_p, "Checked In"),
         ("Absent", absent_p, "Not Checked In"),
+        ("Inactive", inactive_p, "Team / Age Group Inactive"),
         ("Attendance Rate", rate, "Present / Total"),
     ]
     next_row = style_kpi_cards(ws, cards, start_row=next_row, card_width_cols=1)
@@ -851,6 +895,9 @@ def export_attendance_xlsx(db: Session = Depends(get_db)):
         ("REG. NO.", 14, ALIGN_HEADER_CENTER),
         ("ROLE", 14, ALIGN_HEADER_CENTER),
         ("PRESENT", 12, ALIGN_HEADER_CENTER),
+        ("WEIGHT (KG)", 11, ALIGN_HEADER_CENTER),
+        ("TEAM STATUS", 12, ALIGN_HEADER_CENTER),
+        ("AGE GROUP STATUS", 14, ALIGN_HEADER_CENTER),
     ]
 
     ws.row_dimensions[next_row].height = 22
@@ -864,7 +911,9 @@ def export_attendance_xlsx(db: Session = Depends(get_db)):
 
     for idx, p in enumerate(participants, start=1):
         ws.row_dimensions[next_row].height = 20
-        fill = FILL_ZEBRA_EVEN if idx % 2 == 0 else FILL_ZEBRA_ODD
+        team = team_by_id.get(p.team_id)
+        group_active = _age_group_active(team, p.age_group)
+        fill = FILL_ROW_INACTIVE if not group_active else (FILL_ZEBRA_EVEN if idx % 2 == 0 else FILL_ZEBRA_ODD)
 
         row_data = [
             (teams.get(p.team_id, "—"), ALIGN_LEFT, FONT_TD_BOLD),
@@ -873,6 +922,9 @@ def export_attendance_xlsx(db: Session = Depends(get_db)):
             (p.registration_no or "—", ALIGN_CENTER, FONT_TD),
             (p.role or "Player", ALIGN_CENTER, FONT_TD),
             ("PRESENT" if p.is_present else "ABSENT", ALIGN_CENTER, FONT_TD_BOLD),
+            (_weight(p), ALIGN_CENTER, FONT_TD),
+            ("Active" if team and team.is_active else "Inactive", ALIGN_CENTER, FONT_TD),
+            ("Active" if group_active else "Inactive", ALIGN_CENTER, FONT_TD),
         ]
 
         for col_idx, (val, align, font) in enumerate(row_data, start=1):
@@ -942,7 +994,7 @@ def _pending_processes(team: models.Team, participant_total: int, participant_pr
 FILL_ROW_UNBILLED = PatternFill("solid", fgColor=CLR_AMBER_BG)
 
 
-@router.get("/arrival.xlsx", dependencies=[Depends(require_module("teams"))])
+@router.get("/arrival.xlsx", dependencies=[Depends(require_report("teams"))])
 def export_arrival_xlsx(db: Session = Depends(get_db)):
     teams = db.query(models.Team).order_by(models.Team.name).all()
     participant_counts = dict(
@@ -971,7 +1023,7 @@ def export_arrival_xlsx(db: Session = Depends(get_db)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Arrival Status"
-    max_cols = 8
+    max_cols = 10
 
     next_row = style_header_banner(
         ws,
@@ -1004,6 +1056,7 @@ def export_arrival_xlsx(db: Session = Depends(get_db)):
         ("Arrived", arrived_t, "Checked In"),
         ("Not Arrived", not_arrived_t, "Pending"),
         ("Arrival Rate", rate, "Arrived / Total"),
+        ("Inactive Teams", sum(1 for t in teams if not t.is_active), "Not Competing"),
         ("Arrived, Pending", pending_t, "Billing / Attendance Not Done"),
     ]
     next_row = style_kpi_cards(ws, cards, start_row=next_row, card_width_cols=1)
@@ -1013,6 +1066,8 @@ def export_arrival_xlsx(db: Session = Depends(get_db)):
     headers = [
         ("SCHOOL CODE", 14, ALIGN_HEADER_CENTER),
         ("SCHOOL / TEAM", 30, ALIGN_HEADER_LEFT),
+        ("TEAM STATUS", 12, ALIGN_HEADER_CENTER),
+        ("AGE GROUPS", 28, ALIGN_HEADER_LEFT),
         ("ARRIVED", 12, ALIGN_HEADER_CENTER),
         ("PLANNED DATE", 14, ALIGN_HEADER_CENTER),
         ("PLANNED TIME", 14, ALIGN_HEADER_CENTER),
@@ -1049,11 +1104,17 @@ def export_arrival_xlsx(db: Session = Depends(get_db)):
         # Flags the row whenever someone registered hasn't been billed yet —
         # overrides the plain zebra stripe since this is the one condition
         # on this sheet an organizer actually needs to spot at a glance.
-        fill = FILL_ROW_UNBILLED if registered > billed else (FILL_ZEBRA_EVEN if idx % 2 == 0 else FILL_ZEBRA_ODD)
+        fill = (
+            FILL_ROW_INACTIVE if not t.is_active
+            else FILL_ROW_UNBILLED if registered > billed
+            else (FILL_ZEBRA_EVEN if idx % 2 == 0 else FILL_ZEBRA_ODD)
+        )
 
         row_data = [
             (t.school_code or "—", ALIGN_CENTER, FONT_TD),
             (t.name, ALIGN_LEFT, FONT_TD_BOLD),
+            ("Active" if t.is_active else "Inactive", ALIGN_CENTER, FONT_TD_BOLD),
+            (_team_age_group_statuses(t), ALIGN_LEFT, FONT_TD),
             ("ARRIVED" if t.has_arrived else "NOT ARRIVED", ALIGN_CENTER, FONT_TD_BOLD),
             (t.arrival_date.strftime("%d-%b-%Y") if t.arrival_date else "—", ALIGN_CENTER, FONT_TD),
             (t.arrival_time or "—", ALIGN_CENTER, FONT_TD),
@@ -1088,7 +1149,9 @@ def export_arrival_xlsx(db: Session = Depends(get_db)):
 
 
 def _has_view(current: models.OrganizerUser, module_key: str) -> bool:
-    if current.is_admin:
+    """Whether a live-report section is visible — its own module's view
+    access, or the "reports" grant (every report, read-only)."""
+    if current.is_admin or has_reports_access(current):
         return True
     return (current.permissions or {}).get(module_key) in ("view", "edit")
 
@@ -1162,6 +1225,8 @@ def live_reports_summary(current: models.OrganizerUser = Depends(require_auth), 
             "pending_teams": pending_teams,
         }
 
+    if _has_view(current, "billing"):
+        teams = db.query(models.Team).all()
         total_billed = sum(p.amount for t in teams for p in t.payments if p.kind == "BILL")
         total_paid = sum(p.amount for t in teams for p in t.payments if p.kind == "PAYMENT")
         total_refunded = sum(p.amount for t in teams for p in t.payments if p.kind == "REFUND")
@@ -1232,7 +1297,7 @@ def live_reports_summary(current: models.OrganizerUser = Depends(require_auth), 
 _LIVE_DETAIL_MODULES = {
     "attendance": "attendance",
     "arrival": "teams",
-    "billing": "teams",
+    "billing": "billing",
     "duty": "staff",
     "matches": "matches",
     "accommodation": "accommodation",
@@ -1275,14 +1340,18 @@ def _live_detail_data(section: str, db: Session) -> dict:
     Returns {"columns": [...], "rows": [[...], ...]} — a generic shape the
     frontend renders with one plain <table>, no per-section UI needed."""
     if section == "attendance":
-        teams = {t.id: t.name for t in db.query(models.Team).all()}
+        team_by_id = {t.id: t for t in db.query(models.Team).all()}
+        teams = {tid: t.name for tid, t in team_by_id.items()}
         participants = (
             db.query(models.Participant)
             .order_by(models.Participant.age_group, models.Participant.team_id, models.Participant.full_name)
             .all()
         )
         return {
-            "columns": ["Team", "Age Group", "Participant Name", "Reg. No.", "Role", "Present"],
+            "columns": [
+                "Team", "Age Group", "Participant Name", "Reg. No.", "Role", "Present", "Weight (kg)",
+                "Team Status", "Age Group Status",
+            ],
             "rows": [
                 [
                     teams.get(p.team_id, "—"),
@@ -1291,9 +1360,14 @@ def _live_detail_data(section: str, db: Session) -> dict:
                     p.registration_no or "—",
                     p.role or "Player",
                     "Present" if p.is_present else "Absent",
+                    _weight(p),
+                    "Active" if team_by_id.get(p.team_id) and team_by_id[p.team_id].is_active else "Inactive",
+                    "Active" if _age_group_active(team_by_id.get(p.team_id), p.age_group) else "Inactive",
                 ]
                 for p in participants
             ],
+            # Highlights anyone whose team or age group is inactive.
+            "row_flags": [not _age_group_active(team_by_id.get(p.team_id), p.age_group) for p in participants],
         }
 
     if section == "arrival":
@@ -1336,6 +1410,8 @@ def _live_detail_data(section: str, db: Session) -> dict:
             rows.append([
                 t.school_code or "—",
                 t.name,
+                "Active" if t.is_active else "Inactive",
+                _team_age_group_statuses(t),
                 "Arrived" if t.has_arrived else "Not Arrived",
                 t.arrival_date.strftime("%d-%b-%Y") if t.arrival_date else "—",
                 t.arrival_time or "—",
@@ -1346,7 +1422,7 @@ def _live_detail_data(section: str, db: Session) -> dict:
             row_flags.append(registered > billed)
         return {
             "columns": [
-                "School Code", "School / Team", "Arrived", "Planned Date", "Planned Time",
+                "School Code", "School / Team", "Team Status", "Age Groups", "Arrived", "Planned Date", "Planned Time",
                 "Planned Location", "Pending Processes", "R/T/B (Reg./Total/Billed)",
             ],
             "rows": rows,
@@ -1585,7 +1661,7 @@ def live_report_detail(
     return _live_detail_data(section, db)
 
 
-@router.get("/duties.xlsx", dependencies=[Depends(require_module("staff"))])
+@router.get("/duties.xlsx", dependencies=[Depends(require_report("staff"))])
 def export_duties_xlsx(db: Session = Depends(get_db)):
     duties = (
         db.query(models.DutyAssignment)
@@ -2304,7 +2380,7 @@ def export_idcard_back(
     return _pdf_response(pdf, f"idcard-back-{size}-{sheet}.pdf")
 
 
-@router.get("/payments.xlsx", dependencies=[Depends(require_module("teams"))])
+@router.get("/payments.xlsx", dependencies=[Depends(require_report("billing"))])
 def export_payments_xlsx(db: Session = Depends(get_db)):
     """Per-team registration-fee ledger — total billed, total paid (split
     Cash vs UPI), balance due, total refunded (split Cash vs UPI), net

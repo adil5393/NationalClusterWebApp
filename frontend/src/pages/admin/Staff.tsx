@@ -115,7 +115,10 @@ export default function Staff() {
       api.get<ShiftBlockItem[]>("/staff/shift-blocks"),
       api.get<StaffShiftItem[]>("/staff/shifts"),
       api.get<StaffDutyItem[]>("/staff/duties"),
-      api.get<StaffTaskItem[]>("/tasks"),
+      // The org-wide Tasks board is admin / "staff":"edit" only (backend
+      // security.require_task_board) — a Staff Ops viewer just sees no tasks
+      // rather than the whole page failing to load.
+      api.get<StaffTaskItem[]>("/tasks").catch(() => ({ data: [] as StaffTaskItem[] })),
       api.get<{
         duty_types: string[];
         staff_categories: string[];

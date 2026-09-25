@@ -110,7 +110,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: "Operations",
     items: [
-      { to: "/admin/tasks", label: "Tasks", icon: CheckSquare },
+      { to: "/admin/tasks", label: "Tasks", icon: CheckSquare, moduleKey: "staff" },
       { to: "/admin/transport", label: "Transport", icon: Bus, moduleKey: "transport" },
       { to: "/admin/procurement", label: "Procurement", icon: ShoppingCart, moduleKey: "procurement" },
     ],
@@ -122,7 +122,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/admin/matches", label: "Matches & Fixtures", icon: Radio, moduleKey: "matches" },
       { to: "/admin/mat-ground", label: "Mat / Ground", icon: Activity, moduleKey: "matches" },
       { to: "/admin/schedule", label: "Schedule", icon: CalendarDays, moduleKey: "schedule" },
-      { to: "/admin/reports", label: "Reports & Export", icon: FileSpreadsheet, moduleKey: "matches" },
+      { to: "/admin/reports", label: "Reports & Export", icon: FileSpreadsheet, moduleKey: "reports" },
     ],
   },
   {
@@ -252,7 +252,14 @@ export function AdminLayout() {
     // "view"/"edit" permission grant can ever unlock for a staff login.
     if (moduleKey === "accounts") return !!me?.is_admin;
     if (me?.is_admin) return true;
+    // The organizer-wide Tasks board is admin / Staff Operations ("staff":"edit")
+    // only — everyone else gets their own tasks on My Work (security.require_task_board).
+    if (to === "/admin/tasks") return me?.permissions?.staff === "edit";
     if (!!me?.permissions?.[moduleKey]) return true;
+    // Reports & Export used to ride on "matches" — keep it for those accounts.
+    if (to === "/admin/reports" && !!me?.permissions?.matches) return true;
+    // Upload-only gallery accounts still open the gallery page to upload.
+    if (to === "/admin/gallery" && me?.permissions?.gallery_upload === "edit") return true;
     // An account with zero "matches" module access can still be assigned to
     // specific matches (see permissions.tsx useModuleAccess) — that only
     // unlocks the Matches & Fixtures page itself, not Mat/Ground or Reports,
@@ -320,7 +327,7 @@ export function AdminLayout() {
         <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-5" aria-label="Operations Navigation">
           {(me?.is_self_service_volunteer
             ? [MY_ID_CARD_GROUP, VOLUNTEER_MATCHES_GROUP]
-            : me?.is_self_service_staff
+            : me?.is_self_service_staff || (me?.staff_member && !me?.is_admin)
               ? [MY_WORK_GROUP, ...NAV_GROUPS]
               : NAV_GROUPS
           ).map((group) => {

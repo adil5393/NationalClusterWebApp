@@ -77,9 +77,36 @@ function weightCapFor(ageGroup?: string): number | undefined {
   return AGE_GROUP_WEIGHT_CAPS[ageGroup.trim().toLowerCase()];
 }
 
+// Round ID-card photo (or initial placeholder) beside a participant's name —
+// clicking an uploaded photo opens it full-size in a new tab for checking.
+function ParticipantPhoto({ name, photoUrl, size = "h-10 w-10" }: { name: string; photoUrl?: string | null; size?: string }) {
+  if (!photoUrl) {
+    return (
+      <div
+        className={cn(size, "rounded-full bg-white/5 border border-white/10 grid place-items-center text-slate-400 font-heading font-black text-xs shrink-0")}
+        title="No photo uploaded"
+      >
+        {name.slice(0, 1).toUpperCase()}
+      </div>
+    );
+  }
+  return (
+    <a href={`${BASE_URL}${photoUrl}`} target="_blank" rel="noreferrer" title={`Open ${name}'s photo`} className="shrink-0">
+      <img
+        src={`${BASE_URL}${photoUrl}`}
+        alt={name}
+        loading="lazy"
+        className={cn(size, "rounded-full object-cover border border-white/10 hover:border-gold/60 transition-colors")}
+      />
+    </a>
+  );
+}
+
 export default function Participants() {
   const { canEdit } = useModuleAccess("teams");
-  const canMarkAttendance = canEdit;
+  // Present/absent and weigh-in are the "attendance" permission (the backend's
+  // attendance router gate), not Teams edit.
+  const canMarkAttendance = useModuleAccess("attendance").canEdit;
   const [view, setView] = useState<"players" | "coaches">("players");
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [coaches, setCoaches] = useState<Coach[]>([]);
@@ -671,17 +698,7 @@ export default function Participants() {
                 >
                   <div className="flex items-start justify-between gap-2.5 min-w-0">
                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      {p.photo_url ? (
-                        <img
-                          src={`${BASE_URL}${p.photo_url}`}
-                          alt={p.full_name}
-                          className="h-10 w-10 rounded-full object-cover border border-white/10 shrink-0"
-                        />
-                      ) : (
-                        <div className="h-10 w-10 rounded-full bg-white/5 border border-white/10 grid place-items-center text-slate-400 font-heading font-black text-xs shrink-0">
-                          {p.full_name.slice(0, 1).toUpperCase()}
-                        </div>
-                      )}
+                      <ParticipantPhoto name={p.full_name} photoUrl={p.photo_url} />
                       <div className="min-w-0 flex-1">
                         <span className="text-[10px] font-mono text-slate-500">
                           #{(page - 1) * PAGE_SIZE + i + 1}
@@ -942,7 +959,12 @@ export default function Participants() {
                       <TD className="text-slate-500 font-mono text-xs">
                         {(page - 1) * PAGE_SIZE + i + 1}
                       </TD>
-                      <TD className="font-bold text-white text-sm">{p.full_name}</TD>
+                      <TD className="font-bold text-white text-sm">
+                        <div className="flex items-center gap-2.5">
+                          <ParticipantPhoto name={p.full_name} photoUrl={p.photo_url} size="h-9 w-9" />
+                          <span>{p.full_name}</span>
+                        </div>
+                      </TD>
                       <TD className="font-mono text-xs text-slate-400">
                         {p.registration_no || "—"}
                       </TD>

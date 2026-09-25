@@ -11,6 +11,11 @@ from ..ws import broadcast_roster_change_sync
 
 router = APIRouter(prefix="/api/teams", tags=["teams"])
 
+# Just the Arrived / Not Arrived toggle, registered in main.py under its own
+# "team_arrival" permission instead of "teams" — so a Boarding account can mark
+# a team arrived without being able to edit anything else about teams.
+arrival_router = APIRouter(prefix="/api/teams", tags=["teams"])
+
 
 def _require_admin_password(db: Session, password: "str | None") -> None:
     """Turning a Teams-tab toggle OFF (Active -> Inactive, Arrived -> Not
@@ -353,6 +358,10 @@ def update_team(team_id: int, payload: schemas.TeamUpdate, db: Session = Depends
         user.is_admin or (user.permissions or {}).get("team_activation") == "edit"
     ):
         raise HTTPException(403, "Only administrators (or accounts granted this permission) can activate/deactivate teams")
+    if "has_arrived" in payload.model_fields_set and not (
+        user.is_admin or (user.permissions or {}).get("team_arrival") == "edit"
+    ):
+        raise HTTPException(403, "Only administrators (or accounts granted Set Team Arrived) can change arrival status")
     data = payload.model_dump(exclude_unset=True)
     # An inactive team can't have its arrival status or awards changed
     # (unless this same request reactivates it).
@@ -384,6 +393,25 @@ def update_team(team_id: int, payload: schemas.TeamUpdate, db: Session = Depends
         # creation window so another organizer sees it live (has_arrived/
         # contact-detail-only edits aren't fixture-relevant, skip those).
         broadcast_roster_change_sync("team_active")
+    return team
+
+
+@arrival_router.put("/{team_id}/arrived", response_model=schemas.TeamRead)
+def set_team_arrived(team_id: int, payload: schemas.TeamArrivalUpdate, db: Session = Depends(get_db)):
+    """The Teams page's Arrived toggle. Same rules as setting has_arrived via
+    update_team: an inactive team's arrival can't change, and marking a team
+    Not Arrived needs an admin password (_require_admin_password)."""
+    team = db.get(models.Team, team_id)
+    if not team:
+        raise HTTPException(404, "Team not found")
+    if not team.is_active:
+        raise HTTPException(400, "This team is inactive — arrival and awards can't be changed.")
+    if payload.has_arrived is False:
+        _require_admin_password(db, payload.admin_password)
+    team.has_arrived = payload.has_arrived
+    db.commit()
+    db.refresh(team)
+    team.present_counts = _present_counts_map(db, [team.id]).get(team.id, {})
     return team
 
 

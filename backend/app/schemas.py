@@ -224,6 +224,12 @@ class TeamRead(ORMModel, TeamBase):
         return v or []
 
 
+class TeamArrivalUpdate(BaseModel):
+    has_arrived: bool
+    # Required only when marking a team Not Arrived — see teams.set_team_arrived.
+    admin_password: Optional[str] = None
+
+
 class TeamAgeGroupActiveUpdate(BaseModel):
     is_active: bool
     # Required only when is_active is False (see routers/teams.py
@@ -1121,6 +1127,48 @@ ORGANIZER_MODULES = {
     # Not a page — gates only the Team Active/Inactive toggle on the Teams page.
     # Admin-only unless an admin grants "edit" here (no useful "view" level).
     "team_activation": "Team Active/Inactive Toggle",
+    # Split out of "teams": View = billing summary, invoices, refund receipts,
+    # payments ledger; Edit = also raise bills, record payments and refunds.
+    # (Clearing every payment stays admin-only regardless.)
+    "billing": "Billing (bills, payments, refunds)",
+    # Not a page — gates only the Arrived / Not Arrived toggle on the Teams
+    # page (PUT /teams/{id}/arrived). Needs "edit"; "view" does nothing.
+    "team_arrival": "Set Team Arrived",
+    # Read-only access to the Reports & Export page and every report/download
+    # on it, even for sections this account can't otherwise open — see
+    # security.require_report / exports._has_view.
+    "reports": "Reports & Export",
+    # Upload new photos to the gallery, nothing else — editing a photo's tag
+    # or deleting it still needs "gallery":"edit". Needs "edit" here.
+    "gallery_upload": "Photo Gallery — Upload Only",
+}
+
+# One-click bundles on the Accounts & Access screen (frontend Accounts.tsx) —
+# they only pre-fill the permission matrix, which stays individually editable
+# afterwards; nothing stores which preset an account came from. "Teams"
+# view is included because every one of these tasks happens on the Teams /
+# Participants pages. Own tasks & duties need no permission: every account
+# linked to a Staff member gets its own My Work page (routers/me.py).
+PERMISSION_PRESETS = {
+    "administration": {
+        "label": "Administration",
+        "description": "Attendance (present/absent + weight), Billing, Reports, Photo Gallery upload",
+        "permissions": {
+            "teams": "view",
+            "attendance": "edit",
+            "billing": "edit",
+            "reports": "view",
+            "gallery_upload": "edit",
+        },
+    },
+    "boarding": {
+        "label": "Boarding",
+        "description": "Set team Arrived; sees only their own tasks & duties",
+        "permissions": {
+            "teams": "view",
+            "team_arrival": "edit",
+        },
+    },
 }
 PERMISSION_LEVELS = ["view", "edit"]  # a module key missing from `permissions` means no access
 
@@ -1128,7 +1176,11 @@ PERMISSION_LEVELS = ["view", "edit"]  # a module key missing from `permissions` 
 # every operational module — everything staff would need to see day-to-day — but
 # not Procurement (vendor pricing) or Knowledge Base (internal decisions/notes),
 # which stay admin/explicitly-granted only.
-STAFF_BASE_PERMISSIONS = {k: "view" for k in ORGANIZER_MODULES if k not in ("procurement", "knowledge", "team_activation")}
+STAFF_BASE_PERMISSIONS = {
+    k: "view"
+    for k in ORGANIZER_MODULES
+    if k not in ("procurement", "knowledge", "team_activation", "billing", "team_arrival", "reports", "gallery_upload")
+}
 
 # Auto-provisioned volunteer logins (routers/volunteers.py create_volunteer_credential)
 # get view access to just "teams" and "venues" — not the broad

@@ -38,6 +38,10 @@ function naturalCompare(a: string, b: string): number {
 
 export default function AdminGallery() {
   const { canEdit } = useModuleAccess("gallery");
+  // Upload-only accounts ("gallery_upload":"edit") get the upload panel but
+  // not retag/delete, which stay on full Photo Gallery edit (canEdit).
+  const uploadOnly = useModuleAccess("gallery_upload");
+  const canUpload = canEdit || uploadOnly.canEdit;
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -160,7 +164,7 @@ export default function AdminGallery() {
         </div>
       </div>
 
-      {canEdit && (
+      {canUpload && (
         <div className="rounded-xl border border-white/10 bg-obsidian-900 p-4 flex flex-wrap items-end gap-3">
           <div>
             <Label>Tag new uploads as</Label>

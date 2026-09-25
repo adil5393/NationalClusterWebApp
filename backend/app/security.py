@@ -47,6 +47,63 @@ def require_module(module_key: str):
     return _dep
 
 
+def has_reports_access(user: "models.OrganizerUser") -> bool:
+    """The "reports" grant — read-only access to every report and export on
+    the Reports & Export page, independent of each section's own module."""
+    return user.is_admin or (user.permissions or {}).get("reports") in ("view", "edit")
+
+
+def require_report(module_key: str):
+    """Like require_module(module_key), except a read (GET) is also allowed
+    for an account holding the "reports" permission — for the report/export
+    endpoints (exports.py, reports.py), so a Reports-only account can open
+    and download every report without being given the underlying section.
+    Writes still need real edit access on `module_key`."""
+    plain = require_module(module_key)
+
+    def _dep(request: Request, db: Session = Depends(get_db)) -> "models.OrganizerUser":
+        if request.method in SAFE_METHODS:
+            user = require_auth(request, db)
+            if has_reports_access(user):
+                return user
+        return plain(request, db)
+    return _dep
+
+
+def require_gallery_access(request: Request, db: Session = Depends(get_db)) -> "models.OrganizerUser":
+    """Gate for routers/gallery.py. "gallery" view/edit works as before;
+    "gallery_upload":"edit" additionally lets an account see the gallery and
+    upload new photos (POST /photos) — but never retag or delete one."""
+    user = require_auth(request, db)
+    if user.is_admin:
+        return user
+    perms = user.permissions or {}
+    gallery = perms.get("gallery")
+    upload_only = perms.get("gallery_upload") == "edit"
+    if request.method in SAFE_METHODS:
+        if gallery in ("view", "edit") or upload_only:
+            return user
+        raise HTTPException(403, "You don't have view access to this section")
+    if gallery == "edit":
+        return user
+    if upload_only and request.method == "POST" and request.url.path.rstrip("/").endswith("/photos"):
+        return user
+    raise HTTPException(403, "You can upload photos, but editing or deleting them needs Photo Gallery edit access")
+
+
+def require_task_board(request: Request, db: Session = Depends(get_db)) -> "models.OrganizerUser":
+    """Gate for routers/tasks.py — the organizer-wide board of everyone's
+    tasks. Admins, and accounts running Staff Operations ("staff":"edit"),
+    only; every other account sees just its own tasks on My Work
+    (routers/me.py)."""
+    user = require_auth(request, db)
+    if user.is_admin:
+        return user
+    if (user.permissions or {}).get("staff") == "edit" and not is_self_service_staff(user):
+        return user
+    raise HTTPException(403, "Use your My Work page to see your own tasks")
+
+
 def is_self_service_staff(user: "models.OrganizerUser") -> bool:
     """True for an ordinary staff member's own login — as opposed to an
     admin, or a non-admin account an admin has deliberately given real
@@ -153,7 +210,9 @@ def require_match_access(request: Request, db: Session = Depends(get_db)) -> "mo
 
     level = (user.permissions or {}).get("matches")
     if request.method in SAFE_METHODS:
-        if level in ("view", "edit") or user.assigned_matches:
+        # A "reports" account reads match/tournament data for the Reports &
+        # Export page's tournament reports — read-only, like every report.
+        if level in ("view", "edit") or user.assigned_matches or has_reports_access(user):
             return user
         raise HTTPException(403, "You don't have view access to this section")
 

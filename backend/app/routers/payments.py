@@ -382,3 +382,20 @@ def clear_all_payments(payload: ClearAllPaymentsRequest, db: Session = Depends(g
     deleted = db.query(models.Payment).delete()
     db.commit()
     return {"deleted": deleted}
+
+
+@router.delete("/{team_id}/payments/clear", dependencies=[Depends(require_admin)])
+def clear_team_payments(team_id: int, payload: ClearAllPaymentsRequest, db: Session = Depends(get_db)):
+    """clear_all_payments above, for one team only — wipes that team's every
+    BILL/PAYMENT/REFUND row (e.g. a bill raised against the wrong school or
+    with the wrong members). Same admin-only + admin-password confirmation,
+    same no-undo caveat. Billed status is derived purely from these rows
+    (_billed_keys), so the team's present members become billable again from
+    scratch, including the one-time security fee on its next first bill."""
+    team = db.get(models.Team, team_id)
+    if not team:
+        raise HTTPException(404, "Team not found")
+    _require_admin_password(db, payload.admin_password)
+    deleted = db.query(models.Payment).filter(models.Payment.team_id == team_id).delete()
+    db.commit()
+    return {"deleted": deleted}

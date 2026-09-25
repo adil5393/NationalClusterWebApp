@@ -40,7 +40,7 @@ def list_users(db: Session = Depends(get_db)):
 @router.get("/modules")
 def list_modules():
     """The fixed catalog of gate-able modules, for the permission-matrix editor."""
-    return {"modules": schemas.ORGANIZER_MODULES, "levels": schemas.PERMISSION_LEVELS}
+    return {"modules": schemas.ORGANIZER_MODULES, "levels": schemas.PERMISSION_LEVELS, "presets": schemas.PERMISSION_PRESETS}
 
 
 @router.post("", response_model=schemas.OrganizerUserRead, status_code=201)

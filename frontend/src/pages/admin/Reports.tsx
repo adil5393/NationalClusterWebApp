@@ -122,10 +122,16 @@ function ReportDownloadCard({
 export default function Reports() {
   const { canEdit } = useModuleAccess("matches");
   const me = useMe();
-  const attendanceAccess = useModuleAccess("attendance");
-  const teamsAccess = useModuleAccess("teams");
-  const staffAccess = useModuleAccess("staff");
-  const accommodationAccess = useModuleAccess("accommodation");
+  // The "reports" grant opens every report card below (read-only), whatever
+  // the account's access to each underlying section — mirrors the backend's
+  // security.require_report / exports._has_view.
+  const allReports = useModuleAccess("reports").canView;
+  const withReports = (a: { canView: boolean; canEdit: boolean }) => ({ ...a, canView: a.canView || allReports });
+  const attendanceAccess = withReports(useModuleAccess("attendance"));
+  const teamsAccess = withReports(useModuleAccess("teams"));
+  const billingAccess = withReports(useModuleAccess("billing"));
+  const staffAccess = withReports(useModuleAccess("staff"));
+  const accommodationAccess = withReports(useModuleAccess("accommodation"));
   const [tournaments, setTournaments] = useState<TournamentT[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<TournamentT | null>(null);
@@ -235,7 +241,7 @@ export default function Reports() {
       </div>
 
       {/* OPERATIONAL REPORTS — event-wide, not scoped to one tournament */}
-      {(attendanceAccess.canView || teamsAccess.canView || staffAccess.canView || accommodationAccess.canView || canEdit || me?.is_admin) && (
+      {(attendanceAccess.canView || teamsAccess.canView || billingAccess.canView || staffAccess.canView || accommodationAccess.canView || canEdit || allReports || me?.is_admin) && (
         <div className="space-y-3">
           <h2 className="font-heading text-xs font-bold uppercase tracking-wider text-slate-400">
             Operational Reports
@@ -272,7 +278,7 @@ export default function Reports() {
                 extraDownloads={[{ href: `${BACKEND}/api/export/live-detail/arrival.pdf`, label: "PDF" }]}
               />
             )}
-            {teamsAccess.canView && (
+            {billingAccess.canView && (
               <ReportDownloadCard
                 icon={Wallet}
                 title="Payments Ledger"
@@ -322,7 +328,7 @@ export default function Reports() {
                 ]}
               />
             )}
-            {(canEdit || me?.is_admin) && (
+            {(canEdit || allReports || me?.is_admin) && (
               <ReportDownloadCard
                 icon={Trophy}
                 title="Match Progress"

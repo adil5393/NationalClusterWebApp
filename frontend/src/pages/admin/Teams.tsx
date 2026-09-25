@@ -554,6 +554,10 @@ const empty: Partial<Team> = { name: "", school: "", region: "", cluster: "", la
 export default function AdminTeams() {
   const { canEdit } = useModuleAccess("teams");
   const { canEdit: canToggleActive } = useModuleAccess("team_activation");
+  // Arrived toggle: its own "team_arrival" permission (a Boarding account),
+  // not Teams edit — see backend teams.set_team_arrived.
+  const { canEdit: canSetArrived } = useModuleAccess("team_arrival");
+  const billingAccess = useModuleAccess("billing");
   const gateDisabled = !!useMe()?.admin_password_gate_disabled;
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
@@ -713,7 +717,7 @@ export default function AdminTeams() {
     const turningOn = t.has_arrived !== true;
     if (turningOn || gateDisabled) {
       api
-        .put(`/teams/${t.id}`, { has_arrived: turningOn })
+        .put(`/teams/${t.id}/arrived`, { has_arrived: turningOn })
         .then(() => load(true))
         .catch((e: any) => toast.error(e?.response?.data?.detail ?? "Could not update arrival status"));
     } else {
@@ -743,7 +747,7 @@ export default function AdminTeams() {
           admin_password: togglePassword.trim(),
         });
       } else if (pendingToggle.kind === "arrived") {
-        await api.put(`/teams/${pendingToggle.team.id}`, {
+        await api.put(`/teams/${pendingToggle.team.id}/arrived`, {
           has_arrived: false,
           admin_password: togglePassword.trim(),
         });
@@ -1119,7 +1123,7 @@ export default function AdminTeams() {
                       {/* Primary status badges */}
                       <div className="shrink-0 flex flex-col items-end gap-1">
                         <ActiveCell team={t} canEdit={canEdit && canToggleActive} onToggle={toggleActive} />
-                        <ArrivedCell team={t} canEdit={canEdit && t.is_active !== false} onToggle={toggleArrived} />
+                        <ArrivedCell team={t} canEdit={canSetArrived && t.is_active !== false} onToggle={toggleArrived} />
                       </div>
                     </div>
 
@@ -1345,16 +1349,18 @@ export default function AdminTeams() {
                         >
                           <QrCode className="h-3.5 w-3.5 text-gold shrink-0 mr-1" /> <span className="truncate">QR</span>
                         </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8 text-xs min-w-0 px-2 font-heading font-bold"
-                          onClick={() => (t.is_active === false ? toast.error("Team is inactive — billing is not available") : setReceiptTeam({ id: t.id, name: t.name }))}
-                          data-testid={`receipt-team-mobile-${t.id}`}
-                          title="Billing & Receipts"
-                        >
-                          <Receipt className="h-3.5 w-3.5 text-slate-300 shrink-0 mr-1" /> <span className="truncate">Billing</span>
-                        </Button>
+                        {billingAccess.canView && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs min-w-0 px-2 font-heading font-bold"
+                            onClick={() => (t.is_active === false ? toast.error("Team is inactive — billing is not available") : setReceiptTeam({ id: t.id, name: t.name }))}
+                            data-testid={`receipt-team-mobile-${t.id}`}
+                            title="Billing & Receipts"
+                          >
+                            <Receipt className="h-3.5 w-3.5 text-slate-300 shrink-0 mr-1" /> <span className="truncate">Billing</span>
+                          </Button>
+                        )}
                       </div>
 
                       {/* Photo lock & Admin actions */}
@@ -1466,7 +1472,7 @@ export default function AdminTeams() {
                           <ActiveCell team={t} canEdit={canEdit && canToggleActive} onToggle={toggleActive} />
                         </TD>
                         <TD className="px-1.5 py-2 text-center w-20">
-                          <ArrivedCell team={t} canEdit={canEdit && t.is_active !== false} onToggle={toggleArrived} />
+                          <ArrivedCell team={t} canEdit={canSetArrived && t.is_active !== false} onToggle={toggleArrived} />
                         </TD>
                         <TD className="px-1.5 py-2 min-w-0">
                           <div className="flex items-center gap-1.5">
@@ -1552,15 +1558,17 @@ export default function AdminTeams() {
                             >
                               <IdCard className="h-3.5 w-3.5" />
                             </button>
-                            <Button
-                              variant="ghost"
-                              className="h-7 w-7 p-0 shrink-0"
-                              onClick={() => (t.is_active === false ? toast.error("Team is inactive — billing is not available") : setReceiptTeam({ id: t.id, name: t.name }))}
-                              data-testid={`generate-receipt-${t.id}`}
-                              title="Billing & Refunds"
-                            >
-                              <Receipt className="h-3.5 w-3.5 text-slate-300" />
-                            </Button>
+                            {billingAccess.canView && (
+                              <Button
+                                variant="ghost"
+                                className="h-7 w-7 p-0 shrink-0"
+                                onClick={() => (t.is_active === false ? toast.error("Team is inactive — billing is not available") : setReceiptTeam({ id: t.id, name: t.name }))}
+                                data-testid={`generate-receipt-${t.id}`}
+                                title="Billing & Refunds"
+                              >
+                                <Receipt className="h-3.5 w-3.5 text-slate-300" />
+                              </Button>
+                            )}
                             {canEdit && (
                               <Button
                                 variant="ghost"
@@ -1754,7 +1762,7 @@ export default function AdminTeams() {
         title={qrTeam?.name ?? ""}
       />
 
-      <ReceiptDialog open={receiptTeam !== null} onClose={() => setReceiptTeam(null)} team={receiptTeam} />
+      <ReceiptDialog open={receiptTeam !== null} onClose={() => setReceiptTeam(null)} team={receiptTeam} canEdit={billingAccess.canEdit} />
 
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} type="teams" onDone={load} />
       <AttendanceImportDialog open={attendanceImportOpen} onClose={() => setAttendanceImportOpen(false)} onDone={load} />

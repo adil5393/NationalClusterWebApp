@@ -55,6 +55,13 @@ interface FormState {
   staff_member_ids: number[];
 }
 
+// One-click permission bundles from the backend (schemas.PERMISSION_PRESETS).
+interface PermissionPreset {
+  label: string;
+  description: string;
+  permissions: Record<string, "view" | "edit">;
+}
+
 const emptyForm: FormState = {
   username: "",
   full_name: "",
@@ -67,6 +74,7 @@ const emptyForm: FormState = {
 export default function Accounts() {
   const [users, setUsers] = useState<OrganizerUser[]>([]);
   const [modules, setModules] = useState<Record<string, string>>({});
+  const [presets, setPresets] = useState<Record<string, PermissionPreset>>({});
   const [staff, setStaff] = useState<StaffOption[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -83,12 +91,13 @@ export default function Accounts() {
     setLoading(true);
     Promise.all([
       api.get<OrganizerUser[]>("/organizer-users"),
-      api.get<{ modules: Record<string, string> }>("/organizer-users/modules"),
+      api.get<{ modules: Record<string, string>; presets?: Record<string, PermissionPreset> }>("/organizer-users/modules"),
       api.get<StaffOption[]>("/staff"),
     ])
       .then(([u, m, s]) => {
         setUsers(u.data);
         setModules(m.data.modules);
+        setPresets(m.data.presets ?? {});
         setStaff(s.data);
       })
       .finally(() => setLoading(false));
@@ -587,8 +596,54 @@ export default function Accounts() {
           {/* MODULE PERMISSIONS MATRIX */}
           {!form.is_admin && (
             <div className="space-y-2">
+              {Object.keys(presets).length > 0 && (
+                <div className="space-y-1.5" data-testid="account-presets">
+                  <Label>Role Presets</Label>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {Object.entries(presets).map(([key, preset]) => {
+                      const matches =
+                        Object.keys(modules).every((k) => (form.permissions[k] ?? "") === (preset.permissions[k] ?? ""));
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() =>
+                            // Replaces the whole matrix with the bundle; every
+                            // row stays editable below afterwards.
+                            setForm((f) => ({
+                              ...f,
+                              permissions: Object.fromEntries(
+                                Object.keys(modules).map((k) => [k, preset.permissions[k] ?? ""]),
+                              ),
+                            }))
+                          }
+                          data-testid={`account-preset-${key}`}
+                          aria-pressed={matches}
+                          className={cn(
+                            "rounded-lg border px-3 py-2 text-left transition-colors",
+                            matches
+                              ? "border-gold/50 bg-gold/10"
+                              : "border-white/10 bg-obsidian-950 hover:border-white/20 hover:bg-white/5",
+                          )}
+                        >
+                          <span className={cn("block font-heading text-xs font-bold", matches ? "text-gold" : "text-white")}>
+                            {preset.label}
+                          </span>
+                          <span className="mt-0.5 block text-[11px] leading-snug text-slate-400 font-body">
+                            {preset.description}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-slate-500 font-body">
+                    A preset fills in the permissions below — adjust any of them afterwards. Own tasks &amp; duties come
+                    from linking the account to a staff member.
+                  </p>
+                </div>
+              )}
               <Label>Granular Module Permissions</Label>
-              <div className="divide-y divide-white/10 rounded-lg border border-white/10 bg-obsidian-950 max-h-48 overflow-y-auto">
+              <div className="divide-y divide-white/10 rounded-lg border border-white/10 bg-obsidian-950 max-h-64 overflow-y-auto">
                 {Object.entries(modules).map(([key, label]) => (
                   <div
                     key={key}

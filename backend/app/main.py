@@ -6,7 +6,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import settings
-from .security import require_admin, require_auth, require_match_access, require_module, require_staff_operator
+from .security import (
+    require_admin,
+    require_auth,
+    require_gallery_access,
+    require_match_access,
+    require_module,
+    require_report,
+    require_staff_operator,
+    require_task_board,
+)
 from .routers import (
     accommodation,
     announcements,
@@ -113,8 +122,13 @@ for module in (health, public, auth, live_ws):
 # security.py / schemas.ORGANIZER_MODULES) — applied centrally here rather than
 # editing every router file. GET needs "view" on the module, everything else
 # needs "edit"; admins bypass this entirely.
-for module in (dashboard, search, tasks):
+for module in (dashboard, search):
     app.include_router(module.router, dependencies=[Depends(require_auth)])
+
+# The organizer-wide Tasks board (everyone's tasks) — admins and Staff
+# Operations ("staff":"edit") only; every other account sees just its own
+# tasks on My Work below. See security.require_task_board.
+app.include_router(tasks.router, dependencies=[Depends(require_task_board)])
 
 # routers/me.py — the "My Work" self-service surface (own shifts/duties/
 # tasks). Every route resolves its own identity off the session via
@@ -127,7 +141,7 @@ for router_module, module_key in (
     (participants, "teams"),
     (coaches, "teams"),
     (imports, "teams"),
-    (payments, "teams"),
+    (payments, "billing"),
     (structure, "buildings"),
     (accommodation, "accommodation"),
     (transport, "transport"),
@@ -138,10 +152,8 @@ for router_module, module_key in (
     (procurement, "procurement"),
     (announcements, "announcements"),
     (faq, "faq"),
-    (gallery, "gallery"),
     (pools, "matches"),
     (buckets, "matches"),
-    (reports, "matches"),
     (mats, "matches"),
     (attendance, "attendance"),
     (volunteers, "volunteers"),
@@ -167,6 +179,18 @@ for router_module in (staff, operational_categories, event_locations, operationa
 # match(es) independent of the "matches" module permission. See
 # security.require_match_access for the exact rules.
 app.include_router(matches.router, dependencies=[Depends(require_match_access)])
+
+# Photo Gallery: "gallery" view/edit as usual, plus "gallery_upload" for
+# upload-only accounts — see security.require_gallery_access.
+app.include_router(gallery.router, dependencies=[Depends(require_gallery_access)])
+
+# Tournament round reports — "matches" as before, but also readable by a
+# "reports" account (Reports & Export page). See security.require_report.
+app.include_router(reports.router, dependencies=[Depends(require_report("matches"))])
+
+# Set Arrived — its own "team_arrival" permission, separate from Teams edit,
+# so a Boarding account can mark teams arrived without editing anything else.
+app.include_router(teams.arrival_router, dependencies=[Depends(require_module("team_arrival"))])
 
 # attendance.py's second router (coach check-in) — same "attendance" module,
 # registered separately since it isn't the module's `.router` attribute.
