@@ -50,7 +50,16 @@ interface LiveSummary {
     coaches_present: number;
   };
   arrival?: { teams_total: number; arrived: number; not_arrived: number; pending_teams: PendingTeam[] };
-  billing?: { total_billed: number; total_paid: number; total_refunded: number; balance_due: number; net_collected: number };
+  billing?: {
+    total_billed: number;
+    total_paid: number;
+    total_refunded: number;
+    balance_due: number;
+    net_collected: number;
+    // Paid − refunded, per payment mode.
+    net_cash?: number;
+    net_upi?: number;
+  };
   duty?: { staff_total: number; staff_with_duty: number; staff_without_duty: number; duty_assignments_total: number };
   accommodation?: { rooms_total: number; total_capacity: number; beds_occupied: number; assignments_total: number };
   tournaments?: TournamentSummary[];
@@ -233,6 +242,14 @@ export function LiveReportsPanel() {
               <span className="text-right font-mono font-bold text-coral">{formatMoney(billing.total_refunded)}</span>
               <span className="text-slate-400">Balance Due</span>
               <span className="text-right font-mono font-bold text-gold">{formatMoney(billing.balance_due)}</span>
+              {billing.net_cash != null && (
+                <>
+                  <span className="text-slate-400 border-t border-white/5 pt-1.5">Cash (net)</span>
+                  <span className="text-right font-mono font-bold text-white border-t border-white/5 pt-1.5">{formatMoney(billing.net_cash)}</span>
+                  <span className="text-slate-400">UPI (net)</span>
+                  <span className="text-right font-mono font-bold text-white">{formatMoney(billing.net_upi ?? 0)}</span>
+                </>
+              )}
             </div>
           </StatCard>
         )}

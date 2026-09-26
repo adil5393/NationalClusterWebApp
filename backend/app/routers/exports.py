@@ -1281,12 +1281,20 @@ def live_reports_summary(current: models.OrganizerUser = Depends(require_auth), 
         total_billed = sum(p.amount for t in teams for p in t.payments if p.kind == "BILL")
         total_paid = sum(p.amount for t in teams for p in t.payments if p.kind == "PAYMENT")
         total_refunded = sum(p.amount for t in teams for p in t.payments if p.kind == "REFUND")
+
+        def _by_mode(kind: str, mode: str) -> int:
+            return sum(p.amount for t in teams for p in t.payments if p.kind == kind and p.payment_mode == mode)
+
         summary["billing"] = {
             "total_billed": total_billed,
             "total_paid": total_paid,
             "total_refunded": total_refunded,
             "balance_due": total_billed - total_paid,
             "net_collected": total_paid - total_refunded,
+            "paid_cash": _by_mode("PAYMENT", "Cash"),
+            "paid_upi": _by_mode("PAYMENT", "UPI"),
+            "net_cash": _by_mode("PAYMENT", "Cash") - _by_mode("REFUND", "Cash"),
+            "net_upi": _by_mode("PAYMENT", "UPI") - _by_mode("REFUND", "UPI"),
         }
 
     if _has_view(current, "staff"):
@@ -1512,6 +1520,8 @@ def _live_detail_data(section: str, db: Session) -> dict:
                 refunded_cash,
                 refunded_upi,
                 paid - refunded,
+                paid_cash - refunded_cash,
+                paid_upi - refunded_upi,
                 _fmt_date(max((p.payment_date for p in bills), default=None)),
                 _fmt_date(max((p.payment_date for p in pays), default=None)),
                 _fmt_date(max((p.payment_date for p in refunds), default=None)),
@@ -1522,9 +1532,15 @@ def _live_detail_data(section: str, db: Session) -> dict:
                 "School / Team", "School Code", "Total Billed (Rs.)", "Total Paid (Rs.)",
                 "Paid - Cash (Rs.)", "Paid - UPI (Rs.)", "Balance Due (Rs.)", "Total Refunded (Rs.)",
                 "Refunded - Cash (Rs.)", "Refunded - UPI (Rs.)", "Net Collected (Rs.)",
+                "Net - Cash (Rs.)", "Net - UPI (Rs.)",
                 "Last Bill Date", "Last Payment Date", "Last Refund Date", "Transactions",
             ],
-            "rows": rows,
+            # Grand-total row last: money columns (2..12) and the transaction count summed.
+            "rows": rows + (
+                [["TOTAL — ALL TEAMS", ""] + [sum(r[i] for r in rows) for i in range(2, 13)] + ["", "", "", sum(r[16] for r in rows)]]
+                if rows else []
+            ),
+            "row_flags": [False] * len(rows) + ([True] if rows else []),
         }
 
     if section == "duty":
@@ -2459,6 +2475,9 @@ def export_payments_xlsx(db: Session = Depends(get_db)):
             "team": t, "billed": billed, "paid": paid, "paid_cash": paid_cash, "paid_upi": paid_upi,
             "refunded": refunded, "refunded_cash": refunded_cash, "refunded_upi": refunded_upi,
             "balance_due": billed - paid, "net_collected": paid - refunded,
+            # What's actually left in hand per mode after refunds — the numbers
+            # finance reconciles against the cash box / the UPI account.
+            "net_cash": paid_cash - refunded_cash, "net_upi": paid_upi - refunded_upi,
             "last_bill": max((p.payment_date for p in bills), default=None),
             "last_payment": max((p.payment_date for p in pays), default=None),
             "last_refund": max((p.payment_date for p in refunds), default=None),
@@ -2468,7 +2487,7 @@ def export_payments_xlsx(db: Session = Depends(get_db)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Payments Ledger"
-    max_cols = 15
+    max_cols = 17
 
     next_row = style_header_banner(
         ws,
@@ -2482,11 +2501,15 @@ def export_payments_xlsx(db: Session = Depends(get_db)):
     total_billed = sum(r["billed"] for r in rows)
     total_paid = sum(r["paid"] for r in rows)
     total_refunded = sum(r["refunded"] for r in rows)
+    total_net_cash = sum(r["net_cash"] for r in rows)
+    total_net_upi = sum(r["net_upi"] for r in rows)
     cards = [
         ("Teams Billed", len(rows), "With Transactions"),
         ("Total Billed", f"Rs. {total_billed:,}", "Invoiced"),
         ("Total Paid", f"Rs. {total_paid:,}", "Received"),
         ("Net Collected", f"Rs. {total_paid - total_refunded:,}", "Paid − Refunded"),
+        ("Cash (Net)", f"Rs. {total_net_cash:,}", "Cash Paid − Cash Refunded"),
+        ("UPI (Net)", f"Rs. {total_net_upi:,}", "UPI Paid − UPI Refunded"),
     ]
     next_row = style_kpi_cards(ws, cards, start_row=next_row, card_width_cols=1)
 
@@ -2504,6 +2527,8 @@ def export_payments_xlsx(db: Session = Depends(get_db)):
         ("REFUNDED · CASH (RS.)", 17, ALIGN_HEADER_CENTER),
         ("REFUNDED · UPI (RS.)", 17, ALIGN_HEADER_CENTER),
         ("NET COLLECTED (RS.)", 16, ALIGN_HEADER_CENTER),
+        ("NET · CASH (RS.)", 15, ALIGN_HEADER_CENTER),
+        ("NET · UPI (RS.)", 15, ALIGN_HEADER_CENTER),
         ("LAST BILL DATE", 16, ALIGN_HEADER_CENTER),
         ("LAST PAYMENT DATE", 16, ALIGN_HEADER_CENTER),
         ("LAST REFUND DATE", 16, ALIGN_HEADER_CENTER),
@@ -2538,6 +2563,8 @@ def export_payments_xlsx(db: Session = Depends(get_db)):
             (r["refunded_cash"], ALIGN_CENTER, FONT_TD),
             (r["refunded_upi"], ALIGN_CENTER, FONT_TD),
             (r["net_collected"], ALIGN_CENTER, FONT_TD_BOLD),
+            (r["net_cash"], ALIGN_CENTER, FONT_TD),
+            (r["net_upi"], ALIGN_CENTER, FONT_TD),
             (_fmt_date(r["last_bill"]), ALIGN_CENTER, FONT_TD),
             (_fmt_date(r["last_payment"]), ALIGN_CENTER, FONT_TD),
             (_fmt_date(r["last_refund"]), ALIGN_CENTER, FONT_TD),
@@ -2550,6 +2577,31 @@ def export_payments_xlsx(db: Session = Depends(get_db)):
             cell.alignment = align
             cell.fill = fill
             cell.border = BORDER_CELL
+        next_row += 1
+
+    # Grand-total row — every money column summed, Cash and UPI included.
+    if rows:
+        total_fill = PatternFill("solid", fgColor=CLR_AMBER_BG)
+        totals = [
+            ("TOTAL — ALL TEAMS", ALIGN_LEFT),
+            ("", ALIGN_CENTER),
+            *[
+                (sum(r[k] for r in rows), ALIGN_CENTER)
+                for k in ("billed", "paid", "paid_cash", "paid_upi", "balance_due", "refunded",
+                          "refunded_cash", "refunded_upi", "net_collected", "net_cash", "net_upi")
+            ],
+            ("", ALIGN_CENTER),
+            ("", ALIGN_CENTER),
+            ("", ALIGN_CENTER),
+            (sum(r["transaction_count"] for r in rows), ALIGN_CENTER),
+        ]
+        ws.row_dimensions[next_row].height = 22
+        for col_idx, (val, align) in enumerate(totals, start=1):
+            cell = ws.cell(row=next_row, column=col_idx, value=val)
+            cell.font = FONT_TD_BOLD
+            cell.alignment = align
+            cell.fill = total_fill
+            cell.border = BORDER_HEADER
         next_row += 1
 
     ws.row_dimensions[next_row].height = 12
