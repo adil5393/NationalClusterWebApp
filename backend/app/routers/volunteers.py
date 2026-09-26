@@ -11,6 +11,7 @@ grouping, since volunteers are a single flat list.
 import io
 import uuid
 import zipfile
+from datetime import timezone
 from pathlib import Path
 
 import openpyxl
@@ -26,6 +27,93 @@ from ..database import get_db
 from ..image_utils import optimize_image
 
 router = APIRouter(prefix="/api/volunteers", tags=["volunteers"])
+
+
+# ---------- Volunteer shifts (models.VolunteerShift) ----------
+def _aware(dt):
+    return dt if dt is None or dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _shift_dict(s: models.VolunteerShift) -> dict:
+    return {
+        "id": s.id,
+        "name": s.name,
+        "start_time": s.start_time,
+        "end_time": s.end_time,
+        "location": s.location,
+        "notes": s.notes,
+        "volunteers": [
+            {"id": v.id, "full_name": v.full_name, "student_class": v.student_class, "phone": v.phone}
+            for v in s.volunteers
+        ],
+    }
+
+
+def _overlap_warnings(db: Session, shift: models.VolunteerShift) -> list[str]:
+    """Volunteers on `shift` who are also on another shift overlapping it —
+    reported, not blocked (an organizer may double-book on purpose)."""
+    start, end = _aware(shift.start_time), _aware(shift.end_time)
+    warnings = []
+    for v in shift.volunteers:
+        for other in v.shifts:
+            if other.id == shift.id:
+                continue
+            if _aware(other.start_time) < end and start < _aware(other.end_time):
+                warnings.append(f"{v.full_name} is also on \"{other.name}\" at an overlapping time")
+    return warnings
+
+
+def _apply_shift_fields(db: Session, shift: models.VolunteerShift, data: dict) -> None:
+    ids = data.pop("volunteer_ids", None)
+    for key, value in data.items():
+        if key in ("name", "location", "notes") and isinstance(value, str):
+            value = value.strip() or (None if key != "name" else value)
+        setattr(shift, key, value)
+    if not (shift.name or "").strip():
+        raise HTTPException(400, "Shift name is required")
+    if _aware(shift.end_time) <= _aware(shift.start_time):
+        raise HTTPException(400, "Shift must end after it starts")
+    if ids is not None:
+        vols = db.query(models.Volunteer).filter(models.Volunteer.id.in_(ids)).all() if ids else []
+        if len(vols) != len(set(ids)):
+            raise HTTPException(404, "One or more volunteers not found")
+        shift.volunteers = vols
+
+
+@router.get("/shifts")
+def list_volunteer_shifts(db: Session = Depends(get_db)):
+    shifts = db.query(models.VolunteerShift).order_by(models.VolunteerShift.start_time, models.VolunteerShift.id).all()
+    return [_shift_dict(s) for s in shifts]
+
+
+@router.post("/shifts", status_code=201)
+def create_volunteer_shift(payload: schemas.VolunteerShiftCreate, db: Session = Depends(get_db)):
+    shift = models.VolunteerShift(name=payload.name, start_time=payload.start_time, end_time=payload.end_time)
+    _apply_shift_fields(db, shift, payload.model_dump())
+    db.add(shift)
+    db.commit()
+    db.refresh(shift)
+    return {**_shift_dict(shift), "warnings": _overlap_warnings(db, shift)}
+
+
+@router.put("/shifts/{shift_id}")
+def update_volunteer_shift(shift_id: int, payload: schemas.VolunteerShiftUpdate, db: Session = Depends(get_db)):
+    shift = db.get(models.VolunteerShift, shift_id)
+    if not shift:
+        raise HTTPException(404, "Shift not found")
+    _apply_shift_fields(db, shift, payload.model_dump(exclude_unset=True))
+    db.commit()
+    db.refresh(shift)
+    return {**_shift_dict(shift), "warnings": _overlap_warnings(db, shift)}
+
+
+@router.delete("/shifts/{shift_id}", status_code=204)
+def delete_volunteer_shift(shift_id: int, db: Session = Depends(get_db)):
+    shift = db.get(models.VolunteerShift, shift_id)
+    if not shift:
+        raise HTTPException(404, "Shift not found")
+    db.delete(shift)
+    db.commit()
 
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 PDF_MEDIA_TYPE = "application/pdf"

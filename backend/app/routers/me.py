@@ -471,6 +471,35 @@ def my_volunteer_profile(volunteer: models.Volunteer = Depends(_self_volunteer))
     }
 
 
+@router.get("/volunteer/shifts")
+def my_volunteer_shifts(volunteer: models.Volunteer = Depends(_self_volunteer)):
+    """This volunteer's own shifts (models.VolunteerShift), for My ID Card —
+    what's on now first, then upcoming by time, then past (most recent first)."""
+    now = datetime.now(timezone.utc)
+
+    def aware(dt):
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+    out = []
+    for s in volunteer.shifts:
+        start, end = aware(s.start_time), aware(s.end_time)
+        state = "NOW" if start <= now < end else ("UPCOMING" if now < start else "DONE")
+        out.append({
+            "id": s.id,
+            "name": s.name,
+            "start_time": s.start_time,
+            "end_time": s.end_time,
+            "location": s.location,
+            "notes": s.notes,
+            "state": state,
+            # Who else is on this shift with them.
+            "teammates": [v.full_name for v in s.volunteers if v.id != volunteer.id],
+        })
+    order = {"NOW": 0, "UPCOMING": 1, "DONE": 2}
+    out.sort(key=lambda x: (order[x["state"]], aware(x["start_time"]).timestamp() * (-1 if x["state"] == "DONE" else 1)))
+    return out
+
+
 @router.get("/volunteer/idcard.pdf")
 def my_volunteer_idcard(volunteer: models.Volunteer = Depends(_self_volunteer)):
     card = id_card.render_volunteer_id_card_page(volunteer, _photo_path(volunteer))

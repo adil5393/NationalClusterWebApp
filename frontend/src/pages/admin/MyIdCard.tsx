@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { YourMatches } from "@/components/admin/YourMatches";
 import { CallbackRequestsPanel } from "@/components/admin/CallbackRequests";
+import { MyVolunteerShifts } from "@/components/admin/MyVolunteerShifts";
 
 interface MyVolunteerProfile {
   id: number;
@@ -88,6 +89,9 @@ export default function MyIdCard() {
           <p className="mt-1 text-xs sm:text-sm text-slate-400 font-body">Class {data.student_class}</p>
         )}
       </div>
+
+      {/* MY SHIFTS — volunteer shifts an organizer assigned (Volunteers → Shifts) */}
+      <MyVolunteerShifts />
 
       {/* CALL-BACK REQUESTS — only renders when there are any */}
       <CallbackRequestsPanel />

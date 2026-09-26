@@ -742,6 +742,27 @@ class VolunteerUpdate(BaseModel):
     notes: Optional[str] = None
 
 
+class VolunteerShiftBase(BaseModel):
+    name: str
+    start_time: datetime
+    end_time: datetime
+    location: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class VolunteerShiftCreate(VolunteerShiftBase):
+    volunteer_ids: List[int] = []
+
+
+class VolunteerShiftUpdate(BaseModel):
+    name: Optional[str] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    location: Optional[str] = None
+    notes: Optional[str] = None
+    volunteer_ids: Optional[List[int]] = None  # replaces the whole assignment list when given
+
+
 class VolunteerRead(ORMModel, VolunteerBase):
     id: int
     photo_url: Optional[str] = None

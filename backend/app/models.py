@@ -441,6 +441,36 @@ class Volunteer(TimestampMixin, Base):
         return self.organizer_users[0].username if self.organizer_users else None
 
 
+volunteer_shift_assignments = Table(
+    "volunteer_shift_assignments",
+    Base.metadata,
+    Column("shift_id", Integer, ForeignKey("volunteer_shifts.id", ondelete="CASCADE"), primary_key=True),
+    Column("volunteer_id", Integer, ForeignKey("volunteers.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+class VolunteerShift(TimestampMixin, Base):
+    """A volunteer duty slot (e.g. "Gate 2 — Morning") — deliberately separate
+    from the staff ShiftBlock/StaffShift system so volunteer scheduling can
+    never affect staff shifts, duties or in-charge routing. Volunteers are
+    assigned many-to-many (routers/volunteers.py /volunteers/shifts) and see
+    their own on My ID Card (routers/me.py /me/volunteer/shifts)."""
+    __tablename__ = "volunteer_shifts"
+    id = Column(Integer, primary_key=True)
+    name = Column(String(120), nullable=False)
+    start_time = Column(DateTime(timezone=True), nullable=False, index=True)
+    end_time = Column(DateTime(timezone=True), nullable=False)
+    location = Column(String(160))
+    notes = Column(Text)
+
+    volunteers = relationship(
+        "Volunteer",
+        secondary=volunteer_shift_assignments,
+        backref="shifts",
+        order_by="Volunteer.full_name",
+    )
+
+
 class Official(TimestampMixin, Base):
     """CBSE officials who monitor the championship — a flat roster like
     Volunteer, independent of any Team, with no self-service login. Gets its

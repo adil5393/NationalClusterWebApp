@@ -26,6 +26,7 @@ import { ImportDialog } from "@/components/admin/ImportDialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { useModuleAccess } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
+import { VolunteerShiftsPanel } from "@/components/admin/VolunteerShiftsPanel";
 
 interface Volunteer {
   id: number;
@@ -46,6 +47,7 @@ export default function Volunteers() {
   const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [tab, setTab] = useState<"roster" | "shifts">("roster");
   const [open, setOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [downloadAllOpen, setDownloadAllOpen] = useState(false);
@@ -195,6 +197,28 @@ export default function Volunteers() {
         </div>
       </div>
 
+      {/* ROSTER | SHIFTS */}
+      <div className="inline-flex rounded-lg border border-white/10 bg-obsidian-900 p-1" data-testid="volunteers-tabs">
+        {(["roster", "shifts"] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setTab(t)}
+            className={cn(
+              "rounded-md px-4 py-1.5 text-xs font-heading font-bold transition-colors",
+              tab === t ? "bg-gold text-obsidian" : "text-slate-400 hover:text-white",
+            )}
+            data-testid={`volunteers-tab-${t}`}
+          >
+            {t === "roster" ? "Volunteers" : "Shifts"}
+          </button>
+        ))}
+      </div>
+
+      {tab === "shifts" ? (
+        <VolunteerShiftsPanel volunteers={volunteers} canEdit={canEdit} />
+      ) : (
+      <>
       {/* SEARCH */}
       <div className="relative max-w-sm">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
@@ -551,6 +575,8 @@ export default function Volunteers() {
             </Table>
           </div>
         </>
+      )}
+      </>
       )}
 
       {/* ADD / EDIT DIALOG */}
