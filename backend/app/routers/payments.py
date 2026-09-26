@@ -260,7 +260,13 @@ def get_invoice(team_id: int, db: Session = Depends(get_db)):
 
     members, subtotal, discount, security_fee, _ = _live_bill_breakdown(team)
     totals = _totals(team)
-    pdf = receipt.render_invoice(team, members, subtotal, discount, security_fee, totals["total_paid"], date.today())
+    payments = [
+        {"date": p.payment_date, "mode": p.payment_mode, "transaction_id": p.transaction_id, "amount": p.amount}
+        for p in sorted((p for p in team.payments if p.kind == "PAYMENT"), key=lambda p: (p.payment_date, p.id))
+    ]
+    pdf = receipt.render_invoice(
+        team, members, subtotal, discount, security_fee, totals["total_paid"], date.today(), payments
+    )
     return _pdf_response(pdf, f"invoice-{team.school_code or team.id}.pdf")
 
 

@@ -294,6 +294,10 @@ def _draw_signature_footer(draw: ImageDraw.ImageDraw, footer_y: "int | None" = N
     draw.text(((PAGE_W - tw_disc) / 2, PAGE_H - 42), disc_text, font=disc_font, fill=CLR_MUTED)
 
 
+# Most payments a team's invoice lists individually before "+ N earlier".
+_MAX_PAYMENT_LINES = 6
+
+
 def render_invoice_image(
     team,
     members: list[dict],
@@ -302,12 +306,21 @@ def render_invoice_image(
     security_fee: int,
     total_paid: int,
     invoice_date: date,
+    payments: "list[dict] | None" = None,
 ) -> Image.Image:
-    """The team's full current billing state PDF page."""
+    """The team's full current billing state PDF page. `payments` (oldest
+    first; each {"date", "mode", "transaction_id", "amount"}) is listed under
+    the totals so the invoice doubles as a receipt, UPI Txn IDs included."""
     img, draw = _new_page()
     y = _draw_letterhead(draw, img, "Registration Fee Invoice", is_refund=False)
 
     footer_y = PAGE_H - MARGIN - 60
+    # "Payments Received" block — the most recent few, so it always fits the page.
+    payments = payments or []
+    shown_payments = payments[-_MAX_PAYMENT_LINES:]
+    hidden_payments = len(payments) - len(shown_payments)
+    pay_line_h = 30
+    pay_h = (52 + pay_line_h * (len(shown_payments) + (1 if hidden_payments else 0))) if payments else 0
     total_billed = subtotal - discount + security_fee
     balance_due = total_billed - total_paid
     summary_rows = 1 + (2 if discount else 0) + (1 if security_fee else 0)
@@ -316,7 +329,7 @@ def render_invoice_image(
     meta_h = 110
     stat_h = 88
 
-    available_total = (footer_y - 30) - y
+    available_total = (footer_y - 30) - y - pay_h
     if rows_needed <= 8:
         row_h = 60
         notes_h = 240
@@ -455,6 +468,26 @@ def render_invoice_image(
 
     y += stat_h + gap
 
+    # 3b. Payments Received — one line per payment: date, mode, UPI Txn ID, amount
+    if payments:
+        draw.rounded_rectangle([MARGIN, y, PAGE_W - MARGIN, y + pay_h], radius=8, fill=CLR_CARD_BG, outline=CLR_CARD_BORDER, width=1)
+        draw.text((MARGIN + 20, y + 16), "PAYMENTS RECEIVED", font=_font(15, bold=True), fill=CLR_GOLD_TEXT)
+        line_font = _font(15)
+        bold_font = _font(15, bold=True)
+        ly = y + 52
+        if hidden_payments:
+            draw.text((MARGIN + 20, ly), f"+ {hidden_payments} earlier payment{'s' if hidden_payments != 1 else ''}", font=line_font, fill=CLR_MUTED)
+            ly += pay_line_h
+        for p in shown_payments:
+            draw.text((MARGIN + 20, ly), _format_date(p["date"]), font=line_font, fill=CLR_NAVY_DARK)
+            draw.text((MARGIN + 190, ly), p["mode"] or "—", font=bold_font, fill=CLR_NAVY_DARK)
+            if p.get("transaction_id"):
+                draw.text((MARGIN + 290, ly), f"Txn ID: {p['transaction_id']}", font=line_font, fill=CLR_NAVY_MID)
+            amount = f"Rs. {p['amount']:,}"
+            draw.text((PAGE_W - MARGIN - 20 - draw.textlength(amount, font=bold_font), ly), amount, font=bold_font, fill=CLR_GREEN)
+            ly += pay_line_h
+        y += pay_h + gap
+
     # 4. Terms & Instructions Card
     actual_notes_h = min(notes_h, (footer_y - 30) - y)
     if actual_notes_h > 70:
@@ -486,9 +519,10 @@ def render_invoice(
     security_fee: int,
     total_paid: int,
     invoice_date: date,
+    payments: "list[dict] | None" = None,
 ) -> bytes:
     """The team's full current billing-state PDF bytes."""
-    img = render_invoice_image(team, members, subtotal, discount, security_fee, total_paid, invoice_date)
+    img = render_invoice_image(team, members, subtotal, discount, security_fee, total_paid, invoice_date, payments)
     buf = io.BytesIO()
     img.save(buf, format="PDF", resolution=float(PRINT_DPI))
     return buf.getvalue()
