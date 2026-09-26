@@ -16,6 +16,7 @@ from ..auth_utils import verify_password
 from ..database import get_db
 from ..face_crop import suggest_crop
 from ..image_utils import optimize_image
+from ..ws import broadcast_callbacks_change_sync
 
 router = APIRouter(prefix="/api/public", tags=["public"])
 
@@ -1037,6 +1038,185 @@ def public_contacts(db: Session = Depends(get_db)):
                 person.phone = ""
         out.append(data)
     return out
+
+
+# ---------- "Call me back" requests (public Contacts page) ----------
+# A participant or coach/manager asks a staff member listed on the public
+# Contacts page to phone them. No login: identity is checked the same
+# lightweight way as the photo uploads — school code + last 4 digits of the
+# participant's registration number (every registration number embeds its
+# school code, and the last 4 are the student's serial), or a coach/manager's
+# phone as registered for the team. The last 4 digits aren't unique within a
+# school (2024 and 2025 registrations reuse serials), so a lookup can return
+# up to a few names and the visitor taps theirs.
+_CALLBACK_WINDOW_SECONDS = 15 * 60
+_CALLBACK_MAX_FAILED = 10
+_CALLBACK_SEND_WINDOW_SECONDS = 60 * 60
+_CALLBACK_MAX_SENT = 10
+_failed_callback_lookups: dict[str, list[float]] = {}
+_sent_callbacks: dict[str, list[float]] = {}
+
+
+def _visitor_key(request: Request) -> str:
+    return request.headers.get("x-real-ip") or (request.client.host if request.client else "unknown")
+
+
+def _recent(store: dict[str, list[float]], key: str, window: int) -> list[float]:
+    now = time.time()
+    kept = [t for t in store.get(key, []) if now - t < window]
+    store[key] = kept
+    return kept
+
+
+def _last10(phone: "str | None") -> str:
+    return re.sub(r"\D", "", phone or "")[-10:]
+
+
+class CallbackLookupRequest(BaseModel):
+    school_code: str
+    kind: str  # "participant" | "coach"
+    code: str  # participant: last 4 digits of registration no. | coach: registered phone
+
+
+class CallbackCreateRequest(CallbackLookupRequest):
+    person_id: int
+    staff_member_id: int
+    contact_group_id: int  # the helpline the button was on — becomes the request's tag
+    callback_phone: str
+    message: "str | None" = None
+    # Device location — required (a request without it is refused).
+    latitude: "float | None" = None
+    longitude: "float | None" = None
+    location_accuracy_m: "float | None" = None
+
+
+def _callback_candidates(db: Session, payload: CallbackLookupRequest) -> "tuple[models.Team | None, list[dict]]":
+    school_code = payload.school_code.strip().lower()
+    team = (
+        db.query(models.Team).filter(func.lower(func.trim(models.Team.school_code)) == school_code).first()
+        if school_code else None
+    )
+    if not team:
+        return None, []
+    digits = re.sub(r"\D", "", payload.code or "")
+    people: list[dict] = []
+    if payload.kind == "participant" and len(digits) == 4:
+        for p in team.participants:
+            if p.is_active and p.registration_no and re.sub(r"\D", "", p.registration_no).endswith(digits):
+                people.append({"kind": "participant", "id": p.id, "name": p.full_name, "role": p.age_group or "Participant"})
+    elif payload.kind == "coach" and len(digits) >= 7:
+        for c in team.coaches:
+            if c.phone and _last10(c.phone) == digits[-10:]:
+                people.append({"kind": "coach", "id": c.id, "name": c.full_name, "role": c.role or "Coach"})
+    return team, people
+
+
+def _public_group_staff(db: Session, group_id: int) -> "tuple[str | None, set[int]]":
+    """(title, staff ids) for one helpline on the public Contacts page — a
+    call-back request can only be addressed to a staff member listed there."""
+    for g in public_contacts(db):
+        if g.id != group_id:
+            continue
+        ids: set[int] = set()
+        for person in (g.current_incharge, g.primary_contact, g.secondary_contact):
+            if person and not person.is_external and person.id:
+                ids.add(person.id)
+        for person in g.contacts:
+            if not person.is_external and person.id:
+                ids.add(person.id)
+        return g.title, ids
+    return None, set()
+
+
+@router.post("/callbacks/lookup")
+def callback_lookup(payload: CallbackLookupRequest, request: Request, db: Session = Depends(get_db)):
+    """Step 1 of "Call me back": who are you? Returns the matching name(s)."""
+    key = _visitor_key(request)
+    failed = _recent(_failed_callback_lookups, key, _CALLBACK_WINDOW_SECONDS)
+    if len(failed) >= _CALLBACK_MAX_FAILED:
+        raise HTTPException(429, "Too many attempts — try again later")
+    team, people = _callback_candidates(db, payload)
+    if not people:
+        failed.append(time.time())
+        raise HTTPException(404, "No match — check the school code and the digits / phone number")
+    return {"team_name": team.name, "people": people}
+
+
+@router.post("/callbacks", status_code=201)
+def create_callback(payload: CallbackCreateRequest, request: Request, db: Session = Depends(get_db)):
+    """Step 2 of "Call me back": re-verifies identity, then files the request
+    for that staff member and nudges logged-in screens to refresh."""
+    key = _visitor_key(request)
+    failed = _recent(_failed_callback_lookups, key, _CALLBACK_WINDOW_SECONDS)
+    if len(failed) >= _CALLBACK_MAX_FAILED:
+        raise HTTPException(429, "Too many attempts — try again later")
+    sent = _recent(_sent_callbacks, key, _CALLBACK_SEND_WINDOW_SECONDS)
+    if len(sent) >= _CALLBACK_MAX_SENT:
+        raise HTTPException(429, "Too many call-back requests from this device — please try again later")
+
+    team, people = _callback_candidates(db, payload)
+    person = next((p for p in people if p["id"] == payload.person_id), None)
+    if not person:
+        failed.append(time.time())
+        raise HTTPException(401, "Couldn't verify who you are — please start again")
+
+    topic, group_staff = _public_group_staff(db, payload.contact_group_id)
+    staff = db.get(models.StaffMember, payload.staff_member_id)
+    if not staff or staff.id not in group_staff:
+        raise HTTPException(404, "That staff member isn't taking call-back requests")
+
+    phone_digits = re.sub(r"\D", "", payload.callback_phone or "")
+    if not 7 <= len(phone_digits) <= 15:
+        raise HTTPException(400, "Enter a valid phone number to be called back on")
+    phone = payload.callback_phone.strip()[:30]
+    message = (payload.message or "").strip()[:300] or None
+    lat, lng = payload.latitude, payload.longitude
+    if lat is None or lng is None or not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        raise HTTPException(400, "Location access is required to send a call-back request — please allow it and try again")
+    accuracy = payload.location_accuracy_m if (payload.location_accuracy_m or 0) >= 0 else None
+
+    id_col = models.CallbackRequest.participant_id if person["kind"] == "participant" else models.CallbackRequest.coach_id
+    existing = (
+        db.query(models.CallbackRequest)
+        .filter(
+            models.CallbackRequest.staff_member_id == staff.id,
+            models.CallbackRequest.status == "PENDING",
+            id_col == person["id"],
+        )
+        .first()
+    )
+    if existing:
+        # Same person asking the same staff member again while still waiting —
+        # refresh the number/message rather than stacking duplicates.
+        existing.callback_phone = phone
+        existing.message = message or existing.message
+        existing.latitude, existing.longitude, existing.location_accuracy_m = lat, lng, accuracy
+        db.commit()
+        broadcast_callbacks_change_sync()
+        return {"id": existing.id, "staff_name": staff.full_name, "already_waiting": True}
+
+    req = models.CallbackRequest(
+        staff_member_id=staff.id,
+        contact_group_id=payload.contact_group_id,
+        topic=topic,
+        team_id=team.id,
+        requester_kind=person["kind"],
+        participant_id=person["id"] if person["kind"] == "participant" else None,
+        coach_id=person["id"] if person["kind"] == "coach" else None,
+        requester_name=person["name"],
+        requester_role=person["role"],
+        callback_phone=phone,
+        message=message,
+        latitude=lat,
+        longitude=lng,
+        location_accuracy_m=accuracy,
+        status="PENDING",
+    )
+    db.add(req)
+    db.commit()
+    sent.append(time.time())
+    broadcast_callbacks_change_sync()
+    return {"id": req.id, "staff_name": staff.full_name, "already_waiting": False}
 
 
 

@@ -39,6 +39,13 @@ class Settings:
     # routers/imports.py import_staff_details_from_sheet).
     staff_details_sheet_url: str = os.environ.get("STAFF_DETAILS_SHEET_URL", "")
 
+    # Campus centre + radius for "Call me back" requests: a request that shares
+    # the device location is shown to staff as "On campus" (within the radius)
+    # or "X km from campus" (see routers/me.py _callback_dict).
+    campus_lat: float = float(os.environ.get("CAMPUS_LAT", "25.895018"))
+    campus_lng: float = float(os.environ.get("CAMPUS_LNG", "81.959751"))
+    campus_radius_m: float = float(os.environ.get("CAMPUS_RADIUS_M", "500"))
+
     @property
     def cors_origins_list(self):
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

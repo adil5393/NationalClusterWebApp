@@ -44,6 +44,7 @@ import { api } from "@/lib/api";
 import { PermissionsContext } from "@/lib/permissions";
 import { useAuth } from "@/lib/auth";
 import { AuthSplash } from "@/components/admin/AuthSplash";
+import { CallbackNotifier } from "@/components/admin/CallbackRequests";
 
 export type ItemImportance = "critical" | "high" | "medium" | "normal";
 
@@ -950,6 +951,8 @@ export function AdminLayout() {
         <main className="flex-1 p-4 sm:p-6 lg:p-4 xl:p-6 min-w-0 w-full max-w-full overflow-x-hidden">
           <PermissionsContext.Provider value={me}>
             <Outlet />
+            {/* Pops an alert on any page when a new "Call me back" request arrives */}
+            <CallbackNotifier />
           </PermissionsContext.Provider>
         </main>
       </div>

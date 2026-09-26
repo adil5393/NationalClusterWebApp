@@ -14,13 +14,17 @@ never a direct id comparison. See models.ShiftOperationalIncharge.
 
 Reuses staff.py's existing `_shift_dict` / `_duty_dict` row-shaping so the
 same fields already used by the organizer UI show up here."""
-from datetime import datetime, timezone
+import math
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from .. import id_card, models
+from ..config import settings
 from ..database import get_db
+from ..ws import broadcast_callbacks_change_sync
 from ..security import require_auth, resolve_self_staff, resolve_self_volunteer
 from .staff import _duty_dict, _shift_dict
 from .volunteers import _photo_path
@@ -298,6 +302,154 @@ def my_matches(current: models.OrganizerUser = Depends(require_auth)):
             "venue_name": m.venue.name if m.venue else None,
         })
     return out
+
+
+# ---------- "Call me back" requests (models.CallbackRequest) ----------
+# Every logged-in account sees every request, tagged with its helpline
+# (e.g. "Accommodation Help"), and anyone can mark one handled; the staff
+# member it's addressed to sees it flagged "For you".
+_CALLBACK_HANDLED_VISIBLE = timedelta(hours=24)
+_CALLBACK_STATUSES = {"PENDING", "DONE", "UNREACHABLE"}
+
+
+def _callback_orphaned(req: models.CallbackRequest) -> bool:
+    staff = req.staff_member
+    return staff is None or not any(u.is_active for u in staff.organizer_users)
+
+
+def _callback_visible_to(req: models.CallbackRequest, current: models.OrganizerUser, my_staff_ids: set[int]) -> bool:
+    return True  # every logged-in account (require_auth) — see the note above
+
+
+def _room_label(a: models.AccommodationAssignment) -> "str | None":
+    room = a.room
+    if not room:
+        return None
+    building = room.floor.building if room.floor else None
+    return f"{building.name} · {room.name}" if building else room.name
+
+
+def _callback_room(req: models.CallbackRequest, db: Session) -> "str | None":
+    """Where the requester is staying, so staff can also just walk over: the
+    participant's own bed allotment if they have one, otherwise their team's
+    whole-team room(s). Looked up live, so it follows later room changes."""
+    if req.participant_id:
+        own = db.query(models.AccommodationAssignment).filter_by(participant_id=req.participant_id).first()
+        if own and _room_label(own):
+            return _room_label(own)
+    if req.team_id:
+        rooms = [
+            label
+            for a in db.query(models.AccommodationAssignment)
+            .filter(models.AccommodationAssignment.team_id == req.team_id, models.AccommodationAssignment.participant_id.is_(None))
+            .all()
+            if (label := _room_label(a))
+        ]
+        if rooms:
+            return ", ".join(dict.fromkeys(rooms))
+    return None
+
+
+def _distance_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Great-circle (haversine) distance in metres."""
+    r = 6371000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = math.radians(lat2 - lat1), math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def _callback_location(req: models.CallbackRequest) -> "dict | None":
+    if req.latitude is None or req.longitude is None:
+        return None
+    dist = _distance_m(req.latitude, req.longitude, settings.campus_lat, settings.campus_lng)
+    return {
+        "latitude": req.latitude,
+        "longitude": req.longitude,
+        "accuracy_m": round(req.location_accuracy_m) if req.location_accuracy_m is not None else None,
+        "distance_from_campus_m": round(dist),
+        "on_campus": dist <= settings.campus_radius_m,
+    }
+
+
+def _callback_dict(req: models.CallbackRequest, my_staff_ids: set[int], db: Session) -> dict:
+    team = req.team
+    return {
+        "topic": req.topic,
+        "room": _callback_room(req, db),
+        "location": _callback_location(req),
+        "id": req.id,
+        "requester_name": req.requester_name,
+        "requester_role": req.requester_role,
+        "requester_kind": req.requester_kind,
+        "team_name": team.name if team else None,
+        "school_code": team.school_code if team else None,
+        "callback_phone": req.callback_phone,
+        "message": req.message,
+        "status": req.status,
+        "created_at": req.created_at,
+        "staff_member_id": req.staff_member_id,
+        "staff_name": req.staff_member.full_name if req.staff_member else None,
+        # True = addressed to this login's own staff member ("For you").
+        "for_me": req.staff_member_id in my_staff_ids,
+        # True = the addressee has no active login of their own.
+        "unreachable_in_app": _callback_orphaned(req),
+        "handled_by_name": (req.handled_by.full_name or req.handled_by.username) if req.handled_by else None,
+        "handled_at": req.handled_at,
+    }
+
+
+@router.get("/callbacks")
+def my_callbacks(current: models.OrganizerUser = Depends(require_auth), db: Session = Depends(get_db)):
+    my_staff_ids = {s.id for s in current.staff_members}
+    cutoff = datetime.now(timezone.utc) - _CALLBACK_HANDLED_VISIBLE
+    rows = (
+        db.query(models.CallbackRequest)
+        .filter(
+            (models.CallbackRequest.status == "PENDING")
+            | (models.CallbackRequest.handled_at >= cutoff)
+        )
+        .order_by(models.CallbackRequest.created_at.desc())
+        .all()
+    )
+    visible = [r for r in rows if _callback_visible_to(r, current, my_staff_ids)]
+    # Waiting requests first (oldest first — they've waited longest), then handled.
+    pending = sorted((r for r in visible if r.status == "PENDING"), key=lambda r: r.created_at)
+    handled = [r for r in visible if r.status != "PENDING"]
+    return [_callback_dict(r, my_staff_ids, db) for r in pending + handled]
+
+
+class CallbackStatusUpdate(BaseModel):
+    status: str  # PENDING (reopen) | DONE | UNREACHABLE
+
+
+@router.post("/callbacks/{callback_id}/status")
+def set_callback_status(
+    callback_id: int,
+    payload: CallbackStatusUpdate,
+    current: models.OrganizerUser = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    if payload.status not in _CALLBACK_STATUSES:
+        raise HTTPException(400, "Unknown status")
+    req = db.get(models.CallbackRequest, callback_id)
+    my_staff_ids = {s.id for s in current.staff_members}
+    if not req or not _callback_visible_to(req, current, my_staff_ids):
+        raise HTTPException(404, "Request not found")
+    req.status = payload.status
+    if payload.status != "PENDING":
+        # Handled — the requester's location isn't needed any more.
+        req.latitude = req.longitude = req.location_accuracy_m = None
+    if payload.status == "PENDING":
+        req.handled_by_user_id = None
+        req.handled_at = None
+    else:
+        req.handled_by_user_id = current.id
+        req.handled_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(req)
+    broadcast_callbacks_change_sync()
+    return _callback_dict(req, my_staff_ids, db)
 
 
 # ---------- Volunteer self-service ----------

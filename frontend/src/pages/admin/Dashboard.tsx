@@ -25,6 +25,7 @@ import { knowledgeStatusTone, priorityTone, formatDate } from "@/lib/meta";
 import { useMe } from "@/lib/permissions";
 import { ClipboardList } from "lucide-react";
 import { YourMatches } from "@/components/admin/YourMatches";
+import { CallbackRequestsPanel } from "@/components/admin/CallbackRequests";
 
 interface MyDuty {
   id: number;
@@ -149,6 +150,9 @@ export default function Dashboard() {
           </Link>
         </div>
       </div>
+
+      {/* CALL-BACK REQUESTS — only renders when this account has any */}
+      <CallbackRequestsPanel />
 
       {/* YOUR MATCHES — only renders when this account is assigned to a match */}
       <YourMatches />

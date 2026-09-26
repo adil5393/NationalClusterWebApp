@@ -1523,3 +1523,41 @@ class ExternalContact(TimestampMixin, Base):
 
     contact_group = relationship("ContactGroup", back_populates="external_contacts")
 
+
+class CallbackRequest(TimestampMixin, Base):
+    """A "Call me back" request from the public Contacts page: a participant
+    (verified by school code + last 4 digits of their registration number)
+    or a coach/manager (school code + their registered phone) asks a listed
+    staff member to phone them. Shown live to every logged-in account, tagged
+    with the helpline it came from (routers/me.py /me/callbacks); the staff
+    member it's addressed to sees it marked as theirs."""
+    __tablename__ = "callback_requests"
+    id = Column(Integer, primary_key=True)
+    staff_member_id = Column(Integer, ForeignKey("staff_members.id", ondelete="SET NULL"), nullable=True, index=True)
+    # Helpline the request was made from (e.g. "Accommodation Help") — the tag
+    # everyone sees. `topic` is snapshotted so it survives a later rename/delete.
+    contact_group_id = Column(Integer, ForeignKey("contact_groups.id", ondelete="SET NULL"), nullable=True)
+    topic = Column(String(160))
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"), nullable=True)
+    requester_kind = Column(String(20), nullable=False)  # "participant" | "coach"
+    participant_id = Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True)
+    coach_id = Column(Integer, ForeignKey("coaches.id", ondelete="SET NULL"), nullable=True)
+    # Snapshotted at request time so the request still reads right if the
+    # participant/coach record is later edited or deleted.
+    requester_name = Column(String(200), nullable=False)
+    requester_role = Column(String(40))
+    callback_phone = Column(String(30), nullable=False)
+    message = Column(String(300))
+    # Device location — required to send a request. Cleared as soon as the
+    # request is handled (routers/me.py set_callback_status) — these are
+    # mostly minors, so it's kept no longer than it's useful.
+    latitude = Column(Float)
+    longitude = Column(Float)
+    location_accuracy_m = Column(Float)
+    status = Column(String(20), nullable=False, default="PENDING", index=True)  # PENDING | DONE | UNREACHABLE
+    handled_by_user_id = Column(Integer, ForeignKey("organizer_users.id", ondelete="SET NULL"), nullable=True)
+    handled_at = Column(DateTime(timezone=True))
+
+    staff_member = relationship("StaffMember")
+    team = relationship("Team")
+    handled_by = relationship("OrganizerUser")

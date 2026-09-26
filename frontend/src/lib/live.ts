@@ -77,3 +77,10 @@ export function tournamentChannel(tournamentId: number) {
 export function rosterChannel() {
   return `/ws/roster`;
 }
+
+/** "Call me back" requests changed (created / marked done) — nudge-only, no
+ * request details (see ws.py CALLBACKS_CHANNEL); a logged-in listener just
+ * re-fetches its own list from GET /me/callbacks. */
+export function callbacksChannel() {
+  return `/ws/callbacks`;
+}

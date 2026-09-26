@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { priorityTone, formatOverflowMinutes } from "@/lib/meta";
 import { cn } from "@/lib/utils";
 import { YourMatches } from "@/components/admin/YourMatches";
+import { CallbackRequestsPanel } from "@/components/admin/CallbackRequests";
 
 interface InchargeContact {
   id: number;
@@ -547,6 +548,9 @@ export default function MyWork() {
           <p className="mt-1 text-xs sm:text-sm text-slate-400 font-body">{data.staff.category}</p>
         )}
       </div>
+
+      {/* CALL-BACK REQUESTS — only renders when this account has any */}
+      <CallbackRequestsPanel />
 
       {/* YOUR MATCHES — only renders when this account is assigned to a match */}
       <YourMatches />

@@ -64,6 +64,18 @@ def tournament_channel(tournament_id: int) -> str:
 
 ROSTER_CHANNEL = "roster"
 
+# "Call me back" requests changed (created / marked done). Deliberately
+# carries NO request details — the channel is unauthenticated like the others;
+# a logged-in listener just re-fetches its own list from GET /api/me/callbacks.
+CALLBACKS_CHANNEL = "callbacks"
+
+
+def broadcast_callbacks_change_sync() -> None:
+    try:
+        asyncio.run(hub.broadcast(CALLBACKS_CHANNEL, {"event": "callbacks_changed"}))
+    except Exception:  # noqa: BLE001
+        logger.exception("Callbacks broadcast failed")
+
 
 async def broadcast_roster_change(event_type: str) -> None:
     """Nudge anything subscribed to /ws/roster to re-fetch — no payload

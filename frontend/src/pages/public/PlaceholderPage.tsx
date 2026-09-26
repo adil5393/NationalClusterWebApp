@@ -30,6 +30,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
+import { CallbackRequestDialog, type CallbackTarget } from "@/components/public/CallbackRequestDialog";
+import { cn } from "@/lib/utils";
 
 interface SectionProps {
   title: string;
@@ -395,6 +397,10 @@ function ContactsSection() {
   const [groups, setGroups] = useState<PublicContactGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  // "Call me back" — only for staff contacts (they have a staff id); external
+  // contacts (hospital, police, ...) keep plain Call buttons.
+  const [callbackTarget, setCallbackTarget] = useState<CallbackTarget | null>(null);
+  const canCallBack = (c?: ContactPersonDTO | null) => !!c && !!c.id && !c.is_external;
 
   const FALLBACK_CONTACTS = [
     { role: "Organizing Secretary", name: "Principal / Sports Director", phone: "+91 98765 00001", email: "organizer@kabaddinationalscluster.info" },
@@ -555,8 +561,31 @@ function ContactsSection() {
                           <span>WhatsApp</span>
                         </a>
                       </div>
-                    ) : (
+                    ) : !canCallBack(activeContact) ? (
                       <span className="text-xs text-slate-500 italic">No direct phone configured</span>
+                    ) : null}
+                    {canCallBack(activeContact) && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCallbackTarget({
+                            staffMemberId: activeContact.id!,
+                            staffName: activeContact.name,
+                            contactGroupId: group.id,
+                            topic: group.title,
+                          })
+                        }
+                        className={cn(
+                          "w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg font-bold text-xs transition-colors",
+                          activeContact.phone
+                            ? "border border-white/15 text-slate-200 hover:bg-white/10"
+                            : "bg-gold hover:bg-gold-400 text-obsidian shadow-sm",
+                        )}
+                        data-testid={`callback-btn-${group.id}`}
+                      >
+                        <PhoneCall className="h-3.5 w-3.5" />
+                        <span>Call me back</span>
+                      </button>
                     )}
                   </div>
                 ) : legacyList.length > 0 ? (
@@ -593,15 +622,35 @@ function ContactsSection() {
                     <span className="truncate">
                       <strong className="text-slate-300">Backup:</strong> {backupContact.name}
                     </span>
-                    {backupContact.phone && (
-                      <a
-                        href={`tel:${backupContact.phone}`}
-                        className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white font-mono text-[11px] shrink-0 transition-colors"
-                      >
-                        <Phone className="h-3 w-3 text-gold" />
-                        Call
-                      </a>
-                    )}
+                    <span className="flex items-center gap-1.5 shrink-0">
+                      {backupContact.phone && (
+                        <a
+                          href={`tel:${backupContact.phone}`}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white font-mono text-[11px] shrink-0 transition-colors"
+                        >
+                          <Phone className="h-3 w-3 text-gold" />
+                          Call
+                        </a>
+                      )}
+                      {canCallBack(backupContact) && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setCallbackTarget({
+                              staffMemberId: backupContact.id!,
+                              staffName: backupContact.name,
+                              contactGroupId: group.id,
+                              topic: group.title,
+                            })
+                          }
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white text-[11px] shrink-0 transition-colors"
+                          data-testid={`callback-backup-btn-${group.id}`}
+                        >
+                          <PhoneCall className="h-3 w-3 text-gold" />
+                          Call me back
+                        </button>
+                      )}
+                    </span>
                   </div>
                 )}
               </div>
@@ -646,6 +695,8 @@ function ContactsSection() {
           No contacts matched &quot;{search}&quot;. Try a different search term.
         </div>
       )}
+
+      <CallbackRequestDialog target={callbackTarget} onClose={() => setCallbackTarget(null)} />
     </div>
   );
 }

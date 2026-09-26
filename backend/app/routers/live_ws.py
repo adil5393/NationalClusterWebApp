@@ -3,7 +3,7 @@ un-gated (see ws.py docstring) — mounted directly in main.py alongside
 health/public/auth, not through the per-module admin router loop."""
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from ..ws import ROSTER_CHANNEL, hub, match_channel, tournament_channel
+from ..ws import CALLBACKS_CHANNEL, ROSTER_CHANNEL, hub, match_channel, tournament_channel
 
 router = APIRouter(tags=["live"])
 
@@ -32,6 +32,19 @@ async def ws_tournament(websocket: WebSocket, tournament_id: int):
         pass
     finally:
         hub.disconnect(channel, websocket)
+
+
+@router.websocket("/ws/callbacks")
+async def ws_callbacks(websocket: WebSocket):
+    """Nudge-only: see ws.CALLBACKS_CHANNEL."""
+    await hub.connect(CALLBACKS_CHANNEL, websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        hub.disconnect(CALLBACKS_CHANNEL, websocket)
 
 
 @router.websocket("/ws/roster")
