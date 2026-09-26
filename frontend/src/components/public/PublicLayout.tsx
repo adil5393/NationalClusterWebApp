@@ -47,8 +47,9 @@ export function PublicLayout() {
       {/* 2. FOREGROUND CONTENT LAYER (SCROLLS NATURALLY OVER BACKGROUND) */}
       <div className="relative z-10 flex flex-col flex-1 min-h-screen">
         {/* TOP BROADCAST TICKER STRIP */}
-        <div className="border-b border-white/10 bg-obsidian-950/80 backdrop-blur-md px-3 sm:px-4 md:px-6 lg:px-8 py-1.5 text-xs text-slate-400">
-          <div className="mx-auto flex max-w-7xl 2xl:max-w-[1600px] items-center justify-between gap-3 sm:gap-4">
+        <div className="border-b border-white/10 bg-obsidian-950/80 backdrop-blur-md py-1.5 text-xs text-slate-400">
+          {/* Same width + side padding as the page content, so edges line up */}
+          <div className="mx-auto flex max-w-7xl px-4 sm:px-6 md:px-8 items-center justify-between gap-3 sm:gap-4">
             <div className="flex items-center gap-2 overflow-hidden min-w-0 flex-1">
               <span className="inline-flex items-center gap-1.5 rounded bg-gold/15 px-2 py-0.5 text-[10px] font-heading font-black tracking-widest text-gold shrink-0 whitespace-nowrap">
                 <Trophy className="h-3 w-3 shrink-0" /> OFFICIAL TOURNAMENT PORTAL
@@ -70,7 +71,7 @@ export function PublicLayout() {
 
         {/* STICKY MAIN HEADER */}
         <header className="sticky top-0 z-40 border-b border-white/10 bg-obsidian-950/90 backdrop-blur-xl transition-colors">
-          <div className="mx-auto max-w-7xl 2xl:max-w-[1600px] px-3 sm:px-4 md:px-6 lg:px-8">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8">
             <div className="flex h-16 items-center justify-between gap-2 sm:gap-4">
               {/* BRAND LOGO */}
               <Link
@@ -102,7 +103,7 @@ export function PublicLayout() {
 
               {/* DESKTOP NAVIGATION */}
               <nav
-                className="hidden min-[1380px]:flex items-center justify-end flex-1 gap-0.5 min-[1480px]:gap-1 2xl:gap-1.5 px-2"
+                className="hidden xl:flex items-center justify-center flex-1 min-w-0 gap-0.5"
                 aria-label="Main Navigation"
               >
                 {NAV.map((n) => (
@@ -113,7 +114,9 @@ export function PublicLayout() {
                     data-testid={`nav-${n.label.toLowerCase()}`}
                     className={({ isActive }) =>
                       cn(
-                        "relative inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 py-1 min-[1440px]:px-2 min-[1536px]:px-2.5 min-[1440px]:py-1.5 text-xs min-[1536px]:text-[13px] font-heading font-bold tracking-wide transition-colors shrink-0",
+                        // One fixed size: the header is max-w-7xl like the page, so the room
+                        // for these links is the same at every width from xl up.
+                        "relative inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-heading font-bold tracking-wide transition-colors shrink-0",
                         isActive
                           ? "bg-white/10 text-gold shadow-sm"
                           : "text-slate-300 hover:bg-white/5 hover:text-white",
@@ -144,7 +147,7 @@ export function PublicLayout() {
                   <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />
                 </Link>
                 <button
-                  className="min-[1380px]:hidden grid h-9 w-9 sm:h-10 sm:w-10 place-items-center rounded-lg border border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 hover:border-white/25 transition-colors shrink-0"
+                  className="xl:hidden grid h-9 w-9 sm:h-10 sm:w-10 place-items-center rounded-lg border border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 hover:border-white/25 transition-colors shrink-0"
                   onClick={() => setOpen((v) => !v)}
                   data-testid="mobile-menu-toggle"
                   aria-label="Toggle menu"
@@ -157,7 +160,7 @@ export function PublicLayout() {
             {/* MOBILE & COMPACT RESPONSIVE DRAWER */}
             {open && (
               <div
-                className="min-[1380px]:hidden border-t border-white/10 py-4"
+                className="xl:hidden border-t border-white/10 py-4"
                 data-testid="mobile-nav"
               >
                 <div className="mb-3 flex items-center justify-between px-2">
