@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Plus,
   Trash2,
@@ -705,6 +706,20 @@ export default function Matches() {
 
   const [consoleMatchId, setConsoleMatchId] = useState<number | null>(null);
   const [assignStaffMatch, setAssignStaffMatch] = useState<MatchT | null>(null);
+
+  // "?console=<matchId>" opens that match's live console straight away — the
+  // "Your Matches" panel (components/admin/YourMatches.tsx) links here. Same as
+  // tapping a live match card: the console itself enforces who may score.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const id = Number(searchParams.get("console"));
+    if (!id) return;
+    setConsoleMatchId(id);
+    const next = new URLSearchParams(searchParams);
+    next.delete("console");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [bgOpen, setBgOpen] = useState(false);
   const [bgTeamIds, setBgTeamIds] = useState<number[]>([]);

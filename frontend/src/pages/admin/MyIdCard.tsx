@@ -3,6 +3,7 @@ import { AlertTriangle, Download, HeartHandshake } from "lucide-react";
 import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
+import { YourMatches } from "@/components/admin/YourMatches";
 
 interface MyVolunteerProfile {
   id: number;
@@ -86,6 +87,9 @@ export default function MyIdCard() {
           <p className="mt-1 text-xs sm:text-sm text-slate-400 font-body">Class {data.student_class}</p>
         )}
       </div>
+
+      {/* YOUR MATCHES — only renders when this account is assigned to a match */}
+      <YourMatches />
 
       <div className="rounded-xl border border-white/10 bg-obsidian-900 p-5 space-y-4">
         <div className="flex items-center gap-4">

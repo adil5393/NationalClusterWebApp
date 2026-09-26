@@ -24,6 +24,7 @@ import { Spinner } from "@/components/ui/feedback";
 import { knowledgeStatusTone, priorityTone, formatDate } from "@/lib/meta";
 import { useMe } from "@/lib/permissions";
 import { ClipboardList } from "lucide-react";
+import { YourMatches } from "@/components/admin/YourMatches";
 
 interface MyDuty {
   id: number;
@@ -148,6 +149,9 @@ export default function Dashboard() {
           </Link>
         </div>
       </div>
+
+      {/* YOUR MATCHES — only renders when this account is assigned to a match */}
+      <YourMatches />
 
       {/* MY DUTIES — only shown to accounts linked to a staff member */}
       {me?.staff_member && <MyDutiesPanel staffId={me.staff_member.id} staffName={me.staff_member.full_name} />}

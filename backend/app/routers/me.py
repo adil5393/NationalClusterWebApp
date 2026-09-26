@@ -258,6 +258,48 @@ def my_incharge_team(
     return sorted(by_staff.values(), key=lambda s: s["full_name"] or "")
 
 
+# ---------- Your matches (any account) ----------
+# Matches this login has been assigned to (models.Match.assigned_users) —
+# shown as "Your Matches" on whichever page the account lands on (Dashboard,
+# My Work, My ID Card). Keyed off the session's own account, so it works for
+# organizer, staff and volunteer logins alike and never exposes anyone else's.
+_MATCH_STATUS_ORDER = {"ONGOING": 0, "PAUSED": 1, "SCHEDULED": 2, "POSTPONED": 3, "COMPLETED": 4, "CANCELLED": 5}
+
+
+@router.get("/matches")
+def my_matches(current: models.OrganizerUser = Depends(require_auth)):
+    from .matches import _match_number  # local: matches.py is a much heavier import
+
+    far_future = datetime.max.replace(tzinfo=timezone.utc)
+
+    def sort_key(m: models.Match):
+        when = m.scheduled_at if m.scheduled_at else far_future
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        finished = m.status in ("COMPLETED", "CANCELLED")
+        # In progress first, then upcoming by time; finished ones last, newest first.
+        return (_MATCH_STATUS_ORDER.get(m.status, 9), -when.timestamp() if finished else when.timestamp(), m.id)
+
+    out = []
+    for m in sorted(current.assigned_matches, key=sort_key):
+        out.append({
+            "id": m.id,
+            "match_number": _match_number(m) if m.round else None,
+            "tournament_name": m.tournament.name if m.tournament else None,
+            "round_name": m.round.name if m.round else None,
+            "pool_name": m.pool.name if m.pool else None,
+            "team_a_name": m.team_a.name if m.team_a else None,
+            "team_b_name": m.team_b.name if m.team_b else None,
+            "team_a_score": m.team_a_score,
+            "team_b_score": m.team_b_score,
+            "status": m.status,
+            "scheduled_at": m.scheduled_at,
+            "mat_name": m.mat.name if m.mat else None,
+            "venue_name": m.venue.name if m.venue else None,
+        })
+    return out
+
+
 # ---------- Volunteer self-service ----------
 # A volunteer's own login gets no organizer module access at all (see
 # schemas.VOLUNTEER_BASE_PERMISSIONS) — this is the entire self-service
