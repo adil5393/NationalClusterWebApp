@@ -15,7 +15,6 @@ const TeamPortal = lazy(() => import("@/pages/public/TeamPortal"));
 const PublicAnnouncements = lazy(() => import("@/pages/public/Announcements"));
 const PublicAbout = lazy(() => import("@/pages/public/About"));
 const PublicSchedule = lazy(() => import("@/pages/public/Schedule"));
-const Campus = lazy(() => import("@/pages/public/Campus"));
 const Live = lazy(() => import("@/pages/public/Live"));
 const Pool = lazy(() => import("@/pages/public/Pool"));
 const PlaceholderPage = lazy(() =>
@@ -91,25 +90,22 @@ export default function App() {
             path="/accommodation"
             element={<PlaceholderPage title="Accommodation" section="Accommodation" />}
           />
-          <Route
-            path="/food"
-            element={<PlaceholderPage title="Food & Dining" section="Food" />}
-          />
+          {/* Food now lives in Schedule's "Fooding Schedule" tab */}
+          <Route path="/food" element={<Navigate to="/schedule?tab=food" replace />} />
           <Route
             path="/transport"
             element={<PlaceholderPage title="Transport" section="Transport" />}
           />
-          <Route path="/campus" element={<Campus />} />
+          {/* Campus now lives inside Accommodation (#campus) */}
+          <Route path="/campus" element={<Navigate to="/accommodation#campus" replace />} />
           <Route path="/live" element={<Live />} />
           <Route path="/live/pools/:poolId" element={<Pool />} />
           <Route
             path="/contacts"
             element={<PlaceholderPage title="Important Contacts" section="Contacts" />}
           />
-          <Route
-            path="/faq"
-            element={<PlaceholderPage title="Frequently Asked Questions" section="FAQ" />}
-          />
+          {/* FAQ removed from the public site */}
+          <Route path="/faq" element={<Navigate to="/" replace />} />
         </Route>
 
         <Route path="/admin/login" element={<Login />} />

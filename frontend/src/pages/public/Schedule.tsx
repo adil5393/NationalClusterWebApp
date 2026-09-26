@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, Clock, MapPin, Radio, Swords } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { FoodSection } from "@/pages/public/PlaceholderPage";
 import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
@@ -146,7 +147,12 @@ function matchStatusBadge(m: ScheduledMatch) {
 }
 
 export default function PublicSchedule() {
-  const [tab, setTab] = useState<"events" | "matches">("events");
+  // "?tab=food" (what the old /food URL forwards to) opens the Fooding Schedule tab.
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState<"events" | "matches" | "food">(() => {
+    const t = searchParams.get("tab");
+    return t === "food" || t === "matches" ? t : "events";
+  });
 
   const [events, setEvents] = useState<Event[]>([]);
   const [eventsLoading, setEventsLoading] = useState(true);
@@ -229,7 +235,7 @@ export default function PublicSchedule() {
       </div>
 
       {/* TOP-LEVEL TABS */}
-      <div className="mt-6 flex gap-1.5 rounded-xl border border-white/10 bg-obsidian-900 p-1 max-w-md">
+      <div className="mt-6 flex gap-1.5 rounded-xl border border-white/10 bg-obsidian-900 p-1 max-w-xl">
         <button
           onClick={() => setTab("events")}
           data-testid="schedule-tab-events"
@@ -248,9 +254,22 @@ export default function PublicSchedule() {
         >
           Match Schedule
         </button>
+        <button
+          onClick={() => setTab("food")}
+          data-testid="schedule-tab-food"
+          className={`flex-1 rounded-lg py-2 text-xs font-heading font-bold transition-colors ${
+            tab === "food" ? "bg-gold text-obsidian" : "text-slate-400 hover:text-white"
+          }`}
+        >
+          Fooding Schedule
+        </button>
       </div>
 
-      {tab === "events" ? (
+      {tab === "food" ? (
+        <div className="mt-6">
+          <FoodSection embedded />
+        </div>
+      ) : tab === "events" ? (
         eventsLoading ? (
           <div className="py-20">
             <Spinner label="Loading tournament programme…" />

@@ -32,6 +32,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { CallbackRequestDialog, type CallbackTarget } from "@/components/public/CallbackRequestDialog";
 import { cn } from "@/lib/utils";
+import Campus from "@/pages/public/Campus";
 
 interface SectionProps {
   title: string;
@@ -105,7 +106,7 @@ function VenuesSection() {
           </p>
         </div>
         <Link
-          to="/campus"
+          to="/accommodation#campus"
           className="inline-flex items-center gap-2 rounded-lg bg-gold px-4 py-2.5 text-xs font-heading font-black text-obsidian hover:bg-gold-400 transition-colors shadow-sm shrink-0"
         >
           <MapPin className="h-4 w-4" /> Open Interactive Map →
@@ -262,6 +263,12 @@ function AccommodationSection() {
           </ul>
         </div>
       )}
+
+      {/* CAMPUS MAP & FIND MY ROOM — the whole Campus page, embedded here
+          (the old /campus URL forwards to this #campus anchor) */}
+      <section id="campus" className="scroll-mt-24 border-t border-white/10 pt-8">
+        <Campus embedded />
+      </section>
     </div>
   );
 }
@@ -269,7 +276,9 @@ function AccommodationSection() {
 /* ========================================================================== */
 /* FOOD & DINING SECTION                                                     */
 /* ========================================================================== */
-function FoodSection() {
+/** Also shown as the Schedule page's "Fooding Schedule" tab (`embedded`,
+ * which drops this section's own page heading). */
+export function FoodSection({ embedded = false }: { embedded?: boolean } = {}) {
   const MEALS = [
     { meal: "Breakfast", time: "06:30 – 09:00", menu: "Porridge, Sprouts, Boiled Eggs, Idli/Dosa, Parathas, Fresh Fruits, Milk & Tea" },
     { meal: "Lunch", time: "12:30 – 14:30", menu: "Steamed Rice, Roti, Dal Makhani/Tadka, Paneer, Chicken Curry (Non-veg days), Curd, Green Salad" },
@@ -279,14 +288,20 @@ function FoodSection() {
 
   return (
     <div className="space-y-8">
-      <div className="border-b border-white/10 pb-6">
-        <h1 className="font-heading text-3xl sm:text-4xl lg:text-5xl font-black text-white">
-          Food & Dining Schedule
-        </h1>
-        <p className="mt-2 text-sm sm:text-base text-slate-400 font-body">
+      {embedded ? (
+        <p className="text-sm text-slate-400 font-body">
           High-protein sports nutrition prepared in hygienic conditions for student athletes.
         </p>
-      </div>
+      ) : (
+        <div className="border-b border-white/10 pb-6">
+          <h1 className="font-heading text-3xl sm:text-4xl lg:text-5xl font-black text-white">
+            Food & Dining Schedule
+          </h1>
+          <p className="mt-2 text-sm sm:text-base text-slate-400 font-body">
+            High-protein sports nutrition prepared in hygienic conditions for student athletes.
+          </p>
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2">
         {MEALS.map((m, i) => (

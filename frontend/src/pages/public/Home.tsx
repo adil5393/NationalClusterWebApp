@@ -83,7 +83,7 @@ const TOURNAMENT_SECTIONS = [
     desc: "Daily fixture timetables, opening ceremony, knockouts & championship finals.",
   },
   {
-    to: "/campus",
+    to: "/accommodation#campus",
     icon: MapPin,
     title: "Campus & Court Map",
     desc: "Interactive venue blueprint, match court pins, and room locator.",
@@ -95,7 +95,7 @@ const TOURNAMENT_SECTIONS = [
     desc: "Hostel block assignments, floor arrangements, and team room guidelines.",
   },
   {
-    to: "/food",
+    to: "/schedule?tab=food",
     icon: UtensilsCrossed,
     title: "Food & Dining Schedule",
     desc: "Athlete meal timings, nutritional dining arrangements, and dining hall location.",
@@ -111,12 +111,6 @@ const TOURNAMENT_SECTIONS = [
     icon: PhoneCall,
     title: "Emergency & Helpdesk",
     desc: "24/7 medical response, security control room, and organizing committee contacts.",
-  },
-  {
-    to: "/faq",
-    icon: HelpCircle,
-    title: "Tournament FAQ",
-    desc: "Protest rules, eligibility requirements, meal passes, and event guidelines.",
   },
 ];
 
@@ -421,7 +415,7 @@ export default function Home() {
 
                 <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400 pt-3 border-t border-white/10">
                   <span>Host Campus: Main Sports Complex</span>
-                  <Link to="/campus" className="text-gold hover:underline font-semibold">
+                  <Link to="/accommodation#campus" className="text-gold hover:underline font-semibold">
                     Open Map →
                   </Link>
                 </div>
@@ -509,7 +503,7 @@ export default function Home() {
 
             <div className="flex flex-wrap items-center gap-3 shrink-0">
               <Link
-                to="/campus"
+                to="/accommodation#campus"
                 className="inline-flex items-center gap-2 rounded-lg border border-gold/40 bg-gold/15 px-4 py-2.5 text-xs sm:text-sm font-heading font-bold text-gold hover:bg-gold/25 hover:border-gold transition-colors shadow-sm"
               >
                 <MapPin className="h-4 w-4" /> Interactive Campus Map
@@ -845,7 +839,7 @@ export default function Home() {
                   <Users className="h-4 w-4" /> Find Your Team Roster
                 </Link>
                 <Link
-                  to="/campus"
+                  to="/accommodation#campus"
                   className="inline-flex items-center gap-2 rounded-lg border border-white/20 bg-white/5 px-6 py-3 text-xs sm:text-sm font-heading font-bold text-white hover:bg-white/10 transition-all"
                 >
                   <MapPin className="h-4 w-4 text-gold" /> Find Your Room on Map

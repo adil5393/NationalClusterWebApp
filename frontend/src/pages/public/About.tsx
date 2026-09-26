@@ -162,7 +162,7 @@ export default function About() {
                 <CalendarDays className="h-4 w-4 text-slate-400" /> Daily Fixtures
               </Link>
               <Link
-                to="/campus"
+                to="/accommodation#campus"
                 className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-xs sm:text-sm font-heading font-bold text-slate-200 hover:border-white/25 hover:text-white transition-colors"
               >
                 <MapPin className="h-4 w-4 text-slate-400" /> Campus & Court Map
@@ -469,7 +469,7 @@ export default function About() {
               </div>
 
               <div className="pt-2">
-                <Link to="/campus">
+                <Link to="/accommodation#campus">
                   <Button variant="gold" size="sm">
                     <MapPin className="h-4 w-4" /> Explore Interactive Campus Map
                   </Button>

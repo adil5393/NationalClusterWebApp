@@ -26,12 +26,9 @@ const NAV = [
   { to: "/live", label: "Live", isLive: true },
   { to: "/venues", label: "Venues" },
   { to: "/accommodation", label: "Accommodation" },
-  { to: "/food", label: "Food" },
   { to: "/transport", label: "Transport" },
-  { to: "/campus", label: "Campus" },
   { to: "/announcements", label: "Announcements" },
   { to: "/contacts", label: "Contacts" },
-  { to: "/faq", label: "FAQ" },
 ];
 
 export function PublicLayout() {
@@ -292,7 +289,7 @@ export function PublicLayout() {
                 </p>
                 <ul className="space-y-2 text-xs text-slate-300 font-body">
                   <li>
-                    <Link to="/campus" className="flex items-center gap-1.5 hover:text-gold transition-colors">
+                    <Link to="/accommodation#campus" className="flex items-center gap-1.5 hover:text-gold transition-colors">
                       <MapPin className="h-3.5 w-3.5 text-slate-400" /> Campus Map & Court Locations
                     </Link>
                   </li>
@@ -302,18 +299,13 @@ export function PublicLayout() {
                     </Link>
                   </li>
                   <li>
-                    <Link to="/food" className="hover:text-gold transition-colors">
+                    <Link to="/schedule?tab=food" className="hover:text-gold transition-colors">
                       Food Courts & Dining Timings
                     </Link>
                   </li>
                   <li>
                     <Link to="/transport" className="hover:text-gold transition-colors">
                       Transit & Bus Routes
-                    </Link>
-                  </li>
-                  <li>
-                    <Link to="/faq" className="flex items-center gap-1.5 hover:text-gold transition-colors">
-                      <HelpCircle className="h-3.5 w-3.5 text-slate-400" /> Frequently Asked Questions
                     </Link>
                   </li>
                 </ul>

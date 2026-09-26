@@ -49,7 +49,10 @@ const MIN_ZOOM_MULT = 1;
 const MAX_ZOOM_MULT = 6;
 const FIND_ZOOM_MULT = 3.2;
 
-export default function Campus() {
+/** `embedded`: rendered inside the Accommodation page (its "#campus"
+ * section) rather than as its own page — drops the page-level padding and
+ * demotes the heading to an h2. */
+export default function Campus({ embedded = false }: { embedded?: boolean } = {}) {
   const [mode, setMode] = useState<Mode>("view");
   const viewportRef = useRef<HTMLDivElement>(null);
   const [viewportSize, setViewportSize] = useState({ w: 0, h: 0 });
@@ -350,7 +353,11 @@ export default function Campus() {
 
   return (
     <div
-      className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8 py-10 md:py-14 text-slate-100 min-h-screen"
+      className={
+        embedded
+          ? "text-slate-100"
+          : "mx-auto max-w-7xl px-4 sm:px-6 md:px-8 py-10 md:py-14 text-slate-100 min-h-screen"
+      }
       data-testid="public-campus"
     >
       {/* PAGE HEADER */}
@@ -364,9 +371,15 @@ export default function Campus() {
               INTERACTIVE BLUEPRINT
             </span>
           </div>
-          <h1 className="font-heading text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight text-white">
-            Campus & Court Map
-          </h1>
+          {embedded ? (
+            <h2 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight text-white">
+              Campus & Court Map
+            </h2>
+          ) : (
+            <h1 className="font-heading text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight text-white">
+              Campus & Court Map
+            </h1>
+          )}
           <p className="max-w-2xl text-sm sm:text-base text-slate-400 font-body leading-relaxed">
             Navigate the host campus, inspect match courts, or pinpoint your team's assigned hostel room.
           </p>
