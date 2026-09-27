@@ -655,6 +655,7 @@ class ParticipantRead(ORMModel, ParticipantBase):
     photo_uploads_locked_effective: bool = False
     weight: Optional[Decimal] = None
     is_active: bool = True
+    is_billed: bool = False  # charged by a team bill (models.Participant.is_billed)
 
 
 class AttendanceUpdate(BaseModel):
@@ -712,6 +713,7 @@ class CoachUpdate(BaseModel):
 class CoachRead(ORMModel, CoachBase):
     id: int
     is_present: bool = False
+    is_billed: bool = False  # charged by a team bill (models.Coach.is_billed)
     checked_in_at: Optional[datetime] = None
     photo_url: Optional[str] = None
     # Raw tri-state override (None = inherit); the effective value is what the UI shows.

@@ -371,6 +371,21 @@ class Participant(TimestampMixin, Base):
     def photo_url(self) -> "str | None":
         return f"/api/assets/participants/{self.photo_filename}" if self.photo_filename else None
 
+    @property
+    def is_billed(self) -> bool:
+        """Whether any BILL on this person's team has charged for them (the
+        participant entries in Payment.members — see routers/payments.py). Shown
+        beside the Present button on the Participants page."""
+        team = self.team
+        if team is None:
+            return False
+        return any(
+            m.get("kind") == "participant" and m.get("id") == self.id
+            for p in team.payments
+            if p.kind == "BILL" and p.members
+            for m in p.members
+        )
+
 
 class Coach(TimestampMixin, Base):
     __tablename__ = "coaches"
@@ -411,6 +426,21 @@ class Coach(TimestampMixin, Base):
     @property
     def photo_url(self) -> "str | None":
         return f"/api/assets/coaches/{self.photo_filename}" if self.photo_filename else None
+
+    @property
+    def is_billed(self) -> bool:
+        """Whether any BILL on this person's team has charged for them (the
+        coach entries in Payment.members — see routers/payments.py). Shown
+        beside the Present button on the Participants page."""
+        team = self.team
+        if team is None:
+            return False
+        return any(
+            m.get("kind") == "coach" and m.get("id") == self.id
+            for p in team.payments
+            if p.kind == "BILL" and p.members
+            for m in p.members
+        )
 
 
 class Volunteer(TimestampMixin, Base):

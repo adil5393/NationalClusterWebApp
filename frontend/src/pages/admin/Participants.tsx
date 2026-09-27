@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, CheckCircle2, Circle, Upload, Download, Users, Search, Filter, FileSpreadsheet, IdCard, ImageOff, Lock, Unlock, Phone, Mail } from "lucide-react";
+import { Plus, Pencil, Trash2, CheckCircle2, Circle, Upload, Download, Users, Search, Filter, FileSpreadsheet, IdCard, ImageOff, Lock, Unlock, Phone, Mail, Receipt } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,7 @@ interface Participant {
   father_name?: string;
   date_of_birth?: string;
   student_class?: string;
+  is_billed?: boolean; // charged by a team bill (Teams → Billing)
   photo_url?: string | null;
   photo_uploads_locked?: boolean | null;
   photo_uploads_locked_effective?: boolean;
@@ -42,6 +43,7 @@ interface Coach {
   phone?: string;
   notes?: string;
   aadhaar_no?: string;
+  is_billed?: boolean; // charged by a team bill (Teams → Billing)
   photo_url?: string | null;
   photo_uploads_locked?: boolean | null;
   photo_uploads_locked_effective?: boolean;
@@ -100,6 +102,32 @@ function ParticipantPhoto({ name, photoUrl, size = "h-10 w-10" }: { name: string
       />
     </a>
   );
+}
+
+/** Billed / Not billed tag beside the Present button — billing is separate
+ * from attendance (Teams → Billing), so this shows at a glance whether the
+ * person being checked in has been charged yet. */
+function BilledTag({ billed }: { billed: boolean }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-heading font-bold whitespace-nowrap",
+        billed
+          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+          : "border-amber-500/40 bg-amber-500/10 text-amber-300",
+      )}
+      title={billed ? "Included in a team bill" : "Not billed yet — bill from Teams → Billing"}
+    >
+      <Receipt className="h-3 w-3" /> {billed ? "Billed" : "Not billed"}
+    </span>
+  );
+}
+
+function warnNotBilled(name: string) {
+  toast.warning(`${name} is present but not billed yet`, {
+    description: "Bill them from Teams → Billing.",
+    duration: 6000,
+  });
 }
 
 export default function Participants() {
@@ -301,6 +329,7 @@ export default function Participants() {
     setParticipants((rows) => rows.map((r) => (r.id === p.id ? { ...r, is_present: true } : r)));
     try {
       await api.post(`/participants/${p.id}/attendance`, { present: true });
+      if (!p.is_billed) warnNotBilled(p.full_name);
     } catch {
       toast.error("Could not update attendance");
       setParticipants((rows) => rows.map((r) => (r.id === p.id ? { ...r, is_present: false } : r)));
@@ -413,6 +442,7 @@ export default function Participants() {
     setCoaches((rows) => rows.map((r) => (r.id === c.id ? { ...r, is_present: true } : r)));
     try {
       await api.post(`/coaches/${c.id}/attendance`, { present: true });
+      if (!c.is_billed) warnNotBilled(c.full_name);
     } catch {
       toast.error("Could not update attendance");
       setCoaches((rows) => rows.map((r) => (r.id === c.id ? { ...r, is_present: false } : r)));
@@ -708,32 +738,35 @@ export default function Participants() {
                       </div>
                     </div>
 
-                    {(canMarkAttendance && !teamInactive(p.team_id)) ? (
-                      <button
-                        onClick={() => toggleAttendance(p)}
-                        data-testid={`attendance-toggle-mobile-${p.id}`}
-                        title={p.is_present ? "Mark absent" : "Mark present"}
-                        className="shrink-0"
-                      >
-                        {p.is_present ? (
-                          <Badge tone="live" size="sm">
-                            <CheckCircle2 className="h-3 w-3" /> Present
-                          </Badge>
-                        ) : (
-                          <Badge tone="neutral" size="sm">
-                            <Circle className="h-3 w-3" /> Absent
-                          </Badge>
-                        )}
-                      </button>
-                    ) : p.is_present ? (
-                      <Badge tone="live" size="sm">
-                        <CheckCircle2 className="h-3 w-3" /> Present
-                      </Badge>
-                    ) : (
-                      <Badge tone="neutral" size="sm">
-                        <Circle className="h-3 w-3" /> Absent
-                      </Badge>
-                    )}
+                    <div className="inline-flex flex-col items-end shrink-0 gap-1">
+                      {(canMarkAttendance && !teamInactive(p.team_id)) ? (
+                        <button
+                          onClick={() => toggleAttendance(p)}
+                          data-testid={`attendance-toggle-mobile-${p.id}`}
+                          title={p.is_present ? "Mark absent" : "Mark present"}
+                          className="shrink-0"
+                        >
+                          {p.is_present ? (
+                            <Badge tone="live" size="sm">
+                              <CheckCircle2 className="h-3 w-3" /> Present
+                            </Badge>
+                          ) : (
+                            <Badge tone="neutral" size="sm">
+                              <Circle className="h-3 w-3" /> Absent
+                            </Badge>
+                          )}
+                        </button>
+                      ) : p.is_present ? (
+                        <Badge tone="live" size="sm">
+                          <CheckCircle2 className="h-3 w-3" /> Present
+                        </Badge>
+                      ) : (
+                        <Badge tone="neutral" size="sm">
+                          <Circle className="h-3 w-3" /> Absent
+                        </Badge>
+                      )}
+                      <BilledTag billed={!!p.is_billed} />
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-1.5 flex-wrap">
@@ -1048,32 +1081,35 @@ export default function Participants() {
                         })()}
                       </TD>
                       <TD>
-                        {(canMarkAttendance && !teamInactive(p.team_id)) ? (
-                          <button
-                            onClick={() => toggleAttendance(p)}
-                            data-testid={`attendance-toggle-${p.id}`}
-                            className="inline-flex items-center hover:opacity-80 transition-opacity"
-                            title={p.is_present ? "Click to mark absent" : "Click to mark present"}
-                          >
-                            {p.is_present ? (
-                              <Badge tone="live" size="sm">
-                                <CheckCircle2 className="h-3.5 w-3.5" /> Present
-                              </Badge>
-                            ) : (
-                              <Badge tone="neutral" size="sm">
-                                <Circle className="h-3.5 w-3.5 text-slate-500" /> Absent
-                              </Badge>
-                            )}
-                          </button>
-                        ) : p.is_present ? (
-                          <Badge tone="live" size="sm">
-                            <CheckCircle2 className="h-3.5 w-3.5" /> Present
-                          </Badge>
-                        ) : (
-                          <Badge tone="neutral" size="sm">
-                            <Circle className="h-3.5 w-3.5 text-slate-500" /> Absent
-                          </Badge>
-                        )}
+                        <div className="inline-flex flex-col items-start gap-1">
+                          {(canMarkAttendance && !teamInactive(p.team_id)) ? (
+                            <button
+                              onClick={() => toggleAttendance(p)}
+                              data-testid={`attendance-toggle-${p.id}`}
+                              className="inline-flex items-center hover:opacity-80 transition-opacity"
+                              title={p.is_present ? "Click to mark absent" : "Click to mark present"}
+                            >
+                              {p.is_present ? (
+                                <Badge tone="live" size="sm">
+                                  <CheckCircle2 className="h-3.5 w-3.5" /> Present
+                                </Badge>
+                              ) : (
+                                <Badge tone="neutral" size="sm">
+                                  <Circle className="h-3.5 w-3.5 text-slate-500" /> Absent
+                                </Badge>
+                              )}
+                            </button>
+                          ) : p.is_present ? (
+                            <Badge tone="live" size="sm">
+                              <CheckCircle2 className="h-3.5 w-3.5" /> Present
+                            </Badge>
+                          ) : (
+                            <Badge tone="neutral" size="sm">
+                              <Circle className="h-3.5 w-3.5 text-slate-500" /> Absent
+                            </Badge>
+                          )}
+                          <BilledTag billed={!!p.is_billed} />
+                        </div>
                       </TD>
                       <TD>
                         {canEdit ? (
@@ -1265,32 +1301,35 @@ export default function Participants() {
                       </div>
                     </div>
 
-                    {canMarkAttendance ? (
-                      <button
-                        onClick={() => toggleCoachAttendance(c)}
-                        data-testid={`coach-attendance-toggle-mobile-${c.id}`}
-                        title={c.is_present ? "Mark absent" : "Mark present"}
-                        className="shrink-0"
-                      >
-                        {c.is_present ? (
-                          <Badge tone="live" size="sm">
-                            <CheckCircle2 className="h-3 w-3" /> Present
-                          </Badge>
-                        ) : (
-                          <Badge tone="neutral" size="sm">
-                            <Circle className="h-3 w-3" /> Absent
-                          </Badge>
-                        )}
-                      </button>
-                    ) : c.is_present ? (
-                      <Badge tone="live" size="sm">
-                        <CheckCircle2 className="h-3 w-3" /> Present
-                      </Badge>
-                    ) : (
-                      <Badge tone="neutral" size="sm">
-                        <Circle className="h-3 w-3" /> Absent
-                      </Badge>
-                    )}
+                    <div className="inline-flex flex-col items-end shrink-0 gap-1">
+                      {canMarkAttendance ? (
+                        <button
+                          onClick={() => toggleCoachAttendance(c)}
+                          data-testid={`coach-attendance-toggle-mobile-${c.id}`}
+                          title={c.is_present ? "Mark absent" : "Mark present"}
+                          className="shrink-0"
+                        >
+                          {c.is_present ? (
+                            <Badge tone="live" size="sm">
+                              <CheckCircle2 className="h-3 w-3" /> Present
+                            </Badge>
+                          ) : (
+                            <Badge tone="neutral" size="sm">
+                              <Circle className="h-3 w-3" /> Absent
+                            </Badge>
+                          )}
+                        </button>
+                      ) : c.is_present ? (
+                        <Badge tone="live" size="sm">
+                          <CheckCircle2 className="h-3 w-3" /> Present
+                        </Badge>
+                      ) : (
+                        <Badge tone="neutral" size="sm">
+                          <Circle className="h-3 w-3" /> Absent
+                        </Badge>
+                      )}
+                      <BilledTag billed={!!c.is_billed} />
+                    </div>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-1.5 text-[11px] pt-1">
@@ -1433,32 +1472,35 @@ export default function Participants() {
                       <TD className="font-mono text-xs text-slate-400">{c.aadhaar_no || "—"}</TD>
                       <TD className="text-xs text-slate-400">{c.email || "—"}</TD>
                       <TD>
-                        {canMarkAttendance ? (
-                          <button
-                            onClick={() => toggleCoachAttendance(c)}
-                            data-testid={`coach-attendance-toggle-${c.id}`}
-                            className="inline-flex items-center hover:opacity-80 transition-opacity"
-                            title={c.is_present ? "Click to mark absent" : "Click to mark present"}
-                          >
-                            {c.is_present ? (
-                              <Badge tone="live" size="sm">
-                                <CheckCircle2 className="h-3.5 w-3.5" /> Present
-                              </Badge>
-                            ) : (
-                              <Badge tone="neutral" size="sm">
-                                <Circle className="h-3.5 w-3.5 text-slate-500" /> Absent
-                              </Badge>
-                            )}
-                          </button>
-                        ) : c.is_present ? (
-                          <Badge tone="live" size="sm">
-                            <CheckCircle2 className="h-3.5 w-3.5" /> Present
-                          </Badge>
-                        ) : (
-                          <Badge tone="neutral" size="sm">
-                            <Circle className="h-3.5 w-3.5 text-slate-500" /> Absent
-                          </Badge>
-                        )}
+                        <div className="inline-flex flex-col items-start gap-1">
+                          {canMarkAttendance ? (
+                            <button
+                              onClick={() => toggleCoachAttendance(c)}
+                              data-testid={`coach-attendance-toggle-${c.id}`}
+                              className="inline-flex items-center hover:opacity-80 transition-opacity"
+                              title={c.is_present ? "Click to mark absent" : "Click to mark present"}
+                            >
+                              {c.is_present ? (
+                                <Badge tone="live" size="sm">
+                                  <CheckCircle2 className="h-3.5 w-3.5" /> Present
+                                </Badge>
+                              ) : (
+                                <Badge tone="neutral" size="sm">
+                                  <Circle className="h-3.5 w-3.5 text-slate-500" /> Absent
+                                </Badge>
+                              )}
+                            </button>
+                          ) : c.is_present ? (
+                            <Badge tone="live" size="sm">
+                              <CheckCircle2 className="h-3.5 w-3.5" /> Present
+                            </Badge>
+                          ) : (
+                            <Badge tone="neutral" size="sm">
+                              <Circle className="h-3.5 w-3.5 text-slate-500" /> Absent
+                            </Badge>
+                          )}
+                          <BilledTag billed={!!c.is_billed} />
+                        </div>
                       </TD>
                       <TD className="text-right">
                         <div className="flex items-center justify-end gap-1">
