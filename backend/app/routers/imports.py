@@ -135,12 +135,14 @@ def _import_team_details_df(df: pd.DataFrame, db: Session) -> dict:
     coaches_created = coaches_updated = 0
     photos_added = 0
     unmatched_school_codes: list[dict] = []
+    synced_schools: dict[int, dict] = {}  # team.id -> {school_code, school_name}, for the result list
     errors: list[str] = []
 
     for i, row in df.iterrows():
         code = _val(row, col_school_code) if col_school_code else None
         if not code:
-            errors.append(f"Row {i + 2}: missing School Code")
+            name = _val(row, col_school_name) if col_school_name else None
+            errors.append(f"Row {i + 2}: missing School Code" + (f" ({name})" if name else ""))
             continue
 
         # Most sheets have this cell hold the school_code we assigned, but
@@ -154,6 +156,7 @@ def _import_team_details_df(df: pd.DataFrame, db: Session) -> dict:
             })
             continue
         teams_updated += 1
+        synced_schools[team.id] = {"school_code": team.school_code or code, "school_name": team.name}
 
         email = _val(row, col_email) if col_email else None
         if email:
@@ -213,6 +216,8 @@ def _import_team_details_df(df: pd.DataFrame, db: Session) -> dict:
         },
         "coaches": {"created": coaches_created, "updated": coaches_updated},
         "photos": {"added": photos_added},
+        # Each school that was matched and updated, by name — the sync result lists them.
+        "synced_schools": sorted(synced_schools.values(), key=lambda s: s["school_name"].lower()),
         "unmatched_school_codes": unmatched_school_codes,
         "errors": errors,
     }
@@ -474,14 +479,17 @@ def _import_team_arrivals_df(df: pd.DataFrame, db: Session) -> dict:
 
     for i, row in df.iterrows():
         code = _val(row, col_code)
+        email = _val(row, col_email) if col_email else None
         if not code:
-            errors.append(f"Row {i + 2}: missing School Code/Affiliation Number")
+            errors.append(f"Row {i + 2}: missing School Code/Affiliation Number" + (f" (from {email})" if email else ""))
             continue
         rows_with_code += 1
 
         team = teams_by_code.get(code) or teams_by_affiliation.get(code)
         if team is None:
-            unmatched_school_codes.append({"school_code": code, "school_name": None})
+            # The arrival form has no school-name column — the submitter's
+            # email is the best clue to which school this is.
+            unmatched_school_codes.append({"school_code": code, "school_name": None, "email": email})
             continue
         synced_team_ids.add(team.id)
 
@@ -503,8 +511,20 @@ def _import_team_arrivals_df(df: pd.DataFrame, db: Session) -> dict:
             latest_applied[team.id] = ts
 
     db.commit()
+    synced_schools = []
+    for team in sorted((t for t in all_teams if t.id in synced_team_ids), key=lambda t: t.name.lower()):
+        plan = " · ".join(
+            x for x in (
+                team.arrival_date.strftime("%d-%b-%Y") if team.arrival_date else None,
+                team.arrival_time,
+                team.arrival_location,
+            ) if x
+        )
+        synced_schools.append({"school_code": team.school_code, "school_name": team.name, "arrival": plan or None})
     return {
         "entity": "team-arrivals",
+        # Each school whose arrival plan was synced, by name, with the plan now on file.
+        "synced_schools": synced_schools,
         "teams": {
             # Every row with a School Code/Affiliation Number cell, including a
             # school that resubmitted more than once — so the caller can show

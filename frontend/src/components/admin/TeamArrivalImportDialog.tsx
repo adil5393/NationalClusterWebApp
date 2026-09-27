@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 
 interface Result {
   teams: { in_sheet: number; synced: number };
-  unmatched_school_codes: { school_code: string; school_name: string | null }[];
+  unmatched_school_codes: { school_code: string; school_name: string | null; email?: string | null }[];
+  synced_schools?: { school_code: string | null; school_name: string; arrival?: string | null }[];
   errors: string[];
 }
 
@@ -89,6 +90,29 @@ export function TeamArrivalImportDialog({
               )}
             </div>
 
+            {(result.synced_schools?.length ?? 0) > 0 && (
+              <details
+                className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3.5 text-xs text-slate-200"
+                data-testid="synced-arrival-schools"
+                open={(result.synced_schools?.length ?? 0) <= 15}
+              >
+                <summary className="cursor-pointer font-heading font-bold text-emerald-400">
+                  {result.synced_schools!.length} School(s) Synced
+                </summary>
+                <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-[11px]">
+                  {result.synced_schools!.map((s, i) => (
+                    <li key={i} className="flex items-start justify-between gap-2 rounded bg-black/20 px-2 py-1">
+                      <span className="min-w-0">
+                        <span className="block truncate text-slate-100">{s.school_name}</span>
+                        {"arrival" in s && s.arrival && <span className="block truncate text-slate-400">{s.arrival}</span>}
+                      </span>
+                      <span className="shrink-0 font-mono text-slate-500">{s.school_code}</span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+
             {result.unmatched_school_codes.length > 0 && (
               <div
                 className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs text-slate-200 space-y-1.5"
@@ -103,8 +127,13 @@ export function TeamArrivalImportDialog({
                 </p>
                 <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto font-mono text-[11px]">
                   {result.unmatched_school_codes.map((u, i) => (
-                    <li key={i} className="rounded bg-black/20 px-2 py-1 text-amber-300">
-                      {u.school_code}
+                    <li key={i} className="flex items-center justify-between gap-2 rounded bg-black/20 px-2 py-1">
+                      <span className="text-amber-300">{u.school_code}</span>
+                      {(u.school_name || u.email) && (
+                        <span className="truncate text-slate-400" title={u.school_name ? undefined : "Submitted by"}>
+                          {u.school_name || u.email}
+                        </span>
+                      )}
                     </li>
                   ))}
                 </ul>
