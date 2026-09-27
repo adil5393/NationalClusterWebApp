@@ -43,7 +43,7 @@ from ..excel_styler import (
 )
 from openpyxl.styles import PatternFill
 from ..security import has_reports_access, require_admin, require_auth, require_module, require_report
-from .payments import _billed_keys, _present_members
+from .payments import _billable_members, _billed_keys
 from .public import ASSETS_COACHES_DIR, ASSETS_PARTICIPANTS_DIR
 
 router = APIRouter(prefix="/api/export", tags=["export"])
@@ -1022,18 +1022,17 @@ def export_attendance_xlsx(db: Session = Depends(get_db)):
 
 
 def _billed_member_counts(team: models.Team) -> tuple[int, int, int]:
-    """(registered, total-present, billed) for the arrival report's R/T/B
-    column: Registered = every participant+coach on the roster regardless of
-    check-in; Total = how many of those are actually present (the billable
-    pool — payments.py's _present_members); Billed = how many of THAT pool
-    a BILL has already charged for (payments.py's _billed_keys) — the exact
-    definition the Bill dialog's own "present but not yet billed" diff
-    already uses, not a second notion of "billed" invented here."""
+    """(registered, billable, billed) for the arrival report's R/T/B column:
+    Registered = every participant+coach on the roster; Total = the billable
+    roster (payments.py's _billable_members — active participants plus
+    coaches/managers, independent of attendance); Billed = how many of those
+    a BILL has already charged for (payments.py's _billed_keys) — the same
+    definitions the Bill dialog uses."""
     registered = len(team.participants) + len(team.coaches)
-    present = _present_members(team)
+    billable = _billable_members(team)
     billed_keys = _billed_keys(team)
-    billed = sum(1 for m in present if (m["kind"], m["id"]) in billed_keys)
-    return registered, len(present), billed
+    billed = sum(1 for m in billable if (m["kind"], m["id"]) in billed_keys)
+    return registered, len(billable), billed
 
 
 def _pending_processes(team: models.Team, participant_total: int, participant_present: int, coach_total: int, coach_present: int) -> list[str]:

@@ -3,11 +3,12 @@ no money implied), PAYMENT (money actually received, partial or full,
 against the team's outstanding balance), REFUND (money returned, capped at
 what's actually been received net of prior refunds).
 
-A team can be billed more than once over time — each "Bill" only charges
-present members who haven't already been billed by an earlier one (a
-straggler who checks in later gets picked up by the next bill), so the
-member set a bill charges is computed fresh from current attendance minus
-every prior BILL's snapshot, never re-derived after the fact. The per-member
+Billing is independent of attendance: the Bill dialog lists the team's
+whole billable roster (_billable_members — active participants plus every
+coach/manager, present or not) and the organizer ticks who a bill charges.
+A team can be billed more than once; a member already charged by an earlier
+BILL can't be charged again (_billed_keys). A bill charges exactly the
+members it was created with — later attendance changes never alter it. The per-member
 rate is a static, non-editable flat fee (receipt.PER_MEMBER_FEE — Rs.
 receipt.DAILY_MEMBER_FEE per day x receipt.EVENT_DAYS) applied to every
 member a bill covers. A flat, one-time security fee (default
@@ -55,20 +56,21 @@ def _get_team(db: Session, team_id: int) -> models.Team:
     return team
 
 
-def _present_members(team: models.Team) -> list[dict]:
-    """Every currently-present participant/coach/manager on this team, as
-    the {"kind", "id", "name", "role"} shape stored in a BILL's `members`
-    snapshot — kind+id is what lets a later bill tell "already billed" apart
-    from "newly present"."""
+def _billable_members(team: models.Team) -> list[dict]:
+    """Everyone this team can be billed for, regardless of attendance: every
+    active participant (not individually inactive, age group not benched)
+    plus every coach/manager — in the {"kind", "id", "name", "role"} shape
+    stored in a BILL's `members` snapshot (kind+id is what lets a later bill
+    tell "already billed" apart from "not yet billed")."""
+    benched = {g.age_group for g in team.inactive_age_groups}
     members = [
-        {"kind": "participant", "id": p.id, "name": p.full_name, "role": p.role or "Player"}
+        {"kind": "participant", "id": p.id, "name": p.full_name, "role": p.age_group or p.role or "Player"}
         for p in sorted(team.participants, key=lambda p: p.full_name)
-        if p.is_present
+        if p.is_active and p.age_group not in benched
     ]
     members += [
-        {"kind": "coach", "id": c.id, "name": c.full_name, "role": c.role}
-        for c in sorted(team.coaches, key=lambda c: c.full_name)
-        if c.is_present
+        {"kind": "coach", "id": c.id, "name": c.full_name, "role": c.role or "Coach"}
+        for c in sorted(team.coaches, key=lambda c: (c.role != "Coach", c.full_name))
     ]
     return members
 
@@ -85,46 +87,28 @@ def _billed_keys(team: models.Team) -> set:
 
 
 def _live_bill_breakdown(team: models.Team) -> tuple[list[dict], int, int, int, int]:
-    """Every prior BILL's own row (amount/subtotal/discount/security_fee/
-    members) stays an untouched, append-only record of what was charged and
-    when — but nothing downstream (the on-screen billing summary, the
-    downloadable Invoice PDF) should just trust that frozen amount forever.
-    If someone a bill charged for is no longer marked present (e.g.
-    correcting an is_present mistake after the fact — there's deliberately
-    no separate "un-bill this person" action), this recomputes that bill's
-    live contribution as if it had only ever billed the still-present
-    subset, at the same per-member rate it was created with — the flat
-    discount is kept as-is unless it would now exceed the shrunk subtotal,
-    in which case it's capped there (never a negative bill). security_fee is
-    a flat one-time team charge, not tied to any individual member, so it's
-    summed as-is regardless of attendance corrections. Returns (still-present
-    members with their per-member amount — for the Invoice's line items,
-    live subtotal, live discount, live security_fee total, live
-    total_billed) so every caller derives the same numbers from the same
-    correction; shared by _totals (billing_summary, refetched every time the
-    billing modal opens) and get_invoice below so they can never show
-    different figures for the same team."""
-    present_keys = {(m["kind"], m["id"]) for m in _present_members(team)}
+    """Every BILL counts exactly as created — the members it charged, at its
+    own per-member rate, less its discount, plus its security fee. Billing
+    no longer depends on attendance, so nothing is recomputed from who's
+    currently present. Returns (members with their per-member amount — the
+    Invoice's line items, subtotal, discount, security_fee total,
+    total_billed); shared by _totals (billing_summary) and get_invoice so
+    they can never show different figures for the same team."""
     members: list[dict] = []
     subtotal = 0
     discount = 0
     security_fee = 0
-    total_billed = 0
     for p in team.payments:
-        if p.kind != "BILL" or not p.members:
+        if p.kind != "BILL":
             continue
-        original_count = len(p.members)
-        per_member = (p.subtotal or 0) // original_count if original_count else 0
-        still_present = [m for m in p.members if (m["kind"], m["id"]) in present_keys]
-        bill_subtotal = per_member * len(still_present)
-        bill_discount = min(p.discount or 0, bill_subtotal)
-        subtotal += bill_subtotal
-        discount += bill_discount
+        bill_members = p.members or []
+        per_member = (p.subtotal or 0) // len(bill_members) if bill_members else 0
+        subtotal += p.subtotal or 0
+        discount += min(p.discount or 0, p.subtotal or 0)
         security_fee += p.security_fee or 0
-        total_billed += bill_subtotal - bill_discount
-        for m in still_present:
+        for m in bill_members:
             members.append({"name": m["name"], "role": m["role"], "amount": per_member})
-    total_billed += security_fee
+    total_billed = subtotal - discount + security_fee
     return members, subtotal, discount, security_fee, total_billed
 
 
@@ -164,12 +148,17 @@ def _validate_payment_fields(payment_mode: str, transaction_id: "str | None") ->
 
 def _billing_summary_dict(team: models.Team) -> dict:
     billed_keys = _billed_keys(team)
-    unbilled = [m for m in _present_members(team) if (m["kind"], m["id"]) not in billed_keys]
+    roster = _billable_members(team)
+    unbilled = [m for m in roster if (m["kind"], m["id"]) not in billed_keys]
     totals = _totals(team)
     security_fee_applied = any(p.kind == "BILL" and (p.security_fee or 0) > 0 for p in team.payments)
     payments_sorted = sorted(team.payments, key=lambda p: (p.payment_date, p.id), reverse=True)
     return {
         "team_id": team.id,
+        # The Bill dialog's tick list: the whole billable roster, each flagged
+        # if an earlier bill already charged them (those can't be ticked).
+        "members": [{**m, "billed": (m["kind"], m["id"]) in billed_keys} for m in roster],
+        # Kept for older app builds, which list/bill exactly these.
         "unbilled_present_members": unbilled,
         "per_member_fee": receipt.PER_MEMBER_FEE,
         "daily_member_fee": receipt.DAILY_MEMBER_FEE,
@@ -223,9 +212,25 @@ def create_bill(team_id: int, payload: schemas.BillCreate, db: Session = Depends
         raise HTTPException(400, "The security fee has already been applied to this team")
 
     billed_keys = _billed_keys(team)
-    members = [m for m in _present_members(team) if (m["kind"], m["id"]) not in billed_keys]
+    roster = {(m["kind"], m["id"]): m for m in _billable_members(team)}
+    if payload.members is None:
+        # Older app builds send no selection: bill everyone not yet billed.
+        members = [m for k, m in roster.items() if k not in billed_keys]
+    else:
+        members = []
+        seen = set()
+        for ref in payload.members:
+            key = (ref.kind, ref.id)
+            if key in seen:
+                continue
+            seen.add(key)
+            if key in billed_keys:
+                raise HTTPException(400, f"{roster.get(key, {}).get('name', 'A selected member')} has already been billed")
+            if key not in roster:
+                raise HTTPException(400, "A selected member isn't on this team's billable roster")
+            members.append(roster[key])
     if not members:
-        raise HTTPException(400, "Every present member on this team has already been billed")
+        raise HTTPException(400, "Select at least one member who hasn't been billed yet")
 
     subtotal = per_member_amount * len(members)
     if discount > subtotal:

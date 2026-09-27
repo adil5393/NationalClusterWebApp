@@ -8,8 +8,8 @@ anyway — it isn't part of ParticipantUpdate — so this is the only way in.)
 set_weight below is a separate, independent concern: it records a weigh-in
 against the AKFI kabaddi weight-category caps in AGE_GROUP_WEIGHT_CAPS, but
 never touches is_present/checked_in_at — an overweight player still showed
-up and still gets billed (see payments.py's _present_members, which reads
-is_present only). Weight instead gates match/pool/fixture eligibility: see
+up and still gets billed (billing is independent of attendance — see
+payments.py's _billable_members). Weight instead gates match/pool/fixture eligibility: see
 matches.py's _team_unplayable_reason, which excludes an overweight
 participant from a team's present-player headcount via is_overweight below.
 Once a weight is saved, changing it again requires an admin password (same

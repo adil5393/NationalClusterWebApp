@@ -12,7 +12,10 @@ interface BillableMember {
   id: number;
   name: string;
   role: string;
+  billed?: boolean; // already charged by an earlier bill — can't be ticked again
 }
+
+const memberKey = (m: { kind: string; id: number }) => `${m.kind}-${m.id}`;
 
 interface PaymentRow {
   id: number;
@@ -29,6 +32,9 @@ interface PaymentRow {
 }
 
 interface BillingSummary {
+  // The whole billable roster (active participants + coaches/managers,
+  // independent of attendance), each flagged if already billed.
+  members?: BillableMember[];
   unbilled_present_members: BillableMember[];
   per_member_fee: number;
   daily_member_fee: number;
@@ -146,6 +152,8 @@ export function ReceiptDialog({
     try {
       const r = await api.get<BillingSummary>(`/teams/${team.id}/billing-summary`);
       setSummary(r.data);
+      // Start with everyone not yet billed ticked.
+      setSelected(new Set((r.data.members ?? r.data.unbilled_present_members).filter((m) => !m.billed).map(memberKey)));
       setSecurityFee(r.data.security_fee_applied ? "0" : String(r.data.default_security_fee));
     } catch {
       toast.error("Could not load billing summary");
@@ -176,19 +184,32 @@ export function ReceiptDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, team?.id]);
 
+  // Members ticked in the Bill tab (memberKey) — the bill charges exactly these.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const roster = summary?.members ?? summary?.unbilled_present_members ?? [];
+  const unbilledRoster = roster.filter((m) => !m.billed);
+  const toggleMember = (m: BillableMember) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const k = memberKey(m);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+
   const billPreview = useMemo(() => {
-    const count = summary?.unbilled_present_members.length ?? 0;
+    const count = selected.size;
     const rate = summary?.per_member_fee ?? 0;
     const subtotal = rate * count;
     const disc = Number(discount) || 0;
     const secFee = summary?.security_fee_applied ? 0 : Number(securityFee) || 0;
     return { count, subtotal, discount: disc, securityFee: secFee, total: Math.max(0, subtotal - disc) + secFee };
-  }, [summary, discount, securityFee]);
+  }, [summary, discount, securityFee, selected]);
 
   const submitBill = async () => {
     if (!team) return;
-    if (!summary || summary.unbilled_present_members.length === 0) {
-      return toast.error("Every present member on this team has already been billed");
+    if (!summary || selected.size === 0) {
+      return toast.error("Tick at least one member to bill");
     }
     const disc = Number(discount) || 0;
     if (disc < 0) return toast.error("Discount can't be negative");
@@ -197,7 +218,13 @@ export function ReceiptDialog({
     if (secFee < 0) return toast.error("Security fee can't be negative");
     setBusy(true);
     try {
-      await api.post(`/teams/${team.id}/bills`, { discount: disc, security_fee: secFee, payment_date: billDate });
+      const members = unbilledRoster.filter((m) => selected.has(memberKey(m))).map((m) => ({ kind: m.kind, id: m.id }));
+      await api.post(`/teams/${team.id}/bills`, {
+        members,
+        discount: disc,
+        security_fee: secFee,
+        payment_date: billDate,
+      });
       toast.success("Bill created — download the invoice from the Invoice tab");
       setTab("invoice");
       loadSummary();
@@ -380,24 +407,89 @@ export function ReceiptDialog({
                   Billing only records what's owed — it doesn't download anything. Download the invoice from the
                   Invoice tab once ready.
                 </p>
-                {summary && summary.unbilled_present_members.length > 0 ? (
-                  <div className="rounded-xl border border-white/10 bg-obsidian-950 p-3.5 space-y-1.5">
-                    <p className="text-xs font-heading font-bold text-white">
-                      {summary.unbilled_present_members.length} present member
-                      {summary.unbilled_present_members.length === 1 ? "" : "s"} not yet billed
-                    </p>
-                    <ul className="max-h-24 overflow-y-auto text-[11px] text-slate-400 space-y-0.5">
-                      {summary.unbilled_present_members.map((m) => (
-                        <li key={`${m.kind}-${m.id}`}>
-                          {m.name} <span className="text-slate-500">· {m.role}</span>
-                        </li>
-                      ))}
-                    </ul>
+                {summary && roster.length > 0 ? (
+                  <div className="rounded-xl border border-white/10 bg-obsidian-950 p-3.5 space-y-2" data-testid="bill-member-picker">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs font-heading font-bold text-white">
+                        Select members to bill{" "}
+                        <span className="font-mono text-gold">
+                          ({selected.size} of {unbilledRoster.length} not yet billed)
+                        </span>
+                      </p>
+                      {canEdit && unbilledRoster.length > 0 && (
+                        <div className="flex gap-2 text-[11px] font-heading font-bold">
+                          <button
+                            type="button"
+                            onClick={() => setSelected(new Set(unbilledRoster.map(memberKey)))}
+                            className="text-sky-300 hover:underline"
+                            data-testid="bill-select-all"
+                          >
+                            Select all
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelected(new Set())}
+                            className="text-slate-400 hover:underline"
+                            data-testid="bill-select-none"
+                          >
+                            Select none
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
+                      {([
+                        ["participant", "Participants"],
+                        ["coach", "Coaches & Managers"],
+                      ] as const).map(([kind, label]) => {
+                        const group = roster.filter((m) => m.kind === kind);
+                        if (group.length === 0) return null;
+                        return (
+                          <div key={kind} className="space-y-0.5">
+                            <p className="text-[10px] font-heading font-extrabold uppercase tracking-widest text-slate-500">
+                              {label} ({group.length})
+                            </p>
+                            {group.map((m) => {
+                              const on = selected.has(memberKey(m));
+                              return (
+                                <label
+                                  key={memberKey(m)}
+                                  className={`flex items-center gap-2.5 rounded-md px-2 py-1.5 text-xs ${
+                                    m.billed
+                                      ? "opacity-60 cursor-not-allowed"
+                                      : on
+                                        ? "bg-gold/10 text-white cursor-pointer"
+                                        : "text-slate-300 hover:bg-white/5 cursor-pointer"
+                                  }`}
+                                  data-testid={`bill-member-${memberKey(m)}`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={m.billed ? true : on}
+                                    disabled={m.billed || !canEdit}
+                                    onChange={() => toggleMember(m)}
+                                    className="rounded border-white/20 text-gold focus:ring-gold"
+                                  />
+                                  <span className="flex-1 font-medium">{m.name}</span>
+                                  <span className="text-[11px] text-slate-500">{m.role}</span>
+                                  {m.billed && (
+                                    <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-heading font-bold text-emerald-300">
+                                      Billed
+                                    </span>
+                                  )}
+                                </label>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {unbilledRoster.length === 0 && (
+                      <p className="text-[11px] text-emerald-300">Everyone on this team has been billed.</p>
+                    )}
                   </div>
                 ) : (
-                  <p className="text-xs text-slate-400 font-body">
-                    Every currently-present member has already been billed. Mark more members present to bill them.
-                  </p>
+                  <p className="text-xs text-slate-400 font-body">This team has no participants, coaches or managers to bill yet.</p>
                 )}
 
                 <div>
@@ -464,7 +556,7 @@ export function ReceiptDialog({
                     variant="gold"
                     size="sm"
                     onClick={submitBill}
-                    disabled={busy || !summary || summary.unbilled_present_members.length === 0}
+                    disabled={busy || !summary || selected.size === 0}
                     data-testid="submit-bill-btn"
                   >
                     <FileText className="h-3.5 w-3.5" /> {busy ? "Creating…" : "Create Bill"}

@@ -23,9 +23,9 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 # Per-member registration fee (Rs.) — static, not editable per bill: every
-# present member is charged for the full fixed event duration regardless of
-# which specific days they attended (attendance is tracked as a single
-# is_present flag, not per-day — see routers/payments.py _present_members).
+# member a bill charges (ticked in the Bill dialog — see routers/payments.py
+# _billable_members) pays for the full fixed event duration, independent of
+# attendance.
 DAILY_MEMBER_FEE = 500  # Rs. per member, per day
 EVENT_DAYS = 6  # fixed tournament duration; change here if it ever changes
 PER_MEMBER_FEE = DAILY_MEMBER_FEE * EVENT_DAYS  # Rs. 3,000 per member

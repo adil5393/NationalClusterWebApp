@@ -1589,7 +1589,15 @@ class TaskUpdate(BaseModel):
 
 
 # --- Payments (registration-fee billing/payment/refund ledger, see routers/payments.py) ---
+class BillMemberRef(BaseModel):
+    kind: Literal["participant", "coach"]
+    id: int
+
+
 class BillCreate(BaseModel):
+    # Who this bill charges, as ticked in the Bill dialog. Omitted (older app
+    # builds) = every billable member not yet billed. See payments.create_bill.
+    members: Optional[List[BillMemberRef]] = None
     discount: Optional[int] = 0  # flat Rs. knocked off the computed subtotal
     # Flat one-time team fee (Rs.); defaults to receipt.SECURITY_FEE_DEFAULT
     # (2000) on a team's first bill, and must be omitted/zero on any later
