@@ -46,48 +46,62 @@ def list_modules():
 @router.post("", response_model=schemas.OrganizerUserCreateResult, status_code=201)
 def create_user(payload: schemas.OrganizerUserCreate, db: Session = Depends(get_db)):
     staff_members = _resolve_staff_members(db, payload.staff_member_ids)
-    generated_password: str | None = None
 
-    if len(staff_members) == 1:
-        # Applying this account to exactly one staff member provisions THEIR
-        # login: same auto-generated username/password every other "Create
-        # Credential" action uses (routers/staff.py create_staff_credential),
-        # so the admin never has to invent and hand out a username by hand.
-        # A username/password typed in anyway is ignored — one staff member,
-        # one auto-named login.
-        username, generated_password = provision_login_credentials(
-            db, staff_members[0].full_name, fallback_label="STAFF"
-        )
-        password = generated_password
-        full_name = payload.full_name or staff_members[0].full_name
-    else:
-        # No staff member (a standalone login) or several (a shared login,
-        # e.g. a shift tablet) — there's no single person to name it after,
-        # so the admin still sets the username/password by hand.
-        username = (payload.username or "").strip()
-        if not username:
-            raise HTTPException(400, "Username is required")
-        if not payload.password or len(payload.password) < 8:
-            raise HTTPException(400, "Password must be at least 8 characters")
-        exists = db.query(models.OrganizerUser).filter(func.lower(models.OrganizerUser.username) == username.lower()).first()
-        if exists:
-            raise HTTPException(409, "That username is already taken")
-        password = payload.password
-        full_name = payload.full_name
+    if staff_members:
+        # Applying this account to staff members provisions each of THEM their
+        # own login: same auto-generated username/password every other
+        # "Create Credential" action uses (routers/staff.py
+        # create_staff_credential) — one separate account per staff member
+        # picked, all sharing these permissions/is_admin. A username/password
+        # typed in anyway is ignored; nothing here is a single shared login.
+        accounts: list[models.OrganizerUser] = []
+        generated_logins: list[dict] = []
+        for sm in staff_members:
+            username, password = provision_login_credentials(db, sm.full_name, fallback_label="STAFF")
+            user = models.OrganizerUser(
+                username=username,
+                full_name=sm.full_name,
+                password_hash=hash_password(password),
+                is_active=payload.is_active,
+                is_admin=payload.is_admin,
+                permissions=payload.permissions,
+                staff_members=[sm],
+            )
+            db.add(user)
+            db.flush()  # so the next staff member's uniqueness check sees this username as taken
+            accounts.append(user)
+            generated_logins.append(
+                {"staff_member_id": sm.id, "full_name": sm.full_name, "username": username, "password": password}
+            )
+        db.commit()
+        for a in accounts:
+            db.refresh(a)
+        return {"accounts": accounts, "generated_logins": generated_logins}
 
+    # No staff member — a standalone login (e.g. a shared kiosk/admin-only
+    # account with nobody specific attached) — the admin sets its
+    # username/password by hand.
+    username = (payload.username or "").strip()
+    if not username:
+        raise HTTPException(400, "Username is required")
+    if not payload.password or len(payload.password) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+    exists = db.query(models.OrganizerUser).filter(func.lower(models.OrganizerUser.username) == username.lower()).first()
+    if exists:
+        raise HTTPException(409, "That username is already taken")
     user = models.OrganizerUser(
         username=username,
-        full_name=full_name,
-        password_hash=hash_password(password),
+        full_name=payload.full_name,
+        password_hash=hash_password(payload.password),
         is_active=payload.is_active,
         is_admin=payload.is_admin,
         permissions=payload.permissions,
-        staff_members=staff_members,
+        staff_members=[],
     )
     db.add(user)
     db.commit()
     db.refresh(user)
-    return {"account": user, "generated_password": generated_password}
+    return {"accounts": [user], "generated_logins": []}
 
 
 @router.put("/{user_id}", response_model=schemas.OrganizerUserRead)

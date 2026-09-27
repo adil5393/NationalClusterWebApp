@@ -1288,13 +1288,25 @@ class OrganizerUserRead(ORMModel):
     created_at: datetime
 
 
+class GeneratedLogin(BaseModel):
+    """One auto-provisioned login handed back by create_user, shown once so
+    it can be copied to the staff member — the password only exists as a
+    bcrypt hash after this response."""
+    staff_member_id: int
+    full_name: str
+    username: str
+    password: str
+
+
 class OrganizerUserCreateResult(BaseModel):
-    """create_user's response — wraps the created account together with the
-    plaintext password when it was auto-generated (staff_member_ids named
-    exactly one staff member), so the caller can show it once, the same way
-    routers/staff.py's create_staff_credential does."""
-    account: OrganizerUserRead
-    generated_password: Optional[str] = None
+    """create_user's response. Linking to one or more staff members creates
+    one separate auto-provisioned login PER staff member (all sharing the
+    submitted permissions/is_admin) — `accounts` lists every account that was
+    actually created, and `generated_logins` carries their plaintext
+    passwords once. Linking to none creates the single manually-named
+    standalone account, with `generated_logins` empty."""
+    accounts: list[OrganizerUserRead]
+    generated_logins: list[GeneratedLogin] = []
 
 
 # --- Tournaments / Rounds / Matches (fixture + live match tracking) ---

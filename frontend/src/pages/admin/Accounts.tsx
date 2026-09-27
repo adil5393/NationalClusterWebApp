@@ -24,7 +24,6 @@ import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { MultiStaffSelector, StaffOption } from "@/components/admin/StaffSelector";
-import { NewLoginDialog } from "./staff/StaffModals";
 
 type PermissionLevel = "" | "view" | "edit";
 
@@ -88,17 +87,17 @@ export default function Accounts() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm);
 
-  // Shown once right after creating an account whose username/password were
-  // auto-generated (see save() below) — same dialog Staff.tsx's "Create
-  // Credential" action uses.
-  const [newLogin, setNewLogin] = useState<{ full_name: string; username: string; password: string } | null>(null);
+  // Shown once right after creating account(s) whose username/password were
+  // auto-generated (see save() below) — one row per staff member provisioned.
+  const [newLogins, setNewLogins] = useState<{ full_name: string; username: string; password: string }[] | null>(null);
 
-  // Linking a brand-new account to exactly one staff member provisions THEIR
-  // login: the backend auto-generates the username/password (same logic as
-  // Staff.tsx's "Create Credential"), so this form's own fields are hidden
-  // for that case. Editing an existing account, or linking 0/2+ staff
-  // members, still needs a username/password typed in by hand.
-  const autoGenStaff = !form.id && form.staff_member_ids.length === 1 ? staff.find((s) => s.id === form.staff_member_ids[0]) : null;
+  // Linking a brand-new account to one or more staff members provisions EACH
+  // of them their own login: the backend auto-generates a separate
+  // username/password per staff member (same logic as Staff.tsx's "Create
+  // Credential"), so this form's own fields are hidden for that case.
+  // Editing an existing account, or linking to none, still needs a
+  // username/password typed in by hand.
+  const autoGenStaffList = !form.id ? staff.filter((s) => form.staff_member_ids.includes(s.id)) : [];
 
   const load = () => {
     setLoading(true);
@@ -160,7 +159,8 @@ export default function Accounts() {
   };
 
   const save = async () => {
-    if (!autoGenStaff) {
+    const autoGen = !form.id && autoGenStaffList.length > 0;
+    if (!autoGen) {
       if (!form.username.trim()) return toast.error("Username is required");
       if (!form.id && (!form.password || form.password.length < 8))
         return toast.error("Password must be at least 8 characters");
@@ -181,23 +181,20 @@ export default function Accounts() {
         };
         if (form.password) payload.password = form.password;
         await api.put(`/organizer-users/${form.id}`, payload);
-      } else if (autoGenStaff) {
-        // Username/password are provisioned server-side for this one staff member.
-        const r = await api.post<{ account: OrganizerUser; generated_password: string | null }>(
-          "/organizer-users",
-          {
-            full_name: form.full_name.trim() || null,
-            is_admin: form.is_admin,
-            permissions,
-            staff_member_ids: form.staff_member_ids,
-          },
-        );
-        if (r.data.generated_password) {
-          setNewLogin({
-            full_name: r.data.account.full_name || autoGenStaff.full_name,
-            username: r.data.account.username,
-            password: r.data.generated_password,
-          });
+      } else if (autoGen) {
+        // Username/password are provisioned server-side, one login per staff member.
+        const r = await api.post<{
+          accounts: OrganizerUser[];
+          generated_logins: { staff_member_id: number; full_name: string; username: string; password: string }[];
+        }>("/organizer-users", {
+          is_admin: form.is_admin,
+          permissions,
+          staff_member_ids: form.staff_member_ids,
+        });
+        if (r.data.generated_logins.length > 0) {
+          setNewLogins(
+            r.data.generated_logins.map((g) => ({ full_name: g.full_name, username: g.username, password: g.password })),
+          );
         }
       } else {
         await api.post("/organizer-users", {
@@ -209,7 +206,7 @@ export default function Accounts() {
           staff_member_ids: form.staff_member_ids,
         });
       }
-      toast.success(form.id ? "Account updated" : "Account created");
+      toast.success(form.id ? "Account updated" : autoGen && autoGenStaffList.length > 1 ? `${autoGenStaffList.length} accounts created` : "Account created");
       setOpen(false);
       load();
     } catch (e: any) {
@@ -617,10 +614,22 @@ export default function Accounts() {
         testId="account-dialog"
       >
         <div className="space-y-4">
-          {autoGenStaff ? (
+          {!form.id && autoGenStaffList.length > 0 ? (
             <div className="rounded-lg border border-gold/30 bg-gold/5 p-3 text-xs text-slate-300 font-body">
-              Linking to <strong className="text-white">{autoGenStaff.full_name}</strong> — a username and password
-              will be generated for them automatically (shown once, right after you create this account).
+              {autoGenStaffList.length === 1 ? (
+                <>
+                  Linking to <strong className="text-white">{autoGenStaffList[0].full_name}</strong> — a username and
+                  password will be generated for them automatically (shown once, right after you create this
+                  account).
+                </>
+              ) : (
+                <>
+                  Linking to <strong className="text-white">{autoGenStaffList.length} staff members</strong> —
+                  <strong className="text-white"> {autoGenStaffList.map((s) => s.full_name).join(", ")}</strong> each
+                  get their own separate account with these same permissions, and their own username &amp; password
+                  auto-generated (shown once, right after you create them).
+                </>
+              )}
             </div>
           ) : (
             <>
@@ -661,7 +670,9 @@ export default function Accounts() {
           <div>
             <Label>Linked Staff Member(s)</Label>
             <p className="text-[11px] text-slate-500 font-body mb-1.5">
-              Optionally link this login to physical staff directory records.
+              {form.id
+                ? "Optionally link this login to physical staff directory records."
+                : "Leave empty for one standalone login you name yourself, or pick staff to give each of them their own auto-generated account."}
             </p>
             <MultiStaffSelector
               staff={staff}
@@ -780,13 +791,71 @@ export default function Accounts() {
               Cancel
             </Button>
             <Button variant="gold" size="sm" onClick={save} data-testid="save-account-btn">
-              {form.id ? "Update Account" : "Create Account"}
+              {form.id
+                ? "Update Account"
+                : autoGenStaffList.length > 1
+                  ? `Create ${autoGenStaffList.length} Accounts`
+                  : "Create Account"}
             </Button>
           </div>
         </div>
       </Dialog>
 
-      <NewLoginDialog login={newLogin} onClose={() => setNewLogin(null)} />
+      <NewLoginsDialog logins={newLogins} onClose={() => setNewLogins(null)} />
     </div>
+  );
+}
+
+/** Shows every auto-generated login from one "Create Account" save — one row
+ * per staff member linked. Same info as StaffModals' single-account
+ * NewLoginDialog, just listed for however many were provisioned at once. */
+function NewLoginsDialog({
+  logins,
+  onClose,
+}: {
+  logins: { full_name: string; username: string; password: string }[] | null;
+  onClose: () => void;
+}) {
+  if (!logins || logins.length === 0) return null;
+  return (
+    <Dialog
+      open={logins.length > 0}
+      onClose={onClose}
+      title={logins.length === 1 ? "Staff Portal Login Provisioned" : `${logins.length} Staff Portal Logins Provisioned`}
+      testId="new-account-logins-dialog"
+    >
+      <div className="space-y-4">
+        <p className="text-xs text-slate-300 font-body leading-relaxed">
+          Organizer portal credentials have been generated. Share each of these with the staff member now — the
+          temporary passwords cannot be retrieved once closed.
+        </p>
+        <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+          {logins.map((l, i) => (
+            <div key={i} className="space-y-2 rounded-lg border border-gold/30 bg-gold/5 p-3.5">
+              <p className="text-xs font-heading font-bold text-white">{l.full_name}</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Username</Label>
+                  <p className="font-mono text-sm font-bold text-white" data-testid={`new-account-login-username-${i}`}>
+                    {l.username}
+                  </p>
+                </div>
+                <div>
+                  <Label>Password</Label>
+                  <p className="font-mono text-sm font-bold text-white" data-testid={`new-account-login-password-${i}`}>
+                    {l.password}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex justify-end pt-2 border-t border-white/10">
+          <Button variant="gold" size="sm" onClick={onClose} data-testid="close-new-account-logins">
+            Dismiss &amp; Copy
+          </Button>
+        </div>
+      </div>
+    </Dialog>
   );
 }
