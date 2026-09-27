@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Download, FileSpreadsheet, Trash2, Layers, RefreshCw, CheckSquare, Bus, ShieldCheck, UserCog, Wallet, BedDouble, Eye, Trophy, LayoutGrid, Flag } from "lucide-react";
+import { AlertTriangle, Download, FileSpreadsheet, Trash2, Layers, RefreshCw, CheckSquare, Bus, ShieldCheck, UserCog, Wallet, BedDouble, Eye, Trophy, LayoutGrid, Flag, Users } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -256,6 +256,20 @@ export default function Reports() {
                 testId="download-attendance-report-btn"
                 onView={() => openViewReport("attendance", `${BACKEND}/api/export/attendance.xlsx`, "Download Attendance .xlsx")}
                 extraDownloads={[{ href: `${BACKEND}/api/export/live-detail/attendance.pdf`, label: "PDF" }]}
+              />
+            )}
+            {teamsAccess.canView && (
+              <ReportDownloadCard
+                icon={Users}
+                title="Participant Report"
+                description="Every participant with DOB, father's name, class, school, cluster, status and attendance."
+                href={`${BACKEND}/api/export/participants.xlsx`}
+                testId="download-participant-report-btn"
+                onView={() => openViewReport("participants", `${BACKEND}/api/export/participants.xlsx`, "Download Participants .xlsx")}
+                extraDownloads={[
+                  { href: `${BACKEND}/api/export/live-detail/participants.pdf`, label: "PDF" },
+                  { href: `${BACKEND}/api/export/participants.csv`, label: "CSV" },
+                ]}
               />
             )}
             {teamsAccess.canView && (

@@ -24,6 +24,7 @@ import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { MultiStaffSelector, StaffOption } from "@/components/admin/StaffSelector";
+import { NewLoginDialog } from "./staff/StaffModals";
 
 type PermissionLevel = "" | "view" | "edit";
 
@@ -87,6 +88,18 @@ export default function Accounts() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm);
 
+  // Shown once right after creating an account whose username/password were
+  // auto-generated (see save() below) — same dialog Staff.tsx's "Create
+  // Credential" action uses.
+  const [newLogin, setNewLogin] = useState<{ full_name: string; username: string; password: string } | null>(null);
+
+  // Linking a brand-new account to exactly one staff member provisions THEIR
+  // login: the backend auto-generates the username/password (same logic as
+  // Staff.tsx's "Create Credential"), so this form's own fields are hidden
+  // for that case. Editing an existing account, or linking 0/2+ staff
+  // members, still needs a username/password typed in by hand.
+  const autoGenStaff = !form.id && form.staff_member_ids.length === 1 ? staff.find((s) => s.id === form.staff_member_ids[0]) : null;
+
   const load = () => {
     setLoading(true);
     Promise.all([
@@ -147,11 +160,13 @@ export default function Accounts() {
   };
 
   const save = async () => {
-    if (!form.username.trim()) return toast.error("Username is required");
-    if (!form.id && (!form.password || form.password.length < 8))
-      return toast.error("Password must be at least 8 characters");
-    if (form.password && form.password.length > 0 && form.password.length < 8)
-      return toast.error("Password must be at least 8 characters");
+    if (!autoGenStaff) {
+      if (!form.username.trim()) return toast.error("Username is required");
+      if (!form.id && (!form.password || form.password.length < 8))
+        return toast.error("Password must be at least 8 characters");
+      if (form.password && form.password.length > 0 && form.password.length < 8)
+        return toast.error("Password must be at least 8 characters");
+    }
 
     const permissions = Object.fromEntries(Object.entries(form.permissions).filter(([, v]) => v));
 
@@ -166,6 +181,24 @@ export default function Accounts() {
         };
         if (form.password) payload.password = form.password;
         await api.put(`/organizer-users/${form.id}`, payload);
+      } else if (autoGenStaff) {
+        // Username/password are provisioned server-side for this one staff member.
+        const r = await api.post<{ account: OrganizerUser; generated_password: string | null }>(
+          "/organizer-users",
+          {
+            full_name: form.full_name.trim() || null,
+            is_admin: form.is_admin,
+            permissions,
+            staff_member_ids: form.staff_member_ids,
+          },
+        );
+        if (r.data.generated_password) {
+          setNewLogin({
+            full_name: r.data.account.full_name || autoGenStaff.full_name,
+            username: r.data.account.username,
+            password: r.data.generated_password,
+          });
+        }
       } else {
         await api.post("/organizer-users", {
           username: form.username.trim(),
@@ -202,6 +235,29 @@ export default function Accounts() {
       load();
     } catch (e: any) {
       toast.error(e?.response?.data?.detail ?? "Could not delete account");
+    }
+  };
+
+  // Detach one staff member from an account. If that was the account's last
+  // linked staff member, the backend deletes the whole (now staff-less)
+  // account instead of leaving an orphaned login behind.
+  const unlinkStaff = async (u: OrganizerUser, staffMember: StaffBrief) => {
+    if (
+      !confirm(
+        u.staff_members.length <= 1
+          ? `Unlink ${staffMember.full_name} from "@${u.username}"? Since they're the only person linked, this deletes the account entirely.`
+          : `Unlink ${staffMember.full_name} from "@${u.username}"?`,
+      )
+    )
+      return;
+    try {
+      const res = await api.delete<{ account_deleted: boolean }>(
+        `/organizer-users/${u.id}/staff-members/${staffMember.id}`,
+      );
+      toast.success(res.data.account_deleted ? `Account "@${u.username}" deleted (no staff left linked)` : "Unlinked");
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not unlink staff member");
     }
   };
 
@@ -371,9 +427,24 @@ export default function Accounts() {
 
                 {/* LINKED STAFF (SECONDARY) */}
                 {u.staff_members.length > 0 ? (
-                  <div className="border-t border-white/5 pt-2 text-[11px] text-slate-400 font-body flex items-center gap-1.5">
-                    <User className="h-3 w-3 text-gold/70" />
-                    <span>Linked to: <strong className="text-slate-200">{u.staff_members.map((s) => s.full_name).join(", ")}</strong></span>
+                  <div className="border-t border-white/5 pt-2 flex flex-wrap items-center gap-1.5">
+                    {u.staff_members.map((s) => (
+                      <span
+                        key={s.id}
+                        className="inline-flex items-center gap-1 rounded bg-white/5 pl-1.5 pr-1 py-0.5 text-[11px] text-slate-200"
+                      >
+                        <User className="h-3 w-3 text-gold/70" /> {s.full_name}
+                        <button
+                          type="button"
+                          onClick={() => unlinkStaff(u, s)}
+                          title={`Unlink ${s.full_name}`}
+                          data-testid={`unlink-staff-${u.id}-${s.id}`}
+                          className="ml-0.5 rounded p-0.5 text-slate-500 hover:bg-red-500/20 hover:text-red-300"
+                        >
+                          <XCircle className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
                   </div>
                 ) : (
                   <p className="border-t border-white/5 pt-2 text-[11px] text-slate-500 font-body italic">
@@ -462,9 +533,25 @@ export default function Accounts() {
                     </TD>
                     <TD className="text-xs text-slate-300 font-body max-w-xs">
                       {u.staff_members.length > 0 ? (
-                        <div className="flex items-center gap-1">
-                          <User className="h-3 w-3 text-gold/70 shrink-0" />
-                          <span className="truncate">{u.staff_members.map((s) => s.full_name).join(", ")}</span>
+                        <div className="flex flex-wrap items-center gap-1">
+                          {u.staff_members.map((s) => (
+                            <span
+                              key={s.id}
+                              className="inline-flex items-center gap-1 rounded bg-white/5 pl-1.5 pr-1 py-0.5 text-[11px]"
+                            >
+                              <User className="h-3 w-3 text-gold/70 shrink-0" />
+                              <span className="truncate">{s.full_name}</span>
+                              <button
+                                type="button"
+                                onClick={() => unlinkStaff(u, s)}
+                                title={`Unlink ${s.full_name}`}
+                                data-testid={`unlink-staff-${u.id}-${s.id}`}
+                                className="ml-0.5 rounded p-0.5 text-slate-500 hover:bg-red-500/20 hover:text-red-300"
+                              >
+                                <XCircle className="h-3 w-3" />
+                              </button>
+                            </span>
+                          ))}
                         </div>
                       ) : (
                         <span className="text-slate-500 italic text-[11px]">Unlinked</span>
@@ -530,36 +617,45 @@ export default function Accounts() {
         testId="account-dialog"
       >
         <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <Label>Username *</Label>
-              <Input
-                value={form.username}
-                onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
-                placeholder="e.g. ground_supervisor"
-                data-testid="account-username-input"
-              />
+          {autoGenStaff ? (
+            <div className="rounded-lg border border-gold/30 bg-gold/5 p-3 text-xs text-slate-300 font-body">
+              Linking to <strong className="text-white">{autoGenStaff.full_name}</strong> — a username and password
+              will be generated for them automatically (shown once, right after you create this account).
             </div>
-            <div>
-              <Label>Full Name</Label>
-              <Input
-                value={form.full_name}
-                onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
-                placeholder="e.g. Ramesh Kumar"
-              />
-            </div>
-          </div>
+          ) : (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <Label>Username *</Label>
+                  <Input
+                    value={form.username}
+                    onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
+                    placeholder="e.g. ground_supervisor"
+                    data-testid="account-username-input"
+                  />
+                </div>
+                <div>
+                  <Label>Full Name</Label>
+                  <Input
+                    value={form.full_name}
+                    onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
+                    placeholder="e.g. Ramesh Kumar"
+                  />
+                </div>
+              </div>
 
-          <div>
-            <Label>{form.id ? "New Password (Leave blank to keep unchanged)" : "Password *"}</Label>
-            <Input
-              type="password"
-              value={form.password}
-              onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-              placeholder={form.id ? "••••••••" : "Minimum 8 characters"}
-              data-testid="account-password-input"
-            />
-          </div>
+              <div>
+                <Label>{form.id ? "New Password (Leave blank to keep unchanged)" : "Password *"}</Label>
+                <Input
+                  type="password"
+                  value={form.password}
+                  onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                  placeholder={form.id ? "••••••••" : "Minimum 8 characters"}
+                  data-testid="account-password-input"
+                />
+              </div>
+            </>
+          )}
 
           {/* LINKED STAFF PERSONNEL (SEARCHABLE MULTI-SELECTOR) */}
           <div>
@@ -689,6 +785,8 @@ export default function Accounts() {
           </div>
         </div>
       </Dialog>
+
+      <NewLoginDialog login={newLogin} onClose={() => setNewLogin(null)} />
     </div>
   );
 }

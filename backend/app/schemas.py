@@ -1227,9 +1227,13 @@ VOLUNTEER_BASE_PERMISSIONS: dict[str, str] = {"teams": "view", "venues": "view"}
 
 
 class OrganizerUserCreate(BaseModel):
-    username: str
+    # Both optional: when staff_member_ids names exactly one staff member, the
+    # router auto-provisions their username/password with the same logic as
+    # routers/staff.py's create_staff_credential (auth_utils.provision_login_credentials)
+    # instead of requiring these — see routers/organizer_users.py create_user.
+    username: Optional[str] = None
     full_name: Optional[str] = None
-    password: str
+    password: Optional[str] = None
     is_active: bool = True
     is_admin: bool = False
     permissions: dict[str, str] = {}
@@ -1282,6 +1286,15 @@ class OrganizerUserRead(ORMModel):
     permissions: dict[str, str] = {}
     staff_members: list[StaffMemberBrief] = []
     created_at: datetime
+
+
+class OrganizerUserCreateResult(BaseModel):
+    """create_user's response — wraps the created account together with the
+    plaintext password when it was auto-generated (staff_member_ids named
+    exactly one staff member), so the caller can show it once, the same way
+    routers/staff.py's create_staff_credential does."""
+    account: OrganizerUserRead
+    generated_password: Optional[str] = None
 
 
 # --- Tournaments / Rounds / Matches (fixture + live match tracking) ---

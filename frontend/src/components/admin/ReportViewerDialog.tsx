@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 
 export type ReportSection =
   | "attendance"
+  | "participants"
   | "arrival"
   | "billing"
   | "duty"
@@ -26,6 +27,7 @@ export type ReportSection =
 
 export const REPORT_TITLES: Record<ReportSection, string> = {
   attendance: "Attendance Report",
+  participants: "Participant Report",
   arrival: "Arrival Report",
   billing: "Payments & Billing Ledger",
   duty: "Staff Duty Report",

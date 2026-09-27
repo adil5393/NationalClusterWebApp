@@ -52,6 +52,15 @@ XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.s
 PDF_MEDIA_TYPE = "application/pdf"
 
 
+def _dob(p: models.Participant, blank="—") -> str:
+    return p.date_of_birth.strftime("%d-%m-%Y") if p.date_of_birth else blank
+
+
+def _participant_status(p: models.Participant, team: "models.Team | None") -> str:
+    """Active only if the participant, their team and their age group all are."""
+    return "Active" if p.is_active and _age_group_active(team, p.age_group) else "Inactive"
+
+
 def _weight(p: models.Participant, blank="—"):
     """A participant's weigh-in (kg) for a report cell, or `blank` if not weighed yet."""
     return float(p.weight) if p.weight is not None else blank
@@ -132,90 +141,96 @@ def _csv_response(header, rows, filename):
     )
 
 
+# Participant Report — every participant's full record (Reports page card +
+# the Participants page's CSV/XLSX buttons). Same columns everywhere.
+PARTICIPANT_REPORT_COLUMNS = [
+    "Reg. No.", "Full Name", "Father's Name", "DOB", "Class", "Gender", "Age Group",
+    "School / Team", "Cluster", "Status", "Present", "Weight (kg)",
+]
+
+
+def _participant_report_rows(db: Session, blank="—") -> list[list]:
+    team_by_id = {t.id: t for t in db.query(models.Team).all()}
+    participants = (
+        db.query(models.Participant)
+        .order_by(models.Participant.team_id, models.Participant.age_group, models.Participant.full_name)
+        .all()
+    )
+    rows = []
+    for p in participants:
+        team = team_by_id.get(p.team_id)
+        rows.append([
+            p.registration_no or blank,
+            p.full_name,
+            p.father_name or blank,
+            _dob(p, blank),
+            p.student_class or blank,
+            p.gender or blank,
+            p.age_group or blank,
+            team.name if team else blank,
+            (team.cluster or blank) if team else blank,
+            _participant_status(p, team),
+            "Present" if p.is_present else "Absent",
+            _weight(p, blank),
+        ])
+    return rows
+
+
 @router.get("/participants.csv", dependencies=[Depends(require_report("teams"))])
 def export_participants(db: Session = Depends(get_db)):
-    teams = {t.id: t.name for t in db.query(models.Team).all()}
-    rows = [
-        [p.full_name, teams.get(p.team_id, ""), p.role or "", p.gender or "", p.age or "", _weight(p, "")]
-        for p in db.query(models.Participant).order_by(models.Participant.team_id, models.Participant.full_name).all()
-    ]
-    return _csv_response(["Full Name", "Team", "Role", "Gender", "Age", "Weight (kg)"], rows, "participants.csv")
+    return _csv_response(PARTICIPANT_REPORT_COLUMNS, _participant_report_rows(db, blank=""), "participant_report.csv")
 
 
 @router.get("/participants.xlsx", dependencies=[Depends(require_report("teams"))])
 def export_participants_xlsx(db: Session = Depends(get_db)):
-    teams = {t.id: t.name for t in db.query(models.Team).all()}
-    participants = db.query(models.Participant).order_by(models.Participant.team_id, models.Participant.full_name).all()
+    rows = _participant_report_rows(db)
 
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Participants Roster"
-    max_cols = 7
+    ws.title = "Participant Report"
+    max_cols = len(PARTICIPANT_REPORT_COLUMNS) + 1  # + "#" column
 
-    # Header Banner
     next_row = style_header_banner(
         ws,
-        tournament_name="PARTICIPANTS & DELEGATE DIRECTORY",
-        subtitle="Official Roster of Registered Athletes, Coaches & Staff",
+        tournament_name="PARTICIPANT REPORT",
+        subtitle="Every Registered Participant — Identity, School, Cluster, Status & Attendance",
         badge_text="OFFICIAL ROSTER EXPORT",
         max_col=max_cols,
         start_row=1,
     )
 
-    # KPI Summary Cards
-    total_p = len(participants)
-    unique_teams_count = len({p.team_id for p in participants if p.team_id})
-    players_count = sum(1 for p in participants if (p.role or "").lower() in ("player", "athlete", "student"))
-    staff_count = total_p - players_count
-
+    status_i = PARTICIPANT_REPORT_COLUMNS.index("Status")
+    present_i = PARTICIPANT_REPORT_COLUMNS.index("Present")
+    team_i = PARTICIPANT_REPORT_COLUMNS.index("School / Team")
     cards = [
-        ("Total Participants", total_p, "Registered"),
-        ("Teams Represented", unique_teams_count, "Affiliated Clubs"),
-        ("Athletes / Players", players_count if players_count > 0 else total_p, "Competitors"),
-        ("Staff / Coaches", staff_count if players_count > 0 else "—", "Officials"),
+        ("Total Participants", len(rows), "Registered"),
+        ("Schools", len({r[team_i] for r in rows}), "Represented"),
+        ("Active", sum(1 for r in rows if r[status_i] == "Active"), "Competing"),
+        ("Present", sum(1 for r in rows if r[present_i] == "Present"), "Checked In"),
     ]
     next_row = style_kpi_cards(ws, cards, start_row=next_row, card_width_cols=1)
+    next_row = style_section_bar(ws, "Participant Details", next_row, max_col=max_cols, icon="👥")
 
-    # Table Section
-    next_row = style_section_bar(ws, "Master Participant List", next_row, max_col=max_cols, icon="👥")
-
-    headers = [
-        ("NO.", 6, ALIGN_HEADER_CENTER),
-        ("FULL NAME", 26, ALIGN_HEADER_LEFT),
-        ("TEAM AFFILIATION", 24, ALIGN_HEADER_LEFT),
-        ("ROLE", 14, ALIGN_HEADER_CENTER),
-        ("GENDER", 10, ALIGN_HEADER_CENTER),
-        ("AGE", 8, ALIGN_HEADER_CENTER),
-        ("WEIGHT (KG)", 11, ALIGN_HEADER_CENTER),
-    ]
-
+    left = {"Full Name", "Father's Name", "School / Team"}
+    headers = ["#"] + [c.upper() for c in PARTICIPANT_REPORT_COLUMNS]
     ws.row_dimensions[next_row].height = 22
-    for col_idx, (th_label, _, align) in enumerate(headers, start=1):
-        cell = ws.cell(row=next_row, column=col_idx, value=th_label)
+    for col_idx, label in enumerate(headers, start=1):
+        cell = ws.cell(row=next_row, column=col_idx, value=label)
         cell.font = FONT_TH
         cell.fill = FILL_TH_PRIMARY
-        cell.alignment = align
+        cell.alignment = ALIGN_HEADER_LEFT if label in {h.upper() for h in left} else ALIGN_HEADER_CENTER
         cell.border = BORDER_HEADER
     next_row += 1
 
-    for idx, p in enumerate(participants, start=1):
+    for idx, r in enumerate(rows, start=1):
         ws.row_dimensions[next_row].height = 20
-        fill = FILL_ZEBRA_EVEN if idx % 2 == 0 else FILL_ZEBRA_ODD
-
-        row_data = [
-            (idx, ALIGN_CENTER, FONT_TD_BOLD),
-            (p.full_name, ALIGN_LEFT, FONT_TD_BOLD),
-            (teams.get(p.team_id, "—"), ALIGN_LEFT, FONT_TD),
-            (p.role or "Player", ALIGN_CENTER, FONT_TD),
-            (p.gender or "—", ALIGN_CENTER, FONT_TD),
-            (p.age or "—", ALIGN_CENTER, FONT_TD),
-            (_weight(p), ALIGN_CENTER, FONT_TD),
-        ]
-
-        for col_idx, (val, align, font) in enumerate(row_data, start=1):
+        inactive = r[status_i] != "Active"
+        fill = FILL_ROW_INACTIVE if inactive else (FILL_ZEBRA_EVEN if idx % 2 == 0 else FILL_ZEBRA_ODD)
+        values = [idx] + r
+        for col_idx, (label, val) in enumerate(zip(["#"] + PARTICIPANT_REPORT_COLUMNS, values), start=1):
             cell = ws.cell(row=next_row, column=col_idx, value=val)
-            cell.font = font
-            cell.alignment = align
+            cell.font = FONT_TD_BOLD if label in ("Full Name", "Present") else FONT_TD
+            cell.alignment = ALIGN_LEFT if label in left else ALIGN_CENTER
             cell.fill = fill
             cell.border = BORDER_CELL
         next_row += 1
@@ -223,7 +238,6 @@ def export_participants_xlsx(db: Session = Depends(get_db)):
     ws.row_dimensions[next_row].height = 12
     next_row += 1
     style_footer(ws, next_row, max_col=max_cols)
-
     auto_fit_columns(ws, min_width=8, max_width=45, extra_padding=3)
     enable_sheet_ergonomics(ws, freeze_pane="A7")
 
@@ -233,7 +247,7 @@ def export_participants_xlsx(db: Session = Depends(get_db)):
     return StreamingResponse(
         iter([buf.getvalue()]),
         media_type=XLSX_MEDIA_TYPE,
-        headers={"Content-Disposition": 'attachment; filename="participants_roster.xlsx"'},
+        headers={"Content-Disposition": 'attachment; filename="participant_report.xlsx"'},
     )
 
 
@@ -1372,6 +1386,7 @@ def live_reports_summary(current: models.OrganizerUser = Depends(require_auth), 
 
 _LIVE_DETAIL_MODULES = {
     "attendance": "attendance",
+    "participants": "teams",
     "arrival": "teams",
     "billing": "billing",
     "duty": "staff",
@@ -1398,6 +1413,7 @@ def _require_live_detail_access(section: str, current: models.OrganizerUser) -> 
 # generated entirely server-side.
 _LIVE_DETAIL_PDF_META = {
     "attendance": ("ATTENDANCE REPORT", "Present/Absent Status — Every Registered Participant"),
+    "participants": ("PARTICIPANT REPORT", "Every Registered Participant — Identity, School, Cluster, Status & Attendance"),
     "arrival": ("ARRIVAL REPORT", "School Delegation Arrival Status & Pending Processes"),
     "billing": ("PAYMENTS LEDGER", "Per-Team Registration-Fee Billing, Refunds & Net Collected"),
     "duty": ("DUTY REPORT", "Staff Duty Assignments Across Every Building & Room"),
@@ -1444,6 +1460,15 @@ def _live_detail_data(section: str, db: Session) -> dict:
             ],
             # Highlights anyone whose team or age group is inactive.
             "row_flags": [not _age_group_active(team_by_id.get(p.team_id), p.age_group) for p in participants],
+        }
+
+    if section == "participants":
+        rows = _participant_report_rows(db)
+        status_i = PARTICIPANT_REPORT_COLUMNS.index("Status")
+        return {
+            "columns": PARTICIPANT_REPORT_COLUMNS,
+            "rows": rows,
+            "row_flags": [r[status_i] != "Active" for r in rows],  # highlights inactive participants
         }
 
     if section == "arrival":
