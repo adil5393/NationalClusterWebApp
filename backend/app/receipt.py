@@ -16,7 +16,7 @@ host school affiliation, metadata cards, and official signature footer.
 """
 import io
 import os
-from datetime import date
+from datetime import date, datetime
 from functools import lru_cache
 from pathlib import Path
 
