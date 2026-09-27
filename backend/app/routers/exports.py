@@ -91,6 +91,34 @@ def _team_age_group_statuses(team: models.Team) -> str:
     return " | ".join(f"{_age_group_code(g)} {'Active' if _age_group_active(team, g) else 'Inactive'}" for g in ranked)
 
 
+def _active_age_group_participant_counts(db: Session) -> dict[int, int]:
+    """Per-team participant totals, counting only participants whose own
+    age group is still active for that team — same rule as
+    _age_group_active (a fully inactive team counts zero; an individually
+    benched age group, e.g. a withdrawn U14 squad, doesn't count towards
+    the team's total). Backs the Accommodation Report's "Allotted" column,
+    which used to be every team's raw registered headcount regardless of
+    which age groups were actually still fielding: a school entered in
+    U14/U17/U19 with only U19 active showed all three groups' players as
+    "allotted" instead of just U19's."""
+    inactive = (
+        db.query(models.TeamInactiveAgeGroup.team_id, models.TeamInactiveAgeGroup.age_group)
+        .subquery()
+    )
+    return dict(
+        db.query(models.Participant.team_id, func.count(models.Participant.id))
+        .join(models.Team, models.Team.id == models.Participant.team_id)
+        .outerjoin(
+            inactive,
+            (inactive.c.team_id == models.Participant.team_id)
+            & (inactive.c.age_group == models.Participant.age_group),
+        )
+        .filter(models.Team.is_active.is_(True), inactive.c.team_id.is_(None))
+        .group_by(models.Participant.team_id)
+        .all()
+    )
+
+
 def _csv_response(header, rows, filename):
     buf = io.StringIO()
     writer = csv.writer(buf)
@@ -546,11 +574,7 @@ def _room_report_suffix(f: RoomReportFilters) -> str:
 @router.get("/rooms.csv", dependencies=[Depends(require_report("accommodation"))])
 def export_room_allocation(filters: RoomReportFilters = Depends(_room_report_filters), db: Session = Depends(get_db)):
     cluster = filters.cluster
-    participant_counts = dict(
-        db.query(models.Participant.team_id, func.count(models.Participant.id))
-        .group_by(models.Participant.team_id)
-        .all()
-    )
+    participant_counts = _active_age_group_participant_counts(db)
     participant_present_counts = dict(
         db.query(models.Participant.team_id, func.count(models.Participant.id))
         .filter(models.Participant.is_present.is_(True))
@@ -586,15 +610,13 @@ def export_room_allocation(filters: RoomReportFilters = Depends(_room_report_fil
 def export_room_allocation_xlsx(filters: RoomReportFilters = Depends(_room_report_filters), db: Session = Depends(get_db)):
     cluster = filters.cluster
     assignments = _room_assignments(db, filters)
-    # Allotted = that assignment's team's total registered participants;
-    # Filled = how many of those are actually checked in (Participant.
-    # is_present) — lets an organizer see at a glance whether a room's team
-    # has actually arrived versus just being on paper allotted to it.
-    participant_counts = dict(
-        db.query(models.Participant.team_id, func.count(models.Participant.id))
-        .group_by(models.Participant.team_id)
-        .all()
-    )
+    # Allotted = that assignment's team's total participants in still-active
+    # age groups (a benched age group, e.g. a withdrawn U14 squad, doesn't
+    # count — see _active_age_group_participant_counts); Filled = how many
+    # of those are actually checked in (Participant.is_present) — lets an
+    # organizer see at a glance whether a room's team has actually arrived
+    # versus just being on paper allotted to it.
+    participant_counts = _active_age_group_participant_counts(db)
     participant_present_counts = dict(
         db.query(models.Participant.team_id, func.count(models.Participant.id))
         .filter(models.Participant.is_present.is_(True))
@@ -709,11 +731,7 @@ def export_room_allocation_pdf(filters: RoomReportFilters = Depends(_room_report
     Report (who's in which bed), same source query, just laid out as a
     paginated table instead of a workbook."""
     assignments = _room_assignments(db, filters)
-    participant_counts = dict(
-        db.query(models.Participant.team_id, func.count(models.Participant.id))
-        .group_by(models.Participant.team_id)
-        .all()
-    )
+    participant_counts = _active_age_group_participant_counts(db)
     participant_present_counts = dict(
         db.query(models.Participant.team_id, func.count(models.Participant.id))
         .filter(models.Participant.is_present.is_(True))
@@ -1613,11 +1631,7 @@ def _live_detail_data(section: str, db: Session) -> dict:
 
     if section == "accommodation":
         assignments = db.query(models.AccommodationAssignment).all()
-        participant_counts = dict(
-            db.query(models.Participant.team_id, func.count(models.Participant.id))
-            .group_by(models.Participant.team_id)
-            .all()
-        )
+        participant_counts = _active_age_group_participant_counts(db)
         participant_present_counts = dict(
             db.query(models.Participant.team_id, func.count(models.Participant.id))
             .filter(models.Participant.is_present.is_(True))
