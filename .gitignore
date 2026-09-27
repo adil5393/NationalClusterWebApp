@@ -119,6 +119,10 @@ backend/assets/*
 !backend/assets/monogram/
 
 frontend/public/images/
+# Raw school photo originals moved out of public/ so they're no longer copied
+# into every web build / Android APK (they made the APK ~144MB). Not used by
+# the app — it reads the resized WebP copies in src/assets/images-optimized/.
+frontend/photo-originals/
 
 # Raw camera originals (8-16MB each) — see frontend/scripts/optimize-school-photos.py.
 # The resized WebP output it produces (images-optimized/) is what the app
