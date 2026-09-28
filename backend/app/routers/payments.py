@@ -224,6 +224,10 @@ def _category_summary(team: models.Team, category: str, roster: list[dict]) -> d
         # Hints for the Bill dialog's single "number of members" field.
         summary["roster_size"] = len(roster)
         summary["billed_quantity"] = _billed_headcount(team, category)
+        # Kept for the older per-category build, which still ticks members from
+        # this list (billed = charged by a member-list bill of this category).
+        billed_keys = _billed_keys(team, category)
+        summary["members"] = [{**m, "billed": (m["kind"], m["id"]) in billed_keys} for m in roster]
     return summary
 
 
