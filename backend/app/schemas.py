@@ -365,6 +365,7 @@ class AccommodationRuleRead(ORMModel, AccommodationRuleBase):
 # --- Championship Photo Gallery ---
 class GalleryPhotoUpdate(BaseModel):
     tag: Optional[str] = None
+    is_approved: Optional[bool] = None
 
 
 class GalleryPhotoRead(ORMModel):
@@ -372,6 +373,7 @@ class GalleryPhotoRead(ORMModel):
     filename: str
     url: str
     tag: str
+    is_approved: bool
     created_at: datetime
 
 

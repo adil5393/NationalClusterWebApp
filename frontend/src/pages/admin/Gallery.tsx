@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
-import { UploadCloud, Trash2, Camera as CameraIcon, Images } from "lucide-react";
+import { UploadCloud, Trash2, Camera as CameraIcon, Images, Check, X, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { api, assetUrl } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ interface Photo {
   filename: string;
   url: string;
   tag: string;
+  is_approved: boolean;
 }
 
 const SUGGESTED_TAGS = ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Opening Ceremony", "Finals", "General"];
@@ -65,9 +66,15 @@ export default function AdminGallery() {
     [photos],
   );
 
+  // Pending public "Action Captured on the Mat" submissions (routers/public.py
+  // upload_mat_photo) — shown separately above the live groups below, since
+  // they aren't visible on the public site yet.
+  const pending = useMemo(() => photos.filter((p) => !p.is_approved), [photos]);
+
   const groups = useMemo(() => {
     const map = new Map<string, Photo[]>();
     for (const p of photos) {
+      if (!p.is_approved) continue;
       if (!map.has(p.tag)) map.set(p.tag, []);
       map.get(p.tag)!.push(p);
     }
@@ -162,6 +169,36 @@ export default function AdminGallery() {
     }
   };
 
+  // Approve/reject a public "Action Captured on the Mat" submission
+  // (routers/public.py upload_mat_photo) — reject just deletes it outright,
+  // same as removing any other photo.
+  const [decidingId, setDecidingId] = useState<number | null>(null);
+  const approve = async (photo: Photo) => {
+    setDecidingId(photo.id);
+    try {
+      await api.put(`/gallery/photos/${photo.id}`, { is_approved: true });
+      setPhotos((prev) => prev.map((p) => (p.id === photo.id ? { ...p, is_approved: true } : p)));
+      toast.success("Photo approved — now live on the public site");
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not approve photo");
+    } finally {
+      setDecidingId(null);
+    }
+  };
+  const reject = async (photo: Photo) => {
+    if (!confirm("Reject and delete this submitted photo?")) return;
+    setDecidingId(photo.id);
+    try {
+      await api.delete(`/gallery/photos/${photo.id}`);
+      setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
+      toast.success("Photo rejected");
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not reject photo");
+    } finally {
+      setDecidingId(null);
+    }
+  };
+
   return (
     <div data-testid="admin-gallery" className="space-y-6">
       {/* PAGE HEADER */}
@@ -235,11 +272,61 @@ export default function AdminGallery() {
         </div>
       )}
 
+      {/* PENDING REVIEW — public "Action Captured on the Mat" submissions,
+          hidden from the public site until approved or rejected here. */}
+      {!loading && pending.length > 0 && (
+        <div
+          className="rounded-xl border border-gold/30 bg-gold/5 p-4 space-y-3"
+          data-testid="gallery-pending-review"
+        >
+          <h3 className="flex items-center gap-1.5 text-xs font-heading font-extrabold uppercase tracking-wider text-gold">
+            <Clock className="h-3.5 w-3.5" /> Pending Review — Fan Submissions
+            <span className="text-slate-500 font-mono normal-case">({pending.length})</span>
+          </h3>
+          <p className="text-[11px] text-slate-400 font-body -mt-2">
+            Submitted from the public Live page. Not visible on the site until approved.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {pending.map((p) => (
+              <div
+                key={p.id}
+                className="relative aspect-square overflow-hidden rounded-xl border border-gold/30 bg-obsidian-950"
+                data-testid={`gallery-pending-photo-${p.id}`}
+              >
+                <img src={assetUrl(p.url)} alt="" className="h-full w-full object-cover" loading="lazy" />
+                {canEdit && (
+                  <div className="absolute inset-x-1.5 bottom-1.5 flex gap-1.5">
+                    <button
+                      onClick={() => approve(p)}
+                      disabled={decidingId === p.id}
+                      className="flex-1 flex items-center justify-center gap-1 rounded-lg bg-emerald-500/90 py-1.5 text-[11px] font-heading font-bold text-white hover:bg-emerald-500 disabled:opacity-50"
+                      data-testid={`approve-photo-${p.id}`}
+                      title="Approve — show on the public site"
+                    >
+                      <Check className="h-3.5 w-3.5" /> Approve
+                    </button>
+                    <button
+                      onClick={() => reject(p)}
+                      disabled={decidingId === p.id}
+                      className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-black/70 text-white hover:bg-red-500/80 disabled:opacity-50"
+                      data-testid={`reject-photo-${p.id}`}
+                      title="Reject — delete this submission"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="rounded-xl border border-white/10 bg-obsidian-900 py-16">
           <Spinner label="Loading gallery…" />
         </div>
-      ) : photos.length === 0 ? (
+      ) : photos.length - pending.length === 0 ? (
         <div className="rounded-xl border border-white/10 bg-obsidian-900 p-6">
           <EmptyState
             title="No photos yet"
@@ -294,10 +381,10 @@ export default function AdminGallery() {
         </div>
       )}
 
-      {!loading && photos.length > 0 && (
+      {!loading && photos.length - pending.length > 0 && (
         <p className="flex items-center gap-1.5 text-[11px] text-slate-500 font-body">
-          <Images className="h-3.5 w-3.5" /> {photos.length} photo{photos.length === 1 ? "" : "s"} live on the
-          public site
+          <Images className="h-3.5 w-3.5" /> {photos.length - pending.length} photo
+          {photos.length - pending.length === 1 ? "" : "s"} live on the public site
         </p>
       )}
     </div>

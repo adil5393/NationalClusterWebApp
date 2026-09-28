@@ -288,12 +288,55 @@ def public_room_lookup_status(db: Session = Depends(get_db)):
 def public_gallery(db: Session = Depends(get_db)):
     """Day/group-tagged photos for the homepage's swiping card + full album
     view — a richer sibling of public_about_images below (which stays a
-    flat untagged list, still used by the About page's flipbook)."""
+    flat untagged list, still used by the About page's flipbook). Only
+    approved photos (GalleryPhoto.is_approved) show here — a visitor's own
+    "Action Captured on the Mat" submission (upload_mat_photo below) waits
+    here until an admin approves it from the Gallery admin page."""
     return (
         db.query(models.GalleryPhoto)
+        .filter(models.GalleryPhoto.is_approved.is_(True))
         .order_by(models.GalleryPhoto.tag.asc(), models.GalleryPhoto.created_at.asc())
         .all()
     )
+
+
+# A spectator's own photo, submitted from the public Live page's "Action
+# Captured on the Mat" gallery — no login, no team association, so this is
+# rate-limited purely per visitor address (nginx's X-Real-IP), same shape as
+# the reveal-contacts/callback limiters above.
+_MAT_PHOTO_WINDOW_SECONDS = 60 * 60
+_MAT_PHOTO_MAX_SENT = 10
+_sent_mat_photos: dict[str, list[float]] = {}
+_MAT_PHOTO_SAFE_STEM_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+@router.post("/gallery/mat-photos", status_code=201)
+def upload_mat_photo(request: Request, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """A spectator submits their own mat-side photo. Lands in the same
+    Championship Photo Gallery as admin uploads (routers/gallery.py), tagged
+    "Fan Submission" — but created with is_approved=False, so it's invisible
+    on public_gallery above until an admin approves it (PUT
+    /gallery/photos/{id}, same endpoint admins already use to re-tag)."""
+    visitor = _visitor_key(request)
+    sent = _recent(_sent_mat_photos, visitor, _MAT_PHOTO_WINDOW_SECONDS)
+    if len(sent) >= _MAT_PHOTO_MAX_SENT:
+        raise HTTPException(429, "Too many uploads from this device — try again later")
+
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in VALID_IMAGE_EXTENSIONS:
+        raise HTTPException(400, "Unsupported file type — please upload a JPG, PNG, or WEBP")
+
+    ASSETS_ABOUT_DIR.mkdir(parents=True, exist_ok=True)
+    stem = _MAT_PHOTO_SAFE_STEM_RE.sub("_", Path(file.filename or "photo").stem)[:40] or "photo"
+    name = f"fan-{stem}-{uuid.uuid4().hex[:8]}{ext}"
+    content = optimize_image(file.file.read(), ext)
+    (ASSETS_ABOUT_DIR / name).write_bytes(content)
+
+    photo = models.GalleryPhoto(filename=name, tag="Fan Submission", is_approved=False)
+    db.add(photo)
+    db.commit()
+    sent.append(time.time())
+    return {"message": "Thanks! Your photo will appear here once an organizer approves it."}
 
 
 @router.get("/accommodation-rules", response_model=list[schemas.AccommodationRuleRead])

@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Trophy,
   ChevronLeft,
   ChevronRight,
   Maximize2,
   X,
-  Images,
+  UploadCloud,
+  Clock,
 } from "lucide-react";
+import { toast } from "sonner";
 import { api, assetUrl } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -16,21 +18,27 @@ export interface GalleryPhotoT {
   tag: string;
 }
 
-// Grid shows this many photos at first, then "Show more" adds this many again
-// — keeps the Live page short (and light on mobile data: tiles load the
-// full-size photo, lazily, as they scroll into view).
-const GRID_PAGE_SIZE = 12;
+// 16 photos per page (Prev/Next below the grid) — keeps the Live page short
+// (and light on mobile data: tiles load the full-size photo, lazily, as
+// they scroll into view).
+const GRID_PAGE_SIZE = 16;
 
 export function ActionCapturedMat() {
   const [galleryPhotos, setGalleryPhotos] = useState<GalleryPhotoT[]>([]);
   const [galleryLoading, setGalleryLoading] = useState(true);
   const [activeTag, setActiveTag] = useState<string | null>(null);
-  const [visibleCount, setVisibleCount] = useState(GRID_PAGE_SIZE);
+  const [page, setPage] = useState(0);
   // Index into `shown` (the tag-filtered list), not galleryPhotos.
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
 
-  useEffect(() => {
+  // Public "upload your own photo" — see routers/public.py upload_mat_photo.
+  // Submissions stay hidden (pending admin approval) until they show up in
+  // a later load() of /public/gallery.
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const loadGallery = () => {
     setGalleryLoading(true);
     api
       .get<GalleryPhotoT[]>("/public/gallery")
@@ -41,7 +49,29 @@ export function ActionCapturedMat() {
       })
       .catch(() => {})
       .finally(() => setGalleryLoading(false));
-  }, []);
+  };
+  useEffect(loadGallery, []);
+
+  const uploadPhoto = async (file: File) => {
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = await api.post<{ message: string }>("/public/gallery/mat-photos", fd, {
+        headers: { "Content-Type": undefined } as any,
+      });
+      toast.success(r.data.message || "Thanks! Your photo is pending approval.");
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not upload photo");
+    } finally {
+      setUploading(false);
+    }
+  };
+  const onPickUploadFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) uploadPhoto(file);
+  };
 
   const tags = useMemo(
     () => Array.from(new Set(galleryPhotos.map((p) => p.tag).filter(Boolean))),
@@ -51,11 +81,13 @@ export function ActionCapturedMat() {
     () => (activeTag ? galleryPhotos.filter((p) => p.tag === activeTag) : galleryPhotos),
     [galleryPhotos, activeTag],
   );
-  const gridPhotos = shown.slice(0, visibleCount);
+  const pageCount = Math.max(1, Math.ceil(shown.length / GRID_PAGE_SIZE));
+  const clampedPage = Math.min(page, pageCount - 1);
+  const gridPhotos = shown.slice(clampedPage * GRID_PAGE_SIZE, clampedPage * GRID_PAGE_SIZE + GRID_PAGE_SIZE);
 
   const selectTag = (tag: string | null) => {
     setActiveTag(tag);
-    setVisibleCount(GRID_PAGE_SIZE);
+    setPage(0);
   };
 
   const step = (delta: number) =>
@@ -130,6 +162,30 @@ export function ActionCapturedMat() {
           <p className="text-xs sm:text-sm text-slate-400 font-body max-w-xl">
             High-resolution moments of athleticism, victory celebrations, tactical timeouts, and the sportsmanship of the CBSE National Championship.
           </p>
+
+          {/* GOT YOUR OWN SHOT? — public upload, pending admin approval before it shows here */}
+          <div className="pt-1">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={onPickUploadFile}
+              data-testid="mat-photo-upload-input"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gold/40 bg-gold/10 px-3.5 py-1.5 text-xs font-heading font-bold text-gold hover:bg-gold/20 transition-colors disabled:opacity-50"
+              data-testid="mat-photo-upload-btn"
+            >
+              <UploadCloud className="h-3.5 w-3.5" /> {uploading ? "Uploading…" : "Got a shot? Upload it"}
+            </button>
+            <p className="mt-1 flex items-center justify-center gap-1 text-[10px] text-slate-500 font-body">
+              <Clock className="h-3 w-3" /> Reviewed by organizers before it appears here.
+            </p>
+          </div>
         </div>
 
         {galleryLoading ? (
@@ -184,14 +240,14 @@ export function ActionCapturedMat() {
                 <button
                   key={p.id}
                   type="button"
-                  onClick={() => setLightboxIndex(i)}
+                  onClick={() => setLightboxIndex(clampedPage * GRID_PAGE_SIZE + i)}
                   className="group relative aspect-square overflow-hidden rounded-xl border border-white/10 bg-obsidian-950 shadow-md transition-all hover:border-gold/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                  aria-label={`Open photo ${i + 1}${p.tag ? ` (${p.tag})` : ""}`}
+                  aria-label={`Open photo ${clampedPage * GRID_PAGE_SIZE + i + 1}${p.tag ? ` (${p.tag})` : ""}`}
                   data-testid={`live-gallery-photo-${p.id}`}
                 >
                   <img
                     src={assetUrl(p.url)}
-                    alt={p.tag || `Championship photo ${i + 1}`}
+                    alt={p.tag || `Championship photo ${clampedPage * GRID_PAGE_SIZE + i + 1}`}
                     onError={(e) => {
                       (e.currentTarget as HTMLElement).style.visibility = "hidden";
                     }}
@@ -210,15 +266,29 @@ export function ActionCapturedMat() {
               ))}
             </div>
 
-            {shown.length > gridPhotos.length && (
-              <div className="flex justify-center">
+            {/* PAGE NAVIGATION — 16 photos per page */}
+            {pageCount > 1 && (
+              <div className="flex items-center justify-center gap-3" data-testid="live-gallery-pagination">
                 <button
                   type="button"
-                  onClick={() => setVisibleCount((n) => n + GRID_PAGE_SIZE)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-xs font-heading font-bold text-white hover:bg-white/10 transition-colors"
-                  data-testid="live-gallery-show-more"
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={clampedPage === 0}
+                  className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-heading font-bold text-white hover:bg-white/10 transition-colors disabled:opacity-30 disabled:pointer-events-none"
+                  data-testid="live-gallery-prev-page"
                 >
-                  <Images className="h-3.5 w-3.5 text-gold" /> Show more ({shown.length - gridPhotos.length} left)
+                  <ChevronLeft className="h-3.5 w-3.5" /> Prev
+                </button>
+                <span className="text-xs font-mono text-slate-400">
+                  Page {clampedPage + 1} of {pageCount}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+                  disabled={clampedPage >= pageCount - 1}
+                  className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-heading font-bold text-white hover:bg-white/10 transition-colors disabled:opacity-30 disabled:pointer-events-none"
+                  data-testid="live-gallery-next-page"
+                >
+                  Next <ChevronRight className="h-3.5 w-3.5" />
                 </button>
               </div>
             )}

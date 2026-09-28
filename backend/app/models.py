@@ -685,16 +685,25 @@ class FaqQuestion(TimestampMixin, Base):
 
 
 class GalleryPhoto(TimestampMixin, Base):
-    """A Championship Photo Gallery upload (bulk from the admin panel, or
-    camera capture from the mobile app — see routers/gallery.py), tagged by
-    day/group so the public homepage's album can group photos together. The
-    actual image bytes live on disk at backend/assets/about/<filename> — this
-    row is just the metadata layer on top of what public.py's
-    public_about_images already scans directly from that folder."""
+    """A Championship Photo Gallery upload (bulk from the admin panel, camera
+    capture from the mobile app, or a public spectator's "Action Captured on
+    the Mat" submission — see routers/gallery.py and routers/public.py's
+    upload_mat_photo), tagged by day/group so the public homepage's album can
+    group photos together. The actual image bytes live on disk at
+    backend/assets/about/<filename> — this row is just the metadata layer on
+    top of what public.py's public_about_images already scans directly from
+    that folder."""
     __tablename__ = "gallery_photos"
     id = Column(Integer, primary_key=True)
     filename = Column(String(255), nullable=False, unique=True)
     tag = Column(String(60), nullable=False, default="General")
+    # Gates whether public_gallery (the public site) shows this photo.
+    # Admin bulk-uploads and camera captures (routers/gallery.py) default
+    # True — visible right away, as before this column existed. A public
+    # visitor's own submission (routers/public.py upload_mat_photo) is
+    # created False and only appears once an admin approves it from the
+    # Gallery admin page (PUT /gallery/photos/{id}).
+    is_approved = Column(Boolean, nullable=False, default=True, server_default="true")
 
     @property
     def url(self) -> str:
