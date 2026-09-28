@@ -1,10 +1,12 @@
 """Renders two kinds of single-page A4 PDF documents for a team's
-registration-fee ledger (see models.Payment / routers/payments.py):
+billing ledger (see models.Payment / routers/payments.py):
 
-- Invoice (render_invoice): the team's full current billing state — every
-  member across every BILL this team has ever had, at whatever per-member
-  rate each bill used, plus aggregate subtotal/discount/total billed and
-  live Total Paid/Balance Due. Downloaded on demand (routers/payments.py
+- Invoice (render_invoice): the current state of ONE of the team's three
+  independent bills (CATEGORIES) — the Registration Fee invoice (every
+  member across every registration BILL, at each bill's own per-member rate),
+  the Security Receipt (flat one-time fee), or the ID Card invoice (per-head
+  fee) — plus subtotal/discount/total billed and live Total Paid/Balance
+  Due for that category alone. Downloaded on demand (routers/payments.py
   get_invoice), not produced as a side effect of billing or recording a
   payment — those are both record-only, so this always reflects "now."
 - Refund voucher (render_refund_voucher): letterhead + payment meta +
@@ -30,10 +32,29 @@ DAILY_MEMBER_FEE = 500  # Rs. per member, per day
 EVENT_DAYS = 6  # fixed tournament duration; change here if it ever changes
 PER_MEMBER_FEE = DAILY_MEMBER_FEE * EVENT_DAYS  # Rs. 3,000 per member
 
-# Flat one-time security fee (Rs.) charged once per team — the default a
-# bill uses unless the organizer overrides it (see routers/payments.py
-# create_bill: only ever applied on a team's first bill).
+# Flat one-time security receipt (Rs.) — its own bill, once per team; the
+# default amount unless the organizer overrides it (see routers/payments.py
+# create_bill, category SECURITY).
 SECURITY_FEE_DEFAULT = 2000
+
+# ID card fee (Rs.) per head — its own bill, charged for every member ticked.
+ID_CARD_FEE = 100
+
+# The three independent bills every team carries. Each has its own bill,
+# payments, refunds and invoice; money never moves between them.
+CATEGORIES = ("REGISTRATION", "SECURITY", "IDCARD")
+CATEGORY_LABELS = {
+    "REGISTRATION": "Registration Fee",
+    "SECURITY": "Security Receipt",
+    "IDCARD": "ID Card Fee",
+}
+# Title on the invoice PDF's ribbon and the file-name stem, per category.
+INVOICE_TITLES = {
+    "REGISTRATION": "Registration Fee Invoice",
+    "SECURITY": "Security Receipt",
+    "IDCARD": "ID Card Fee Invoice",
+}
+INVOICE_FILE_STEMS = {"REGISTRATION": "invoice", "SECURITY": "security-receipt", "IDCARD": "idcard-invoice"}
 
 HOST_SCHOOL_NAME = "New Angels Sr. Sec. School, Pratapgarh, Uttar Pradesh"
 TOURNAMENT_NAME = "CBSE Kabaddi Nationals Championship 2026-2027"
@@ -294,6 +315,27 @@ def _draw_signature_footer(draw: ImageDraw.ImageDraw, footer_y: "int | None" = N
     draw.text(((PAGE_W - tw_disc) / 2, PAGE_H - 42), disc_text, font=disc_font, fill=CLR_MUTED)
 
 
+_INVOICE_NOTES = {
+    "REGISTRATION": [
+        "1. Registration fee entitles listed delegation members to tournament accreditation and match entry.",
+        "2. All participants must present their verified ID cards and original documents at the accreditation counter.",
+        "3. This invoice is an official electronic receipt issued by the Host Organizing Committee, New Angels Sr. Sec. School.",
+        "4. For financial reconciliation, billing queries, or official team check-in, please contact the Tournament Accounts Secretariat.",
+    ],
+    "SECURITY": [
+        "1. The security amount is a one-time, per-team charge, billed once for the whole delegation.",
+        "2. This receipt is separate from the Registration Fee and ID Card Fee bills — each is billed and settled on its own.",
+        "3. This receipt is an official electronic receipt issued by the Host Organizing Committee, New Angels Sr. Sec. School.",
+        "4. For financial reconciliation, billing queries, or official team check-in, please contact the Tournament Accounts Secretariat.",
+    ],
+    "IDCARD": [
+        f"1. The ID card fee is Rs. {ID_CARD_FEE} per head, covering the printed tournament identity card of each listed member.",
+        "2. This invoice is separate from the Registration Fee and Security Receipt bills — each is billed and settled on its own.",
+        "3. This invoice is an official electronic receipt issued by the Host Organizing Committee, New Angels Sr. Sec. School.",
+        "4. For financial reconciliation, billing queries, or official team check-in, please contact the Tournament Accounts Secretariat.",
+    ],
+}
+
 # Most payments a team's invoice lists individually before "+ N earlier".
 _MAX_PAYMENT_LINES = 6
 
@@ -303,16 +345,16 @@ def render_invoice_image(
     members: list[dict],
     subtotal: int,
     discount: int,
-    security_fee: int,
     total_paid: int,
     invoice_date: date,
     payments: "list[dict] | None" = None,
+    category: str = "REGISTRATION",
 ) -> Image.Image:
-    """The team's full current billing state PDF page. `payments` (oldest
+    """One bill category's current billing state PDF page. `payments` (oldest
     first; each {"date", "mode", "transaction_id", "amount"}) is listed under
     the totals so the invoice doubles as a receipt, UPI Txn IDs included."""
     img, draw = _new_page()
-    y = _draw_letterhead(draw, img, "Registration Fee Invoice", is_refund=False)
+    y = _draw_letterhead(draw, img, INVOICE_TITLES.get(category, "Invoice"), is_refund=False)
 
     footer_y = PAGE_H - MARGIN - 60
     # "Payments Received" block — the most recent few, so it always fits the page.
@@ -321,9 +363,9 @@ def render_invoice_image(
     hidden_payments = len(payments) - len(shown_payments)
     pay_line_h = 30
     pay_h = (52 + pay_line_h * (len(shown_payments) + (1 if hidden_payments else 0))) if payments else 0
-    total_billed = subtotal - discount + security_fee
+    total_billed = subtotal - discount
     balance_due = total_billed - total_paid
-    summary_rows = 1 + (2 if discount else 0) + (1 if security_fee else 0)
+    summary_rows = 1 + (2 if discount else 0)
     rows_needed = 1 + len(members) + summary_rows
 
     meta_h = 110
@@ -381,7 +423,7 @@ def render_invoice_image(
     draw.rounded_rectangle([table_left, y, table_right, y + row_h], radius=4, fill=CLR_NAVY_DARK)
     header_mid = y + row_h / 2
     _cell("S.No", col_x["no"], col_w["no"], header_mid, header_font, (255, 255, 255))
-    _cell("Member Name", col_x["name"], col_w["name"], header_mid, header_font, (255, 255, 255), align="left")
+    _cell("Description" if category == "SECURITY" else "Member Name", col_x["name"], col_w["name"], header_mid, header_font, (255, 255, 255), align="left")
     _cell("Role / Category", col_x["role"], col_w["role"], header_mid, header_font, (255, 255, 255))
     _cell("Amount (Rs.)", col_x["amount"], col_w["amount"], header_mid, header_font, (255, 255, 255), align="right")
 
@@ -416,19 +458,12 @@ def render_invoice_image(
         draw.line([(table_left, y + row_h), (table_right, y + row_h)], fill=CLR_CARD_BORDER, width=1)
         y += row_h
 
-    if security_fee:
-        security_mid = y + row_h / 2
-        _cell("Security Fee (one-time)", col_x["no"], col_w["no"] + col_w["name"] + col_w["role"], security_mid, body_font, CLR_NAVY_DARK, align="left")
-        _cell(f"{security_fee:,}", col_x["amount"], col_w["amount"], security_mid, body_font, CLR_NAVY_DARK, align="right")
-        draw.line([(table_left, y + row_h), (table_right, y + row_h)], fill=CLR_CARD_BORDER, width=1)
-        y += row_h
-
     # Total Billed Row
     draw.rectangle([table_left, y, table_right, y + row_h], fill=(241, 245, 249))
     total_mid = y + row_h / 2
     total_label = (
         "Total Billed Amount"
-        if (discount or security_fee)
+        if (discount or category == "SECURITY")
         else f"Total Billed Amount ({len(members)} member{'s' if len(members) != 1 else ''})"
     )
     _cell(total_label, col_x["no"], col_w["no"] + col_w["name"] + col_w["role"], total_mid, total_font, CLR_NAVY_DARK, align="left")
@@ -494,12 +529,7 @@ def render_invoice_image(
         draw.rounded_rectangle([MARGIN, y, PAGE_W - MARGIN, y + actual_notes_h], radius=8, fill=CLR_CARD_BG, outline=CLR_CARD_BORDER, width=1)
         draw.text((MARGIN + 20, y + 18), "INVOICE NOTES & PARTICIPATION GUIDELINES", font=_font(15, bold=True), fill=CLR_GOLD_TEXT)
 
-        notes = [
-            "1. Registration fee entitles listed delegation members to tournament accreditation, official identity cards, and match entry.",
-            "2. All participants must present their verified ID cards and original documents at the accreditation counter.",
-            "3. This invoice is an official electronic receipt issued by the Host Organizing Committee, New Angels Sr. Sec. School.",
-            "4. For financial reconciliation, billing queries, or official team check-in, please contact the Tournament Accounts Secretariat.",
-        ]
+        notes = _INVOICE_NOTES.get(category, _INVOICE_NOTES["REGISTRATION"])
         ny = y + 48
         line_step = 30 if actual_notes_h > 170 else (26 if actual_notes_h > 120 else 20)
         for note in notes:
@@ -516,13 +546,13 @@ def render_invoice(
     members: list[dict],
     subtotal: int,
     discount: int,
-    security_fee: int,
     total_paid: int,
     invoice_date: date,
     payments: "list[dict] | None" = None,
+    category: str = "REGISTRATION",
 ) -> bytes:
-    """The team's full current billing-state PDF bytes."""
-    img = render_invoice_image(team, members, subtotal, discount, security_fee, total_paid, invoice_date, payments)
+    """One bill category's current billing-state PDF bytes."""
+    img = render_invoice_image(team, members, subtotal, discount, total_paid, invoice_date, payments, category)
     buf = io.BytesIO()
     img.save(buf, format="PDF", resolution=float(PRINT_DPI))
     return buf.getvalue()
@@ -538,10 +568,13 @@ def render_refund_voucher_image(
     total_billed: int,
     total_paid: int,
     net_collected: int,
+    category: str = "REGISTRATION",
 ) -> Image.Image:
-    """Single-page REFUND voucher image for one team."""
+    """Single-page REFUND voucher image for one team, against one bill category."""
     img, draw = _new_page()
-    y = _draw_letterhead(draw, img, "Official Refund Voucher & Credit Note", is_refund=True)
+    y = _draw_letterhead(
+        draw, img, f"Refund Voucher & Credit Note — {CATEGORY_LABELS.get(category, category)}", is_refund=True
+    )
 
     footer_y = PAGE_H - MARGIN - 60
 
@@ -642,6 +675,7 @@ def render_refund_voucher(
     total_billed: int,
     total_paid: int,
     net_collected: int,
+    category: str = "REGISTRATION",
 ) -> bytes:
     """Single-page REFUND voucher PDF bytes."""
     img = render_refund_voucher_image(
@@ -654,6 +688,7 @@ def render_refund_voucher(
         total_billed,
         total_paid,
         net_collected,
+        category,
     )
     buf = io.BytesIO()
     img.save(buf, format="PDF", resolution=float(PRINT_DPI))

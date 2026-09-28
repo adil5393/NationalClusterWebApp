@@ -14,7 +14,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from .. import id_card, models
+from .. import id_card, models, receipt
 from ..config import to_event_tz
 from ..database import get_db
 from ..pdf_report import build_table_pdf
@@ -1049,17 +1049,68 @@ def _billed_member_counts(team: models.Team) -> tuple[int, int, int]:
     return registered, len(billable), billed
 
 
+_LEDGER_MONEY_KEYS = (
+    "billed", "paid", "paid_cash", "paid_upi", "balance_due", "refunded", "refunded_cash", "refunded_upi",
+    "net_collected", "net_cash", "net_upi",
+)
+
+
+def _ledger_rows(teams: list) -> list[dict]:
+    """The billing ledger behind the Payments export and the Billing live
+    report: one row per (team, bill category) that has at least one
+    transaction. A team carries three independent bills (receipt.CATEGORIES —
+    registration fee, security receipt, ID card fee), each with its own billed/
+    paid/refunded totals, so they're never blended into one figure. Same
+    BILL/PAYMENT/REFUND math as payments.py's _category_totals, computed off
+    the already-loaded team.payments relationship."""
+    rows = []
+    for t in teams:
+        for category in receipt.CATEGORIES:
+            entries = [p for p in t.payments if p.category == category]
+            if not entries:
+                continue
+            bills = [p for p in entries if p.kind == "BILL"]
+            pays = [p for p in entries if p.kind == "PAYMENT"]
+            refunds = [p for p in entries if p.kind == "REFUND"]
+            billed = sum(p.amount for p in bills)
+            paid_cash = sum(p.amount for p in pays if p.payment_mode == "Cash")
+            paid_upi = sum(p.amount for p in pays if p.payment_mode == "UPI")
+            paid = paid_cash + paid_upi
+            refunded_cash = sum(p.amount for p in refunds if p.payment_mode == "Cash")
+            refunded_upi = sum(p.amount for p in refunds if p.payment_mode == "UPI")
+            refunded = refunded_cash + refunded_upi
+            rows.append({
+                "team": t, "category": category,
+                "billed": billed, "paid": paid, "paid_cash": paid_cash, "paid_upi": paid_upi,
+                "refunded": refunded, "refunded_cash": refunded_cash, "refunded_upi": refunded_upi,
+                "balance_due": billed - paid, "net_collected": paid - refunded,
+                # What's actually left in hand per mode after refunds — the numbers
+                # finance reconciles against the cash box / the UPI account.
+                "net_cash": paid_cash - refunded_cash, "net_upi": paid_upi - refunded_upi,
+                "last_bill": max((p.payment_date for p in bills), default=None),
+                "last_payment": max((p.payment_date for p in pays), default=None),
+                "last_refund": max((p.payment_date for p in refunds), default=None),
+                "transaction_count": len(entries),
+            })
+    return rows
+
+
+def _ledger_totals(rows: list[dict]) -> dict:
+    return {k: sum(r[k] for r in rows) for k in _LEDGER_MONEY_KEYS}
+
+
 def _pending_processes(team: models.Team, participant_total: int, participant_present: int, coach_total: int, coach_present: int) -> list[str]:
     """What's still incomplete for a team that has already arrived (see
     export_arrival_xlsx) — the checklist an on-site organizer actually cares
-    about once a delegation is on campus: has it been billed and settled,
-    and is everyone (athletes + coaches/managers) checked in. Same
-    BILL/PAYMENT/REFUND math as payments.py's _totals, computed here off
-    the already-loaded team.payments relationship rather than importing that
-    router's private helper for one sum."""
-    total_billed = sum(p.amount for p in team.payments if p.kind == "BILL")
-    total_paid = sum(p.amount for p in team.payments if p.kind == "PAYMENT")
-    billing_pending = total_billed == 0 or (total_billed - total_paid) > 0
+    about once a delegation is on campus: has it been billed and settled
+    (all three bills — registration fee, security receipt, ID card fee), and
+    is everyone (athletes + coaches/managers) checked in."""
+    billing_pending = False
+    for category in receipt.CATEGORIES:
+        billed = sum(p.amount for p in team.payments if p.kind == "BILL" and p.category == category)
+        paid = sum(p.amount for p in team.payments if p.kind == "PAYMENT" and p.category == category)
+        if billed == 0 or billed - paid > 0:
+            billing_pending = True
 
     pending = []
     if billing_pending:
@@ -1308,24 +1359,30 @@ def live_reports_summary(current: models.OrganizerUser = Depends(require_auth), 
         }
 
     if _has_view(current, "billing"):
-        teams = db.query(models.Team).all()
-        total_billed = sum(p.amount for t in teams for p in t.payments if p.kind == "BILL")
-        total_paid = sum(p.amount for t in teams for p in t.payments if p.kind == "PAYMENT")
-        total_refunded = sum(p.amount for t in teams for p in t.payments if p.kind == "REFUND")
-
-        def _by_mode(kind: str, mode: str) -> int:
-            return sum(p.amount for t in teams for p in t.payments if p.kind == kind and p.payment_mode == mode)
-
+        ledger = _ledger_rows(db.query(models.Team).all())
+        totals = _ledger_totals(ledger)
         summary["billing"] = {
-            "total_billed": total_billed,
-            "total_paid": total_paid,
-            "total_refunded": total_refunded,
-            "balance_due": total_billed - total_paid,
-            "net_collected": total_paid - total_refunded,
-            "paid_cash": _by_mode("PAYMENT", "Cash"),
-            "paid_upi": _by_mode("PAYMENT", "UPI"),
-            "net_cash": _by_mode("PAYMENT", "Cash") - _by_mode("REFUND", "Cash"),
-            "net_upi": _by_mode("PAYMENT", "UPI") - _by_mode("REFUND", "UPI"),
+            "total_billed": totals["billed"],
+            "total_paid": totals["paid"],
+            "total_refunded": totals["refunded"],
+            "balance_due": totals["balance_due"],
+            "net_collected": totals["net_collected"],
+            "paid_cash": totals["paid_cash"],
+            "paid_upi": totals["paid_upi"],
+            "net_cash": totals["net_cash"],
+            "net_upi": totals["net_upi"],
+            # The three independent bills, each rolled up on its own.
+            "categories": [
+                {
+                    "category": category,
+                    "label": receipt.CATEGORY_LABELS[category],
+                    **{
+                        k: v for k, v in _ledger_totals([r for r in ledger if r["category"] == category]).items()
+                        if k in ("billed", "paid", "refunded", "balance_due", "net_collected")
+                    },
+                }
+                for category in receipt.CATEGORIES
+            ],
         }
 
     if _has_view(current, "staff"):
@@ -1415,7 +1472,7 @@ _LIVE_DETAIL_PDF_META = {
     "attendance": ("ATTENDANCE REPORT", "Present/Absent Status — Every Registered Participant"),
     "participants": ("PARTICIPANT REPORT", "Every Registered Participant — Identity, School, Cluster, Status & Attendance"),
     "arrival": ("ARRIVAL REPORT", "School Delegation Arrival Status & Pending Processes"),
-    "billing": ("PAYMENTS LEDGER", "Per-Team Registration-Fee Billing, Refunds & Net Collected"),
+    "billing": ("PAYMENTS LEDGER", "Per-Team Registration Fee, Security Receipt & ID Card Billing, Refunds & Net Collected"),
     "duty": ("DUTY REPORT", "Staff Duty Assignments Across Every Building & Room"),
     "matches": ("MATCH PROGRESS REPORT", "Scheduled, Live & Completed Matches — All Tournaments"),
     "accommodation": ("ACCOMMODATION REPORT", "Building, Floor, Room, Bed & Assigned Occupant Detail"),
@@ -1531,58 +1588,47 @@ def _live_detail_data(section: str, db: Session) -> dict:
         }
 
     if section == "billing":
-        teams = db.query(models.Team).order_by(models.Team.name).all()
-        rows = []
+        ledger = _ledger_rows(db.query(models.Team).order_by(models.Team.name).all())
 
         def _fmt_date(d):
             return d.strftime("%d-%b-%Y") if d else "—"
 
-        for t in teams:
-            bills = [p for p in t.payments if p.kind == "BILL"]
-            pays = [p for p in t.payments if p.kind == "PAYMENT"]
-            refunds = [p for p in t.payments if p.kind == "REFUND"]
-            if not bills and not pays and not refunds:
-                continue
-            billed = sum(p.amount for p in bills)
-            paid_cash = sum(p.amount for p in pays if p.payment_mode == "Cash")
-            paid_upi = sum(p.amount for p in pays if p.payment_mode == "UPI")
-            paid = paid_cash + paid_upi
-            refunded_cash = sum(p.amount for p in refunds if p.payment_mode == "Cash")
-            refunded_upi = sum(p.amount for p in refunds if p.payment_mode == "UPI")
-            refunded = refunded_cash + refunded_upi
-            rows.append([
-                t.name,
-                t.school_code or "—",
-                billed,
-                paid,
-                paid_cash,
-                paid_upi,
-                billed - paid,
-                refunded,
-                refunded_cash,
-                refunded_upi,
-                paid - refunded,
-                paid_cash - refunded_cash,
-                paid_upi - refunded_upi,
-                _fmt_date(max((p.payment_date for p in bills), default=None)),
-                _fmt_date(max((p.payment_date for p in pays), default=None)),
-                _fmt_date(max((p.payment_date for p in refunds), default=None)),
-                len(t.payments),
-            ])
+        rows = [
+            [
+                r["team"].name,
+                r["team"].school_code or "—",
+                receipt.CATEGORY_LABELS[r["category"]],
+                *[r[k] for k in _LEDGER_MONEY_KEYS],
+                _fmt_date(r["last_bill"]),
+                _fmt_date(r["last_payment"]),
+                _fmt_date(r["last_refund"]),
+                r["transaction_count"],
+            ]
+            for r in ledger
+        ]
+
+        def _total_row(label: str, group: list[dict]) -> list:
+            totals = _ledger_totals(group)
+            return [label, "", "", *[totals[k] for k in _LEDGER_MONEY_KEYS], "", "", "", sum(r["transaction_count"] for r in group)]
+
+        # Totals last — one per bill type, then the grand total across all three.
+        total_rows = []
+        if ledger:
+            for category in receipt.CATEGORIES:
+                group = [r for r in ledger if r["category"] == category]
+                if group:
+                    total_rows.append(_total_row(f"TOTAL — {receipt.CATEGORY_LABELS[category].upper()}", group))
+            total_rows.append(_total_row("TOTAL — ALL BILLS", ledger))
         return {
             "columns": [
-                "School / Team", "School Code", "Total Billed (Rs.)", "Total Paid (Rs.)",
+                "School / Team", "School Code", "Bill Type", "Total Billed (Rs.)", "Total Paid (Rs.)",
                 "Paid - Cash (Rs.)", "Paid - UPI (Rs.)", "Balance Due (Rs.)", "Total Refunded (Rs.)",
                 "Refunded - Cash (Rs.)", "Refunded - UPI (Rs.)", "Net Collected (Rs.)",
                 "Net - Cash (Rs.)", "Net - UPI (Rs.)",
                 "Last Bill Date", "Last Payment Date", "Last Refund Date", "Transactions",
             ],
-            # Grand-total row last: money columns (2..12) and the transaction count summed.
-            "rows": rows + (
-                [["TOTAL — ALL TEAMS", ""] + [sum(r[i] for r in rows) for i in range(2, 13)] + ["", "", "", sum(r[16] for r in rows)]]
-                if rows else []
-            ),
-            "row_flags": [False] * len(rows) + ([True] if rows else []),
+            "rows": rows + total_rows,
+            "row_flags": [False] * len(rows) + [True] * len(total_rows),
         }
 
     if section == "duty":
@@ -2487,75 +2533,50 @@ def export_idcard_back(
 
 @router.get("/payments.xlsx", dependencies=[Depends(require_report("billing"))])
 def export_payments_xlsx(db: Session = Depends(get_db)):
-    """Per-team registration-fee ledger — total billed, total paid (split
-    Cash vs UPI), balance due, total refunded (split Cash vs UPI), net
-    collected, and the most recent date of each transaction kind — one row
-    per team that has at least one payment record. Individual transactions
-    live in the Organizer Portal's Bill/Payment/Refund dialog
-    (routers/payments.py) and in the Transaction Detail sheet below; this
-    sheet is the roll-up for finance tracking."""
+    """Registration-fee / Security Receipt / ID Card ledger — a team carries
+    three independent bills (receipt.CATEGORIES), so the roll-up has one row
+    per team AND bill type: total billed, total paid (split Cash vs UPI),
+    balance due, total refunded (split Cash vs UPI), net collected, and the
+    most recent date of each transaction kind. A "Summary by Bill Type"
+    block totals each bill type across all teams, and the Transaction Detail
+    sheet lists every individual transaction tagged with its bill type.
+    Individual transactions are recorded in the Organizer Portal's
+    Bill/Payment/Refund dialog (routers/payments.py); this workbook is the
+    roll-up for finance tracking."""
     teams = db.query(models.Team).order_by(models.Team.name).all()
-    rows = []
-    for t in teams:
-        bills = [p for p in t.payments if p.kind == "BILL"]
-        pays = [p for p in t.payments if p.kind == "PAYMENT"]
-        refunds = [p for p in t.payments if p.kind == "REFUND"]
-        if not bills and not pays and not refunds:
-            continue
-        billed = sum(p.amount for p in bills)
-        paid_cash = sum(p.amount for p in pays if p.payment_mode == "Cash")
-        paid_upi = sum(p.amount for p in pays if p.payment_mode == "UPI")
-        paid = paid_cash + paid_upi
-        refunded_cash = sum(p.amount for p in refunds if p.payment_mode == "Cash")
-        refunded_upi = sum(p.amount for p in refunds if p.payment_mode == "UPI")
-        refunded = refunded_cash + refunded_upi
-        rows.append({
-            "team": t, "billed": billed, "paid": paid, "paid_cash": paid_cash, "paid_upi": paid_upi,
-            "refunded": refunded, "refunded_cash": refunded_cash, "refunded_upi": refunded_upi,
-            "balance_due": billed - paid, "net_collected": paid - refunded,
-            # What's actually left in hand per mode after refunds — the numbers
-            # finance reconciles against the cash box / the UPI account.
-            "net_cash": paid_cash - refunded_cash, "net_upi": paid_upi - refunded_upi,
-            "last_bill": max((p.payment_date for p in bills), default=None),
-            "last_payment": max((p.payment_date for p in pays), default=None),
-            "last_refund": max((p.payment_date for p in refunds), default=None),
-            "transaction_count": len(t.payments),
-        })
+    rows = _ledger_rows(teams)
 
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Payments Ledger"
-    max_cols = 17
+    max_cols = 18
 
     next_row = style_header_banner(
         ws,
-        tournament_name="REGISTRATION FEE LEDGER",
-        subtitle="Per-Team Billing, Payments, Refunds & Net Collection",
+        tournament_name="BILLING LEDGER",
+        subtitle="Registration Fee, Security Receipt & ID Card Fee — Billing, Payments, Refunds & Net Collection",
         badge_text="OFFICIAL FINANCE EXPORT",
         max_col=max_cols,
         start_row=1,
     )
 
-    total_billed = sum(r["billed"] for r in rows)
-    total_paid = sum(r["paid"] for r in rows)
-    total_refunded = sum(r["refunded"] for r in rows)
-    total_net_cash = sum(r["net_cash"] for r in rows)
-    total_net_upi = sum(r["net_upi"] for r in rows)
+    totals_all = _ledger_totals(rows)
     cards = [
-        ("Teams Billed", len(rows), "With Transactions"),
-        ("Total Billed", f"Rs. {total_billed:,}", "Invoiced"),
-        ("Total Paid", f"Rs. {total_paid:,}", "Received"),
-        ("Net Collected", f"Rs. {total_paid - total_refunded:,}", "Paid − Refunded"),
-        ("Cash (Net)", f"Rs. {total_net_cash:,}", "Cash Paid − Cash Refunded"),
-        ("UPI (Net)", f"Rs. {total_net_upi:,}", "UPI Paid − UPI Refunded"),
+        ("Teams Billed", len({r["team"].id for r in rows}), "With Transactions"),
+        ("Total Billed", f"Rs. {totals_all['billed']:,}", "Invoiced"),
+        ("Total Paid", f"Rs. {totals_all['paid']:,}", "Received"),
+        ("Net Collected", f"Rs. {totals_all['net_collected']:,}", "Paid − Refunded"),
+        ("Cash (Net)", f"Rs. {totals_all['net_cash']:,}", "Cash Paid − Cash Refunded"),
+        ("UPI (Net)", f"Rs. {totals_all['net_upi']:,}", "UPI Paid − UPI Refunded"),
     ]
     next_row = style_kpi_cards(ws, cards, start_row=next_row, card_width_cols=1)
 
-    next_row = style_section_bar(ws, "Team-Wise Ledger", next_row, max_col=max_cols, icon="💰")
+    next_row = style_section_bar(ws, "Team-Wise Ledger (One Row Per Team & Bill Type)", next_row, max_col=max_cols, icon="💰")
 
     headers = [
         ("SCHOOL / TEAM", 30, ALIGN_HEADER_LEFT),
         ("SCHOOL CODE", 14, ALIGN_HEADER_CENTER),
+        ("BILL TYPE", 20, ALIGN_HEADER_CENTER),
         ("TOTAL BILLED (RS.)", 16, ALIGN_HEADER_CENTER),
         ("TOTAL PAID (RS.)", 16, ALIGN_HEADER_CENTER),
         ("PAID · CASH (RS.)", 15, ALIGN_HEADER_CENTER),
@@ -2573,13 +2594,16 @@ def export_payments_xlsx(db: Session = Depends(get_db)):
         ("TRANSACTIONS", 14, ALIGN_HEADER_CENTER),
     ]
 
-    ws.row_dimensions[next_row].height = 22
-    for col_idx, (th_label, _, align) in enumerate(headers, start=1):
-        cell = ws.cell(row=next_row, column=col_idx, value=th_label)
-        cell.font = FONT_TH
-        cell.fill = FILL_TH_PRIMARY
-        cell.alignment = align
-        cell.border = BORDER_HEADER
+    def _write_headers(sheet, row_no):
+        sheet.row_dimensions[row_no].height = 22
+        for col_idx, (th_label, _, align) in enumerate(headers, start=1):
+            cell = sheet.cell(row=row_no, column=col_idx, value=th_label)
+            cell.font = FONT_TH
+            cell.fill = FILL_TH_PRIMARY
+            cell.alignment = align
+            cell.border = BORDER_HEADER
+
+    _write_headers(ws, next_row)
     next_row += 1
 
     def _fmt_date(d):
@@ -2592,6 +2616,7 @@ def export_payments_xlsx(db: Session = Depends(get_db)):
         row_data = [
             (r["team"].name, ALIGN_LEFT, FONT_TD_BOLD),
             (r["team"].school_code or "—", ALIGN_CENTER, FONT_TD),
+            (receipt.CATEGORY_LABELS[r["category"]], ALIGN_CENTER, FONT_TD_BOLD),
             (r["billed"], ALIGN_CENTER, FONT_TD),
             (r["paid"], ALIGN_CENTER, FONT_TD),
             (r["paid_cash"], ALIGN_CENTER, FONT_TD),
@@ -2617,30 +2642,46 @@ def export_payments_xlsx(db: Session = Depends(get_db)):
             cell.border = BORDER_CELL
         next_row += 1
 
-    # Grand-total row — every money column summed, Cash and UPI included.
-    if rows:
-        total_fill = PatternFill("solid", fgColor=CLR_AMBER_BG)
-        totals = [
-            ("TOTAL — ALL TEAMS", ALIGN_LEFT),
-            ("", ALIGN_CENTER),
-            *[
-                (sum(r[k] for r in rows), ALIGN_CENTER)
-                for k in ("billed", "paid", "paid_cash", "paid_upi", "balance_due", "refunded",
-                          "refunded_cash", "refunded_upi", "net_collected", "net_cash", "net_upi")
-            ],
-            ("", ALIGN_CENTER),
-            ("", ALIGN_CENTER),
-            ("", ALIGN_CENTER),
-            (sum(r["transaction_count"] for r in rows), ALIGN_CENTER),
+    total_fill = PatternFill("solid", fgColor=CLR_AMBER_BG)
+
+    def _write_total_row(row_no, label, teams_label, type_label, sums, txn_count):
+        ws.row_dimensions[row_no].height = 22
+        values = [
+            (label, ALIGN_LEFT), (teams_label, ALIGN_CENTER), (type_label, ALIGN_CENTER),
+            *[(sums[k], ALIGN_CENTER) for k in _LEDGER_MONEY_KEYS],
+            ("", ALIGN_CENTER), ("", ALIGN_CENTER), ("", ALIGN_CENTER),
+            (txn_count, ALIGN_CENTER),
         ]
-        ws.row_dimensions[next_row].height = 22
-        for col_idx, (val, align) in enumerate(totals, start=1):
-            cell = ws.cell(row=next_row, column=col_idx, value=val)
+        for col_idx, (val, align) in enumerate(values, start=1):
+            cell = ws.cell(row=row_no, column=col_idx, value=val)
             cell.font = FONT_TD_BOLD
             cell.alignment = align
             cell.fill = total_fill
             cell.border = BORDER_HEADER
+
+    # Grand-total row — every money column summed across all bill types.
+    if rows:
+        _write_total_row(
+            next_row, "TOTAL — ALL TEAMS", "", "All Bills", totals_all,
+            sum(r["transaction_count"] for r in rows),
+        )
         next_row += 1
+
+        # Per-bill-type totals: what each of the three bills has billed/collected in all.
+        next_row += 1
+        next_row = style_section_bar(ws, "Summary by Bill Type", next_row, max_col=max_cols, icon="🧮")
+        _write_headers(ws, next_row)
+        next_row += 1
+        for cat in receipt.CATEGORIES:
+            cat_rows = [r for r in rows if r["category"] == cat]
+            if not cat_rows:
+                continue
+            n_teams = len({r["team"].id for r in cat_rows})
+            _write_total_row(
+                next_row, receipt.CATEGORY_LABELS[cat].upper(), f"{n_teams} team{'s' if n_teams != 1 else ''}",
+                receipt.CATEGORY_LABELS[cat], _ledger_totals(cat_rows), sum(r["transaction_count"] for r in cat_rows),
+            )
+            next_row += 1
 
     ws.row_dimensions[next_row].height = 12
     next_row += 1
@@ -2651,12 +2692,12 @@ def export_payments_xlsx(db: Session = Depends(get_db)):
 
     # ---------- Second sheet: every transaction as its own dated row ----------
     ws2 = wb.create_sheet("Transaction Detail")
-    max_cols2 = 8
+    max_cols2 = 9
 
     next_row2 = style_header_banner(
         ws2,
         tournament_name="TRANSACTION DETAIL",
-        subtitle="Every Bill, Payment & Refund, One Row Each",
+        subtitle="Every Bill, Payment & Refund, One Row Each — Tagged by Bill Type",
         badge_text="OFFICIAL FINANCE EXPORT",
         max_col=max_cols2,
         start_row=1,
@@ -2667,6 +2708,7 @@ def export_payments_xlsx(db: Session = Depends(get_db)):
         ("SCHOOL / TEAM", 30, ALIGN_HEADER_LEFT),
         ("SCHOOL CODE", 14, ALIGN_HEADER_CENTER),
         ("DATE", 16, ALIGN_HEADER_CENTER),
+        ("BILL TYPE", 20, ALIGN_HEADER_CENTER),
         ("TYPE", 12, ALIGN_HEADER_CENTER),
         ("AMOUNT (RS.)", 16, ALIGN_HEADER_CENTER),
         ("CASH (RS.)", 14, ALIGN_HEADER_CENTER),
@@ -2685,19 +2727,17 @@ def export_payments_xlsx(db: Session = Depends(get_db)):
 
     kind_labels = {"BILL": "Bill", "PAYMENT": "Payment", "REFUND": "Refund"}
     txn_rows = []
-    for r in rows:
-        for p in sorted(r["team"].payments, key=lambda p: (p.payment_date, p.id)):
+    for t in {r["team"].id: r["team"] for r in rows}.values():
+        for p in sorted(t.payments, key=lambda p: (p.payment_date, p.id)):
             if p.kind == "BILL":
                 reference = f"{len(p.members)} member{'s' if len(p.members) != 1 else ''}" if p.members else "—"
-                if p.security_fee:
-                    reference += f" · incl. Rs. {p.security_fee:,} security fee"
             elif p.kind == "REFUND":
                 reference = p.reason or "—"
             else:
                 reference = p.transaction_id or "—"
             cash_amount = p.amount if p.payment_mode == "Cash" else None
             upi_amount = p.amount if p.payment_mode == "UPI" else None
-            txn_rows.append((r["team"], p, reference, cash_amount, upi_amount))
+            txn_rows.append((t, p, reference, cash_amount, upi_amount))
 
     for idx, (team, p, reference, cash_amount, upi_amount) in enumerate(txn_rows, start=1):
         ws2.row_dimensions[next_row2].height = 20
@@ -2706,6 +2746,7 @@ def export_payments_xlsx(db: Session = Depends(get_db)):
             (team.name, ALIGN_LEFT, FONT_TD_BOLD),
             (team.school_code or "—", ALIGN_CENTER, FONT_TD),
             (p.payment_date.strftime("%d-%b-%Y"), ALIGN_CENTER, FONT_TD),
+            (receipt.CATEGORY_LABELS.get(p.category, p.category), ALIGN_CENTER, FONT_TD_BOLD),
             (kind_labels.get(p.kind, p.kind), ALIGN_CENTER, FONT_TD_BOLD),
             (p.amount, ALIGN_CENTER, FONT_TD),
             (cash_amount if cash_amount is not None else "—", ALIGN_CENTER, FONT_TD),

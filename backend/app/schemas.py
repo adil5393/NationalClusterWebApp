@@ -1615,32 +1615,39 @@ class TaskUpdate(BaseModel):
         return v
 
 
-# --- Payments (registration-fee billing/payment/refund ledger, see routers/payments.py) ---
+# --- Payments (billing/payment/refund ledger, see routers/payments.py) ---
+# A team carries three independent bills — see receipt.CATEGORIES.
+BillCategory = Literal["REGISTRATION", "SECURITY", "IDCARD"]
+
+
 class BillMemberRef(BaseModel):
     kind: Literal["participant", "coach"]
     id: int
 
 
 class BillCreate(BaseModel):
-    # Who this bill charges, as ticked in the Bill dialog. Omitted (older app
-    # builds) = every billable member not yet billed. See payments.create_bill.
+    category: BillCategory = "REGISTRATION"
+    # REGISTRATION / IDCARD: who this bill charges, as ticked in the Bill
+    # dialog. Omitted (older app builds) = every billable member not yet billed
+    # in that category. See payments.create_bill.
     members: Optional[List[BillMemberRef]] = None
     discount: Optional[int] = 0  # flat Rs. knocked off the computed subtotal
-    # Flat one-time team fee (Rs.); defaults to receipt.SECURITY_FEE_DEFAULT
-    # (2000) on a team's first bill, and must be omitted/zero on any later
-    # bill for the same team (see routers/payments.py create_bill).
-    security_fee: Optional[int] = None
+    # SECURITY only: the flat one-time receipt amount (Rs.); defaults to
+    # receipt.SECURITY_FEE_DEFAULT. A team has at most one security bill.
+    amount: Optional[int] = None
     payment_date: Optional[date] = None  # invoice date; defaults to today
 
 
 class PaymentCreate(BaseModel):
-    amount: int  # Rs. actually received now; capped at the team's outstanding balance
+    category: BillCategory = "REGISTRATION"
+    amount: int  # Rs. actually received now; capped at that category's outstanding balance
     payment_mode: str  # "Cash" | "UPI"
     transaction_id: Optional[str] = None  # required when payment_mode == "UPI"
     payment_date: Optional[date] = None  # defaults to today
 
 
 class RefundCreate(BaseModel):
+    category: BillCategory = "REGISTRATION"
     amount: int
     reason: str
     payment_mode: str  # "Cash" | "UPI"
@@ -1652,6 +1659,7 @@ class PaymentRead(ORMModel):
     id: int
     team_id: int
     kind: str
+    category: str = "REGISTRATION"
     amount: int
     payment_mode: Optional[str] = None
     transaction_id: Optional[str] = None
@@ -1660,7 +1668,6 @@ class PaymentRead(ORMModel):
     members: Optional[list] = None
     subtotal: Optional[int] = None
     discount: Optional[int] = None
-    security_fee: Optional[int] = None
     created_at: datetime
 
 

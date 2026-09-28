@@ -171,18 +171,20 @@ class Payment(TimestampMixin, Base):
       money has changed hands yet (no payment_mode/transaction_id). `members`
       snapshots exactly who it charged for ({"kind": "participant"|"coach",
       "id", "name", "role"} per member), so a later bill's UI can compute
-      "who's present but not yet billed" by diffing against every prior
-      BILL's members for that team. `subtotal` (per-member amount x count)
+      "who's not yet billed" by diffing against every prior BILL's members
+      for that team and category. `subtotal` (per-member amount x count)
       and `discount` are kept alongside the final `amount` (subtotal minus
-      discount plus security_fee) so a re-printed invoice shows the same
-      breakdown later. `security_fee` is a flat, one-time-per-team charge
-      (default receipt.SECURITY_FEE_DEFAULT, editable) — only ever non-zero
-      on a team's first bill; see routers/payments.py create_bill.
-    - PAYMENT: money actually received against the team's outstanding
-      balance (total BILL amount minus total PAYMENT amount so far) — free-form,
-      capped at that balance, supports partial payments over multiple rows.
-    - REFUND: money returned, free-form, capped at the team's net-received
-      total (total PAYMENT minus total REFUND so far).
+      discount) so a re-printed invoice shows the same breakdown later. A
+      SECURITY bill has no members: just its flat amount (= subtotal).
+    - PAYMENT: money actually received against the outstanding balance of
+      one `category` (that category's BILL total minus its PAYMENT total so
+      far) — free-form, capped at that balance, supports partial payments.
+    - REFUND: money returned, free-form, capped at that category's
+      net-received total (its PAYMENT total minus its REFUND total so far).
+
+    Every row belongs to one `category` — REGISTRATION, SECURITY or IDCARD —
+    so a team carries three fully separate bills, each with its own payments,
+    refunds and invoice (a payment never spills into another category).
 
     BILL/PAYMENT/REFUND each populate a different subset of the optional
     columns below (members+subtotal+discount / payment_mode+transaction_id /
@@ -192,6 +194,11 @@ class Payment(TimestampMixin, Base):
     id = Column(Integer, primary_key=True)
     team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
     kind = Column(String(10), nullable=False)  # "BILL" | "PAYMENT" | "REFUND"
+    # Which of the team's three independent bills this row belongs to — each has
+    # its own billed/paid/refunded totals and its own invoice: "REGISTRATION"
+    # (participation fee x event days), "SECURITY" (flat one-time security
+    # receipt) or "IDCARD" (per-head ID card fee). See receipt.CATEGORIES.
+    category = Column(String(12), nullable=False, default="REGISTRATION", server_default="REGISTRATION")
     amount = Column(Integer, nullable=False)  # Rs., always positive regardless of kind
     payment_mode = Column(String(10))  # "Cash" | "UPI" — PAYMENT/REFUND only, null for BILL
     transaction_id = Column(String(100))  # UPI reference; null for Cash or for a BILL
@@ -200,7 +207,7 @@ class Payment(TimestampMixin, Base):
     members = Column(JSON)  # BILL only
     subtotal = Column(Integer)  # BILL only: per_member_amount x member count, before discount
     discount = Column(Integer)  # BILL only: flat Rs. knocked off subtotal to get `amount`
-    security_fee = Column(Integer)  # BILL only: flat one-time team security fee, added to (subtotal - discount)
+    security_fee = Column(Integer)  # legacy: the security fee used to ride on the first bill; now its own SECURITY bill (always null)
 
     team = relationship("Team", back_populates="payments")
 
@@ -373,16 +380,17 @@ class Participant(TimestampMixin, Base):
 
     @property
     def is_billed(self) -> bool:
-        """Whether any BILL on this person's team has charged for them (the
-        participant entries in Payment.members — see routers/payments.py). Shown
-        beside the Present button on the Participants page."""
+        """Whether a registration-fee BILL on this person's team has charged for
+        them (the participant entries in Payment.members — see
+        routers/payments.py). Shown beside the Present button on the
+        Participants page."""
         team = self.team
         if team is None:
             return False
         return any(
             m.get("kind") == "participant" and m.get("id") == self.id
             for p in team.payments
-            if p.kind == "BILL" and p.members
+            if p.kind == "BILL" and p.category == "REGISTRATION" and p.members
             for m in p.members
         )
 
@@ -429,16 +437,17 @@ class Coach(TimestampMixin, Base):
 
     @property
     def is_billed(self) -> bool:
-        """Whether any BILL on this person's team has charged for them (the
-        coach entries in Payment.members — see routers/payments.py). Shown
-        beside the Present button on the Participants page."""
+        """Whether a registration-fee BILL on this person's team has charged for
+        them (the coach entries in Payment.members — see
+        routers/payments.py). Shown beside the Present button on the
+        Participants page."""
         team = self.team
         if team is None:
             return False
         return any(
             m.get("kind") == "coach" and m.get("id") == self.id
             for p in team.payments
-            if p.kind == "BILL" and p.members
+            if p.kind == "BILL" and p.category == "REGISTRATION" and p.members
             for m in p.members
         )
 

@@ -1,28 +1,38 @@
-"""Registration-fee ledger for a team (see models.Payment): BILL (invoice,
-no money implied), PAYMENT (money actually received, partial or full,
-against the team's outstanding balance), REFUND (money returned, capped at
-what's actually been received net of prior refunds).
+"""Billing ledger for a team (see models.Payment): BILL (invoice, no money
+implied), PAYMENT (money actually received, partial or full, against one
+category's outstanding balance), REFUND (money returned, capped at what's
+actually been received in that category net of prior refunds).
+
+A team carries THREE independent bills (receipt.CATEGORIES), each with its
+own bills, payments, refunds and invoice — a payment recorded against one
+never touches another's balance:
+
+- REGISTRATION: the participation fee — Rs. receipt.DAILY_MEMBER_FEE per day
+  x receipt.EVENT_DAYS (receipt.PER_MEMBER_FEE) for every member ticked.
+- SECURITY: the Security Receipt — one flat amount per team (default
+  receipt.SECURITY_FEE_DEFAULT, editable), raised once.
+- IDCARD: the ID card fee — receipt.ID_CARD_FEE per head for every member
+  ticked.
 
 Billing is independent of attendance: the Bill dialog lists the team's
 whole billable roster (_billable_members — active participants plus every
-coach/manager, present or not) and the organizer ticks who a bill charges.
-A team can be billed more than once; a member already charged by an earlier
-BILL can't be charged again (_billed_keys). A bill charges exactly the
-members it was created with — later attendance changes never alter it. The per-member
-rate is a static, non-editable flat fee (receipt.PER_MEMBER_FEE — Rs.
-receipt.DAILY_MEMBER_FEE per day x receipt.EVENT_DAYS) applied to every
-member a bill covers. A flat, one-time security fee (default
-receipt.SECURITY_FEE_DEFAULT, editable) is applied once per team, only on
-its first bill. A flat discount is entered at billing time and applies to
-that bill's member subtotal only.
+coach/manager, present or not) and the organizer ticks who a member-based
+bill charges. A team can be billed more than once in a member-based
+category; a member already charged by an earlier BILL of that category can't
+be charged again in it (_billed_keys), but each category tracks that
+separately. A bill charges exactly the members it was created with — later
+attendance changes never alter it. Per-member rates are static and
+non-editable; a flat discount is entered at billing time and applies to
+that bill only.
 
 Bill and Payment are record-only (no PDF) — the downloadable Invoice
-(get_invoice) always reflects the team's current billed/paid/balance state
+(get_invoice) always reflects a category's current billed/paid/balance state
 rather than a frozen snapshot from whenever a transaction happened. Refund
 stays a single combined step with its voucher, since a refund is a discrete
 completed action rather than something that accrues afterward.
 """
 from datetime import date
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -37,6 +47,13 @@ from ..security import require_admin
 router = APIRouter(prefix="/api/teams", tags=["payments"])
 
 PDF_MEDIA_TYPE = "application/pdf"
+
+# Categories whose bills charge a ticked list of members at a flat per-head
+# rate; SECURITY is instead one flat amount per team, with no member list.
+MEMBER_RATES = {
+    "REGISTRATION": receipt.PER_MEMBER_FEE,
+    "IDCARD": receipt.ID_CARD_FEE,
+}
 
 
 def _pdf_response(content: bytes, filename: str) -> StreamingResponse:
@@ -75,53 +92,64 @@ def _billable_members(team: models.Team) -> list[dict]:
     return members
 
 
-def _billed_keys(team: models.Team) -> set:
-    """(kind, id) for every member any prior BILL on this team has already
-    charged for — a PAYMENT/REFUND never removes a member from this set;
-    they're purely financial and don't reopen billing for anyone."""
+def _rows(team: models.Team, kind: str, category: str) -> list:
+    return [p for p in team.payments if p.kind == kind and p.category == category]
+
+
+def _billed_keys(team: models.Team, category: str = "REGISTRATION") -> set:
+    """(kind, id) for every member any prior BILL of this category on the team
+    has already charged for — a PAYMENT/REFUND never removes a member from
+    this set; they're purely financial and don't reopen billing for anyone.
+    Categories are tracked separately: being registration-billed says nothing
+    about the ID card bill."""
     keys = set()
-    for pay in team.payments:
-        if pay.kind == "BILL" and pay.members:
+    for pay in _rows(team, "BILL", category):
+        if pay.members:
             keys.update((m["kind"], m["id"]) for m in pay.members)
     return keys
 
 
-def _live_bill_breakdown(team: models.Team) -> tuple[list[dict], int, int, int, int]:
-    """Every BILL counts exactly as created — the members it charged, at its
-    own per-member rate, less its discount, plus its security fee. Billing
-    no longer depends on attendance, so nothing is recomputed from who's
-    currently present. Returns (members with their per-member amount — the
-    Invoice's line items, subtotal, discount, security_fee total,
-    total_billed); shared by _totals (billing_summary) and get_invoice so
-    they can never show different figures for the same team."""
-    members: list[dict] = []
+def _bill_breakdown(team: models.Team, category: str) -> tuple[list[dict], int, int, int]:
+    """Every BILL of this category counts exactly as created — the members it
+    charged, at its own per-member rate, less its discount. Billing doesn't
+    depend on attendance, so nothing is recomputed from who's currently
+    present. Returns (line items for the Invoice, subtotal, discount,
+    total_billed); shared by _category_totals (billing_summary) and
+    get_invoice so they can never show different figures for the same team.
+    A member-less bill (the Security Receipt) is a single line."""
+    lines: list[dict] = []
     subtotal = 0
     discount = 0
-    security_fee = 0
-    for p in team.payments:
-        if p.kind != "BILL":
-            continue
+    for p in _rows(team, "BILL", category):
+        bill_subtotal = p.subtotal if p.subtotal is not None else p.amount
+        subtotal += bill_subtotal
+        discount += min(p.discount or 0, bill_subtotal)
         bill_members = p.members or []
-        per_member = (p.subtotal or 0) // len(bill_members) if bill_members else 0
-        subtotal += p.subtotal or 0
-        discount += min(p.discount or 0, p.subtotal or 0)
-        security_fee += p.security_fee or 0
-        for m in bill_members:
-            members.append({"name": m["name"], "role": m["role"], "amount": per_member})
-    total_billed = subtotal - discount + security_fee
-    return members, subtotal, discount, security_fee, total_billed
+        if bill_members:
+            per_member = bill_subtotal // len(bill_members)
+            lines.extend({"name": m["name"], "role": m["role"], "amount": per_member} for m in bill_members)
+        else:
+            lines.append({
+                "name": "Security Fee (one-time, per team)" if category == "SECURITY"
+                else receipt.CATEGORY_LABELS[category],
+                "role": "Team",
+                "amount": bill_subtotal,
+            })
+    return lines, subtotal, discount, subtotal - discount
 
 
-def _totals(team: models.Team) -> dict:
+def _category_totals(team: models.Team, category: str) -> dict:
     """Cash and UPI are tracked separately throughout (paid_cash/paid_upi,
     refunded_cash/refunded_upi) alongside the combined total_paid/
     total_refunded, so the billing summary and every export can show either
     the combined figure or the per-mode breakdown without re-deriving it."""
-    total_billed = _live_bill_breakdown(team)[4]
-    paid_cash = sum(p.amount for p in team.payments if p.kind == "PAYMENT" and p.payment_mode == "Cash")
-    paid_upi = sum(p.amount for p in team.payments if p.kind == "PAYMENT" and p.payment_mode == "UPI")
-    refunded_cash = sum(p.amount for p in team.payments if p.kind == "REFUND" and p.payment_mode == "Cash")
-    refunded_upi = sum(p.amount for p in team.payments if p.kind == "REFUND" and p.payment_mode == "UPI")
+    total_billed = _bill_breakdown(team, category)[3]
+    pays = _rows(team, "PAYMENT", category)
+    refunds = _rows(team, "REFUND", category)
+    paid_cash = sum(p.amount for p in pays if p.payment_mode == "Cash")
+    paid_upi = sum(p.amount for p in pays if p.payment_mode == "UPI")
+    refunded_cash = sum(p.amount for p in refunds if p.payment_mode == "Cash")
+    refunded_upi = sum(p.amount for p in refunds if p.payment_mode == "UPI")
     total_paid = paid_cash + paid_upi
     total_refunded = refunded_cash + refunded_upi
     return {
@@ -137,6 +165,12 @@ def _totals(team: models.Team) -> dict:
     }
 
 
+def _totals(team: models.Team) -> dict:
+    """The team's figures summed across all three categories."""
+    per_category = [_category_totals(team, c) for c in receipt.CATEGORIES]
+    return {k: sum(t[k] for t in per_category) for k in per_category[0]}
+
+
 def _validate_payment_fields(payment_mode: str, transaction_id: "str | None") -> "str | None":
     if payment_mode not in ("Cash", "UPI"):
         raise HTTPException(400, "payment_mode must be 'Cash' or 'UPI'")
@@ -146,30 +180,50 @@ def _validate_payment_fields(payment_mode: str, transaction_id: "str | None") ->
     return transaction_id
 
 
+def _category_summary(team: models.Team, category: str, roster: list[dict]) -> dict:
+    summary = {
+        "label": receipt.CATEGORY_LABELS[category],
+        "bill_count": len(_rows(team, "BILL", category)),
+        **_category_totals(team, category),
+    }
+    if category == "SECURITY":
+        summary["default_amount"] = receipt.SECURITY_FEE_DEFAULT
+        summary["billed"] = summary["bill_count"] > 0
+    else:
+        billed_keys = _billed_keys(team, category)
+        summary["rate"] = MEMBER_RATES[category]
+        # The Bill dialog's tick list: the whole billable roster, each flagged
+        # if an earlier bill of this category already charged them (those
+        # can't be ticked again).
+        summary["members"] = [{**m, "billed": (m["kind"], m["id"]) in billed_keys} for m in roster]
+    return summary
+
+
 def _billing_summary_dict(team: models.Team) -> dict:
-    billed_keys = _billed_keys(team)
     roster = _billable_members(team)
-    unbilled = [m for m in roster if (m["kind"], m["id"]) not in billed_keys]
-    totals = _totals(team)
-    security_fee_applied = any(p.kind == "BILL" and (p.security_fee or 0) > 0 for p in team.payments)
+    categories = {c: _category_summary(team, c, roster) for c in receipt.CATEGORIES}
+    registration = categories["REGISTRATION"]
     payments_sorted = sorted(team.payments, key=lambda p: (p.payment_date, p.id), reverse=True)
     return {
         "team_id": team.id,
-        # The Bill dialog's tick list: the whole billable roster, each flagged
-        # if an earlier bill already charged them (those can't be ticked).
-        "members": [{**m, "billed": (m["kind"], m["id"]) in billed_keys} for m in roster],
-        # Kept for older app builds, which list/bill exactly these.
-        "unbilled_present_members": unbilled,
+        # One entry per independent bill — see receipt.CATEGORIES.
+        "categories": categories,
+        # Top-level figures are the sum across all three bills.
+        **_totals(team),
+        # Registration-bill fields kept at the top level for older app builds.
+        "members": registration["members"],
+        "unbilled_present_members": [m for m in registration["members"] if not m["billed"]],
         "per_member_fee": receipt.PER_MEMBER_FEE,
         "daily_member_fee": receipt.DAILY_MEMBER_FEE,
         "event_days": receipt.EVENT_DAYS,
+        "id_card_fee": receipt.ID_CARD_FEE,
         "default_security_fee": receipt.SECURITY_FEE_DEFAULT,
-        "security_fee_applied": security_fee_applied,
-        **totals,
+        "security_fee_applied": categories["SECURITY"]["billed"],
         "payments": [
             {
                 "id": p.id,
                 "kind": p.kind,
+                "category": p.category,
                 "amount": p.amount,
                 "payment_mode": p.payment_mode,
                 "transaction_id": p.transaction_id,
@@ -178,7 +232,6 @@ def _billing_summary_dict(team: models.Team) -> dict:
                 "member_count": len(p.members) if p.members else None,
                 "subtotal": p.subtotal,
                 "discount": p.discount,
-                "security_fee": p.security_fee,
             }
             for p in payments_sorted
         ],
@@ -192,26 +245,33 @@ def billing_summary(team_id: int, db: Session = Depends(get_db)):
 
 @router.post("/{team_id}/bills")
 def create_bill(team_id: int, payload: schemas.BillCreate, db: Session = Depends(get_db)):
-    """Record-only — declares what a set of members owe. Does not imply
+    """Record-only — declares what is owed in one category. Does not imply
     payment and returns no PDF; download the up-to-date Invoice separately
     via get_invoice below once ready."""
     team = _get_team(db, team_id)
+    category = payload.category
     txn_date = payload.payment_date or date.today()
-    per_member_amount = receipt.PER_MEMBER_FEE  # static: Rs. per member x fixed event days, not editable
+
+    if category == "SECURITY":
+        if _rows(team, "BILL", "SECURITY"):
+            raise HTTPException(400, "The security receipt has already been raised for this team")
+        amount = payload.amount if payload.amount is not None else receipt.SECURITY_FEE_DEFAULT
+        if amount <= 0:
+            raise HTTPException(400, "Security receipt amount must be more than Rs. 0")
+        db.add(models.Payment(
+            team_id=team.id, kind="BILL", category=category, amount=amount,
+            payment_date=txn_date, subtotal=amount, discount=0,
+        ))
+        db.commit()
+        db.refresh(team)
+        return _billing_summary_dict(team)
+
+    per_member_amount = MEMBER_RATES[category]  # static: not editable
     discount = payload.discount or 0
     if discount < 0:
         raise HTTPException(400, "Discount can't be negative")
 
-    is_first_bill = not any(p.kind == "BILL" for p in team.payments)
-    security_fee = payload.security_fee if payload.security_fee is not None else (
-        receipt.SECURITY_FEE_DEFAULT if is_first_bill else 0
-    )
-    if security_fee < 0:
-        raise HTTPException(400, "Security fee can't be negative")
-    if security_fee > 0 and not is_first_bill:
-        raise HTTPException(400, "The security fee has already been applied to this team")
-
-    billed_keys = _billed_keys(team)
+    billed_keys = _billed_keys(team, category)
     roster = {(m["kind"], m["id"]): m for m in _billable_members(team)}
     if payload.members is None:
         # Older app builds send no selection: bill everyone not yet billed.
@@ -235,66 +295,68 @@ def create_bill(team_id: int, payload: schemas.BillCreate, db: Session = Depends
     subtotal = per_member_amount * len(members)
     if discount > subtotal:
         raise HTTPException(400, f"Discount can't exceed the bill subtotal of Rs. {subtotal:,}")
-    amount = subtotal - discount + security_fee
 
-    payment = models.Payment(
-        team_id=team.id, kind="BILL", amount=amount, payment_date=txn_date,
-        members=members, subtotal=subtotal, discount=discount, security_fee=security_fee,
-    )
-    db.add(payment)
+    db.add(models.Payment(
+        team_id=team.id, kind="BILL", category=category, amount=subtotal - discount, payment_date=txn_date,
+        members=members, subtotal=subtotal, discount=discount,
+    ))
     db.commit()
     db.refresh(team)
     return _billing_summary_dict(team)
 
 
 @router.get("/{team_id}/invoice.pdf")
-def get_invoice(team_id: int, db: Session = Depends(get_db)):
-    """The team's full current billing state as a PDF — every still-present
-    member across every BILL this team has ever had (each at that bill's own
-    per-member rate), the aggregate subtotal/discount/total billed, and live
-    Total Paid/Balance Due. Always reflects "now", not a frozen snapshot from
-    whenever a bill or payment happened — that's the whole point of
-    splitting billing from downloading (see module docstring). In
-    particular, anyone a bill charged for who's since been corrected to
-    not-present (see _live_bill_breakdown) is left off this invoice
-    entirely and excluded from every total, exactly like the on-screen
-    billing summary — the two can never show different numbers."""
+def get_invoice(
+    team_id: int,
+    category: Literal["REGISTRATION", "SECURITY", "IDCARD"] = "REGISTRATION",
+    db: Session = Depends(get_db),
+):
+    """One category's full current billing state as a PDF — the Registration
+    Fee invoice, the Security Receipt or the ID Card invoice: every member
+    across every BILL of that category (each at that bill's own per-member
+    rate), the aggregate subtotal/discount/total billed, and live Total
+    Paid/Balance Due for that category only. Always reflects "now", not a
+    frozen snapshot from whenever a bill or payment happened — that's the
+    whole point of splitting billing from downloading (see module
+    docstring). It matches the on-screen billing summary exactly, since both
+    come from _bill_breakdown/_category_totals."""
     team = _get_team(db, team_id)
-    if not any(p.kind == "BILL" for p in team.payments):
-        raise HTTPException(404, "This team has no bills yet")
+    if not _rows(team, "BILL", category):
+        raise HTTPException(404, f"This team has no {receipt.CATEGORY_LABELS[category].lower()} bill yet")
 
-    members, subtotal, discount, security_fee, _ = _live_bill_breakdown(team)
-    totals = _totals(team)
+    lines, subtotal, discount, _ = _bill_breakdown(team, category)
+    totals = _category_totals(team, category)
     payments = [
         {"date": p.payment_date, "mode": p.payment_mode, "transaction_id": p.transaction_id, "amount": p.amount}
-        for p in sorted((p for p in team.payments if p.kind == "PAYMENT"), key=lambda p: (p.payment_date, p.id))
+        for p in sorted(_rows(team, "PAYMENT", category), key=lambda p: (p.payment_date, p.id))
     ]
     pdf = receipt.render_invoice(
-        team, members, subtotal, discount, security_fee, totals["total_paid"], date.today(), payments
+        team, lines, subtotal, discount, totals["total_paid"], date.today(), payments, category
     )
-    return _pdf_response(pdf, f"invoice-{team.school_code or team.id}.pdf")
+    return _pdf_response(pdf, f"{receipt.INVOICE_FILE_STEMS[category]}-{team.school_code or team.id}.pdf")
 
 
 @router.post("/{team_id}/payments")
 def create_payment(team_id: int, payload: schemas.PaymentCreate, db: Session = Depends(get_db)):
-    """Record-only — logs money received against the team's outstanding
+    """Record-only — logs money received against one category's outstanding
     balance. Does not itself return a PDF; download the updated Invoice
     separately via get_invoice once ready (see module docstring)."""
     team = _get_team(db, team_id)
+    category = payload.category
+    label = receipt.CATEGORY_LABELS[category]
     transaction_id = _validate_payment_fields(payload.payment_mode, payload.transaction_id)
     txn_date = payload.payment_date or date.today()
 
-    balance_due = _totals(team)["balance_due"]
+    balance_due = _category_totals(team, category)["balance_due"]
     if balance_due <= 0:
-        raise HTTPException(400, "This team has no outstanding balance to pay")
+        raise HTTPException(400, f"This team has no outstanding {label.lower()} balance to pay")
     if payload.amount <= 0 or payload.amount > balance_due:
-        raise HTTPException(400, f"Payment amount must be between Rs. 1 and Rs. {balance_due:,} (this team's outstanding balance)")
+        raise HTTPException(400, f"Payment amount must be between Rs. 1 and Rs. {balance_due:,} (this team's outstanding {label.lower()} balance)")
 
-    payment = models.Payment(
-        team_id=team.id, kind="PAYMENT", amount=payload.amount,
+    db.add(models.Payment(
+        team_id=team.id, kind="PAYMENT", category=category, amount=payload.amount,
         payment_mode=payload.payment_mode, transaction_id=transaction_id, payment_date=txn_date,
-    )
-    db.add(payment)
+    ))
     db.commit()
     db.refresh(team)
     return _billing_summary_dict(team)
@@ -303,21 +365,23 @@ def create_payment(team_id: int, payload: schemas.PaymentCreate, db: Session = D
 @router.post("/{team_id}/refunds")
 def create_refund(team_id: int, payload: schemas.RefundCreate, db: Session = Depends(get_db)):
     team = _get_team(db, team_id)
+    category = payload.category
+    label = receipt.CATEGORY_LABELS[category]
     transaction_id = _validate_payment_fields(payload.payment_mode, payload.transaction_id)
     txn_date = payload.payment_date or date.today()
 
     if not payload.reason.strip():
         raise HTTPException(400, "A reason is required for a refund")
 
-    before = _totals(team)
+    before = _category_totals(team, category)
     net_collected = before["net_collected"]
     if net_collected <= 0:
-        raise HTTPException(400, "This team has no net received amount to refund")
+        raise HTTPException(400, f"This team has no net received {label.lower()} amount to refund")
     if payload.amount <= 0 or payload.amount > net_collected:
-        raise HTTPException(400, f"Refund amount must be between Rs. 1 and Rs. {net_collected:,} (this team's net received total)")
+        raise HTTPException(400, f"Refund amount must be between Rs. 1 and Rs. {net_collected:,} (this team's net received {label.lower()} total)")
 
     payment = models.Payment(
-        team_id=team.id, kind="REFUND", amount=payload.amount,
+        team_id=team.id, kind="REFUND", category=category, amount=payload.amount,
         payment_mode=payload.payment_mode, transaction_id=transaction_id,
         payment_date=txn_date, reason=payload.reason.strip(),
     )
@@ -328,7 +392,7 @@ def create_refund(team_id: int, payload: schemas.RefundCreate, db: Session = Dep
         team, payload.amount, payload.reason.strip(),
         payment_mode=payload.payment_mode, transaction_id=transaction_id, refund_date=txn_date,
         total_billed=before["total_billed"], total_paid=before["total_paid"],
-        net_collected=net_collected - payload.amount,
+        net_collected=net_collected - payload.amount, category=category,
     )
     return _pdf_response(pdf, f"refund-{team.school_code or team.id}-{payment.id}.pdf")
 
@@ -336,23 +400,23 @@ def create_refund(team_id: int, payload: schemas.RefundCreate, db: Session = Dep
 @router.get("/{team_id}/refunds/{payment_id}.pdf")
 def reprint_refund(team_id: int, payment_id: int, db: Session = Depends(get_db)):
     """Re-download the voucher for an already-recorded refund — the same
-    core content (amount, reason, mode, date) it was created with, since
-    those fields are stored verbatim on the Payment row; the Total Billed/
-    Paid/Net Collected context line reflects the team's current totals
-    (not a point-in-time snapshot, consistent with the Invoice's "always
-    current" design) rather than exactly what those figures were at the
-    moment this refund was first issued."""
+    core content (amount, reason, mode, date, category) it was created with,
+    since those fields are stored verbatim on the Payment row; the Total
+    Billed/Paid/Net Collected context line reflects that category's current
+    totals (not a point-in-time snapshot, consistent with the Invoice's
+    "always current" design) rather than exactly what those figures were at
+    the moment this refund was first issued."""
     team = _get_team(db, team_id)
     payment = db.get(models.Payment, payment_id)
     if not payment or payment.team_id != team_id or payment.kind != "REFUND":
         raise HTTPException(404, "Refund not found for this team")
 
-    totals = _totals(team)
+    totals = _category_totals(team, payment.category)
     pdf = receipt.render_refund_voucher(
         team, payment.amount, payment.reason or "",
         payment_mode=payment.payment_mode, transaction_id=payment.transaction_id, refund_date=payment.payment_date,
         total_billed=totals["total_billed"], total_paid=totals["total_paid"],
-        net_collected=totals["net_collected"],
+        net_collected=totals["net_collected"], category=payment.category,
     )
     return _pdf_response(pdf, f"refund-{team.school_code or team.id}-{payment.id}.pdf")
 
@@ -401,8 +465,8 @@ def clear_team_payments(team_id: int, payload: ClearAllPaymentsRequest, db: Sess
     BILL/PAYMENT/REFUND row (e.g. a bill raised against the wrong school or
     with the wrong members). Same admin-only + admin-password confirmation,
     same no-undo caveat. Billed status is derived purely from these rows
-    (_billed_keys), so the team's present members become billable again from
-    scratch, including the one-time security fee on its next first bill."""
+    (_billed_keys), so the team's members become billable again from scratch
+    in every category, including the one-time security receipt."""
     team = db.get(models.Team, team_id)
     if not team:
         raise HTTPException(404, "Team not found")

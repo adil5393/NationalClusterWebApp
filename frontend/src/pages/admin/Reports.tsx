@@ -296,7 +296,7 @@ export default function Reports() {
               <ReportDownloadCard
                 icon={Wallet}
                 title="Payments Ledger"
-                description="Per-team registration-fee billing, refunds & net collected."
+                description="Per-team registration fee, security receipt & ID card billing, refunds & net collected."
                 href={`${BACKEND}/api/export/payments.xlsx`}
                 testId="download-payments-report-btn"
                 onView={() => openViewReport("billing", `${BACKEND}/api/export/payments.xlsx`, "Download Payments .xlsx")}

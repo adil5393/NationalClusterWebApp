@@ -59,6 +59,9 @@ interface LiveSummary {
     // Paid − refunded, per payment mode.
     net_cash?: number;
     net_upi?: number;
+    // The three independent bills (registration fee, security receipt, ID
+    // card fee), each rolled up on its own.
+    categories?: { category: string; label: string; billed: number; paid: number; balance_due: number }[];
   };
   duty?: { staff_total: number; staff_with_duty: number; staff_without_duty: number; duty_assignments_total: number };
   accommodation?: { rooms_total: number; total_capacity: number; beds_occupied: number; assignments_total: number };
@@ -233,6 +236,22 @@ export function LiveReportsPanel() {
 
         {billing && (
           <StatCard icon={Wallet} title="Billing" onOpen={() => openDetail("billing")}>
+            {billing.categories && billing.categories.length > 0 && (
+              <div className="mb-2 space-y-1 border-b border-white/5 pb-2" data-testid="billing-by-category">
+                {billing.categories.map((c) => (
+                  <div key={c.category} className="flex items-baseline justify-between gap-2 text-[11px]">
+                    <span className="text-slate-400">{c.label}</span>
+                    <span className="font-mono text-slate-300">
+                      {formatMoney(c.paid)} / {formatMoney(c.billed)}
+                      <span className={c.balance_due > 0 ? " text-gold" : " text-emerald-400"}>
+                        {" "}
+                        · due {formatMoney(c.balance_due)}
+                      </span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
               <span className="text-slate-400">Billed</span>
               <span className="text-right font-mono font-bold text-white">{formatMoney(billing.total_billed)}</span>
