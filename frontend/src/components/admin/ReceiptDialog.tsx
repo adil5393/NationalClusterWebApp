@@ -13,6 +13,7 @@ interface BillableMember {
   name: string;
   role: string;
   billed?: boolean; // already charged by an earlier bill of this category — can't be ticked again
+  present?: boolean; // marked present at the event — shown in green (billing doesn't depend on it)
 }
 
 const memberKey = (m: { kind: string; id: number }) => `${m.kind}-${m.id}`;
@@ -576,11 +577,14 @@ export function ReceiptDialog({
                                       className={`flex items-center gap-2.5 rounded-md px-2 py-1.5 text-xs ${
                                         m.billed
                                           ? "opacity-60 cursor-not-allowed"
-                                          : on
-                                            ? "bg-gold/10 text-white cursor-pointer"
-                                            : "text-slate-300 hover:bg-white/5 cursor-pointer"
+                                          : m.present
+                                            ? "bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 cursor-pointer"
+                                            : on
+                                              ? "bg-gold/10 text-white cursor-pointer"
+                                              : "text-slate-300 hover:bg-white/5 cursor-pointer"
                                       }`}
                                       data-testid={`bill-member-${memberKey(m)}`}
+                                      data-present={m.present ? "true" : "false"}
                                     >
                                       <input
                                         type="checkbox"
@@ -590,7 +594,12 @@ export function ReceiptDialog({
                                         className="rounded border-white/20 text-gold focus:ring-gold"
                                       />
                                       <span className="flex-1 font-medium">{m.name}</span>
-                                      <span className="text-[11px] text-slate-500">{m.role}</span>
+                                      <span className={`text-[11px] ${m.present ? "text-emerald-400/70" : "text-slate-500"}`}>{m.role}</span>
+                                      {m.present && (
+                                        <span className="rounded border border-emerald-500/40 bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-heading font-bold text-emerald-300">
+                                          Present
+                                        </span>
+                                      )}
                                       {m.billed && (
                                         <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-heading font-bold text-emerald-300">
                                           Billed

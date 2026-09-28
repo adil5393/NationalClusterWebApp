@@ -194,8 +194,16 @@ def _category_summary(team: models.Team, category: str, roster: list[dict]) -> d
         summary["rate"] = MEMBER_RATES[category]
         # The Bill dialog's tick list: the whole billable roster, each flagged
         # if an earlier bill of this category already charged them (those
-        # can't be ticked again).
-        summary["members"] = [{**m, "billed": (m["kind"], m["id"]) in billed_keys} for m in roster]
+        # can't be ticked again) and whether they're marked present — display
+        # only (the Bill dialog shows present members in green); billing itself
+        # stays independent of attendance, and the flag is never stored in a
+        # bill's members snapshot.
+        present_keys = {("participant", p.id) for p in team.participants if p.is_present}
+        present_keys |= {("coach", c.id) for c in team.coaches if c.is_present}
+        summary["members"] = [
+            {**m, "billed": (m["kind"], m["id"]) in billed_keys, "present": (m["kind"], m["id"]) in present_keys}
+            for m in roster
+        ]
     return summary
 
 
