@@ -10,6 +10,34 @@ from ..database import get_db
 router = APIRouter(prefix="/api/accommodation", tags=["accommodation"])
 
 
+def _get_app_settings(db: Session) -> models.AppSettings:
+    settings_row = db.get(models.AppSettings, 1)
+    if not settings_row:
+        # Guards against a hand-seeded/older DB missing the migration's
+        # INSERT — never expected in practice, but cheaper than crashing.
+        settings_row = models.AppSettings(id=1)
+        db.add(settings_row)
+        db.commit()
+        db.refresh(settings_row)
+    return settings_row
+
+
+# Public Campus map's "Find My Room" search + room pins — see
+# models.AppSettings.room_lookup_disabled and public.py's
+# public_room_lookup_status (what the public page actually reads).
+@router.get("/room-lookup-lock", response_model=schemas.RoomLookupStatusRead)
+def get_room_lookup_lock(db: Session = Depends(get_db)):
+    return {"disabled": _get_app_settings(db).room_lookup_disabled}
+
+
+@router.put("/room-lookup-lock", response_model=schemas.RoomLookupStatusRead)
+def set_room_lookup_lock(payload: schemas.RoomLookupStatusUpdate, db: Session = Depends(get_db)):
+    settings_row = _get_app_settings(db)
+    settings_row.room_lookup_disabled = payload.disabled
+    db.commit()
+    return {"disabled": settings_row.room_lookup_disabled}
+
+
 def _age_group_code(g: str) -> str:
     """"Under 14" -> "U14"."""
     m = re.search(r"(\d+)", g)

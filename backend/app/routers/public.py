@@ -273,6 +273,17 @@ def public_accommodation(db: Session = Depends(get_db)):
     return result
 
 
+@router.get("/room-lookup-status", response_model=schemas.RoomLookupStatusRead)
+def public_room_lookup_status(db: Session = Depends(get_db)):
+    """Whether the Campus page's "Find My Room" search + room pins should be
+    shown, or a "this service has been fulfilled" message in their place —
+    admin-controlled via routers/accommodation.py's room-lookup-lock (see
+    models.AppSettings.room_lookup_disabled). Doesn't affect the rest of the
+    campus map (courts/navigation stay up either way)."""
+    settings_row = db.get(models.AppSettings, 1)
+    return {"disabled": bool(settings_row and settings_row.room_lookup_disabled)}
+
+
 @router.get("/gallery", response_model=list[schemas.GalleryPhotoRead])
 def public_gallery(db: Session = Depends(get_db)):
     """Day/group-tagged photos for the homepage's swiping card + full album

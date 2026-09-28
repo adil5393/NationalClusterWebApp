@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2, Pencil, BedDouble, Building, Users, CheckCircle2, AlertTriangle, Layers, ScrollText, Download, FileSpreadsheet, FileText } from "lucide-react";
+import { Plus, Trash2, Pencil, BedDouble, Building, Users, CheckCircle2, AlertTriangle, Layers, ScrollText, Download, FileSpreadsheet, FileText, MapPinOff, MapPin } from "lucide-react";
 import { toast } from "sonner";
 import { api, BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -113,6 +113,37 @@ export default function Accommodation() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Public Campus map's "Find My Room" search + room pins — once room
+  // allotment is done for the event, turning this off replaces that panel
+  // with a "this service has been fulfilled" message (see public.py's
+  // public_room_lookup_status / Campus.tsx). Doesn't touch the map itself.
+  const [roomLookupDisabled, setRoomLookupDisabled] = useState(false);
+  const [roomLookupBusy, setRoomLookupBusy] = useState(false);
+
+  useEffect(() => {
+    api
+      .get<{ disabled: boolean }>("/accommodation/room-lookup-lock")
+      .then((r) => setRoomLookupDisabled(r.data.disabled))
+      .catch(() => {});
+  }, []);
+
+  const toggleRoomLookup = () => {
+    const next = !roomLookupDisabled;
+    setRoomLookupBusy(true);
+    api
+      .put<{ disabled: boolean }>("/accommodation/room-lookup-lock", { disabled: next })
+      .then((r) => {
+        setRoomLookupDisabled(r.data.disabled);
+        toast.success(
+          r.data.disabled
+            ? 'Public room lookup turned off — the Campus page now shows "this service has been fulfilled"'
+            : "Public room lookup turned back on",
+        );
+      })
+      .catch((e) => toast.error(e?.response?.data?.detail ?? "Could not update room lookup"))
+      .finally(() => setRoomLookupBusy(false));
+  };
 
   const [mode, setMode] = useState<Mode>("team");
   // One cluster selection drives both the allocation form's team list and
@@ -355,16 +386,35 @@ export default function Accommodation() {
   return (
     <div data-testid="admin-accommodation" className="space-y-6">
       {/* PAGE HEADER */}
-      <div className="border-b border-white/10 pb-5">
-        <span className="text-xs font-heading font-extrabold uppercase tracking-widest text-gold">
-          LOGISTICS & HOUSING WORKSPACE
-        </span>
-        <h1 className="mt-1 font-heading text-2xl sm:text-3xl font-black tracking-tight text-white">
-          Accommodation & Room Allocation
-        </h1>
-        <p className="mt-1 text-xs sm:text-sm text-slate-400 font-body">
-          Assign whole delegations or individual athletes to hostel beds; monitor real-time capacity and occupancy.
-        </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between border-b border-white/10 pb-5">
+        <div>
+          <span className="text-xs font-heading font-extrabold uppercase tracking-widest text-gold">
+            LOGISTICS & HOUSING WORKSPACE
+          </span>
+          <h1 className="mt-1 font-heading text-2xl sm:text-3xl font-black tracking-tight text-white">
+            Accommodation & Room Allocation
+          </h1>
+          <p className="mt-1 text-xs sm:text-sm text-slate-400 font-body">
+            Assign whole delegations or individual athletes to hostel beds; monitor real-time capacity and occupancy.
+          </p>
+        </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={toggleRoomLookup}
+          disabled={roomLookupBusy}
+          data-testid="toggle-room-lookup-btn"
+          className={cn("text-xs font-semibold shrink-0", roomLookupDisabled && "border-emerald-500/40 text-emerald-300")}
+          title={
+            roomLookupDisabled
+              ? 'Public "Find My Room" is off — the Campus page shows "this service has been fulfilled". Click to turn it back on.'
+              : 'Turn off the public Campus page\'s "Find My Room" search + room pins once allotment is done'
+          }
+        >
+          {roomLookupDisabled ? <MapPin className="h-3.5 w-3.5" /> : <MapPinOff className="h-3.5 w-3.5 text-gold" />}
+          {roomLookupDisabled ? "Turn Room Lookup Back On" : "Mark Room Allotment Fulfilled"}
+        </Button>
       </div>
 
       {/* OCCUPANCY METERS PER BUILDING */}

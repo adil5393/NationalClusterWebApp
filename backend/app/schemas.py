@@ -126,6 +126,14 @@ class GlobalPhotoLockUpdate(BaseModel):
     locked: bool
 
 
+class RoomLookupStatusRead(BaseModel):
+    disabled: bool
+
+
+class RoomLookupStatusUpdate(BaseModel):
+    disabled: bool
+
+
 class LastYearAwardEntry(ORMModel):
     age_group: str
     award: Literal["gold", "silver", "bronze"]

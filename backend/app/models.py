@@ -60,6 +60,13 @@ class AppSettings(Base):
     # Team.photo_uploads_locked, so either one locks that team; unlocking here
     # doesn't affect a team that's individually locked, and vice versa.
     global_photo_uploads_locked = Column(Boolean, nullable=False, default=False, server_default="false")
+    # Turns off the public Campus map's "Find My Room" search + room pins
+    # (routers/public.py public_room_lookup_status, routers/accommodation.py
+    # get/set_room_lookup_lock) once room allotment is done for the event —
+    # the public page shows a "this service has been fulfilled" message
+    # instead. Doesn't touch the map itself (courts/navigation stay) or any
+    # already-assigned Room/AccommodationAssignment data — display only.
+    room_lookup_disabled = Column(Boolean, nullable=False, default=False, server_default="false")
 
 
 class Event(TimestampMixin, Base):

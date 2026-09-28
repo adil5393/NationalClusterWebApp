@@ -171,6 +171,18 @@ export default function Campus({ embedded = false }: { embedded?: boolean } = {}
     api.get<Team[]>("/public/teams").then((r) => setTeams(r.data));
   }, []);
 
+  // Admin-controlled: turned off from Accommodation.tsx once room allotment
+  // is done for the event — the search panel below then shows a "this
+  // service has been fulfilled" message instead. The rest of the map
+  // (courts/navigation) is unaffected either way.
+  const [roomLookupDisabled, setRoomLookupDisabled] = useState(false);
+  useEffect(() => {
+    api
+      .get<{ disabled: boolean }>("/public/room-lookup-status")
+      .then((r) => setRoomLookupDisabled(r.data.disabled))
+      .catch(() => {});
+  }, []);
+
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
   const zoomBy = (factor: number) => {
@@ -421,7 +433,21 @@ export default function Campus({ embedded = false }: { embedded?: boolean } = {}
       </div>
 
       {/* FIND MY ROOM SEARCH PANEL */}
-      {mode === "find" && (
+      {mode === "find" && roomLookupDisabled && (
+        <div
+          className="mt-6 rounded-xl border border-white/10 bg-obsidian-900 p-6 text-center shadow-sm"
+          data-testid="room-lookup-fulfilled"
+        >
+          <LocateFixed className="mx-auto h-6 w-6 text-slate-500" />
+          <h3 className="mt-2 font-heading text-sm font-bold text-white">Room Allotment Complete</h3>
+          <p className="mt-1 text-xs text-slate-400 font-body max-w-md mx-auto">
+            This service has been fulfilled — every delegation has already been assigned a room. If you still need
+            help finding yours, please visit the reception desk in Admin Building.
+          </p>
+        </div>
+      )}
+
+      {mode === "find" && !roomLookupDisabled && (
         <div className="mt-6 rounded-xl border border-gold/30 bg-gradient-to-br from-gold/10 via-obsidian-900 to-obsidian p-5 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
