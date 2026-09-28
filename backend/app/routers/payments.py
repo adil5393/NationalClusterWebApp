@@ -8,22 +8,20 @@ own bills, payments, refunds and invoice — a payment recorded against one
 never touches another's balance:
 
 - REGISTRATION: the participation fee — Rs. receipt.DAILY_MEMBER_FEE per day
-  x receipt.EVENT_DAYS (receipt.PER_MEMBER_FEE) for every member ticked.
+  x receipt.EVENT_DAYS (receipt.PER_MEMBER_FEE) per member.
 - SECURITY: the Security Receipt — one flat amount per team (default
   receipt.SECURITY_FEE_DEFAULT, editable), raised once.
-- IDCARD: the ID card fee — receipt.ID_CARD_FEE per head for every member
-  ticked.
+- IDCARD: the ID card fee — receipt.ID_CARD_FEE per head.
 
-Billing is independent of attendance: the Bill dialog lists the team's
-whole billable roster (_billable_members — active participants plus every
-coach/manager, present or not) and the organizer ticks who a member-based
-bill charges. A team can be billed more than once in a member-based
-category; a member already charged by an earlier BILL of that category can't
-be charged again in it (_billed_keys), but each category tracks that
-separately. A bill charges exactly the members it was created with — later
-attendance changes never alter it. Per-member rates are static and
-non-editable; a flat discount is entered at billing time and applies to
-that bill only.
+Registration and ID card bills are raised by quantity: the organizer enters
+the total number of members to bill and the bill charges exactly that many
+at the static, non-editable per-member rate. A team can be billed more than
+once in a category (each bill adds its own quantity). Billing is independent
+of attendance and of who is on the roster — a bill is just a head-count, and
+later roster or attendance changes never alter it. A flat discount is
+entered at billing time and applies to that bill only. (Bills from before
+quantity billing carry a list of the exact members they charged instead —
+see _bill_quantity.)
 
 Bill and Payment are record-only (no PDF) — the downloadable Invoice
 (get_invoice) always reflects a category's current billed/paid/balance state
@@ -109,14 +107,38 @@ def _billed_keys(team: models.Team, category: str = "REGISTRATION") -> set:
     return keys
 
 
+def _bill_quantity(p: models.Payment) -> int:
+    """Head-count a member-based BILL charged: the quantity entered when it was
+    created or, for older bills, the number of members it listed."""
+    if p.quantity is not None:
+        return p.quantity
+    return len(p.members or [])
+
+
+def _billed_headcount(team: models.Team, category: str = "REGISTRATION") -> int:
+    return sum(_bill_quantity(p) for p in _rows(team, "BILL", category))
+
+
+def member_is_billed(team: models.Team, kind: str, member_id: int) -> bool:
+    """Whether this person counts as registration-billed. Quantity bills don't
+    say *who*, so it's team-level: everyone is billed once the team's billed
+    head-count covers its whole billable roster. Older bills that listed exact
+    members still mark those individuals as billed."""
+    if (kind, member_id) in _billed_keys(team):
+        return True
+    headcount = _billed_headcount(team)
+    return headcount > 0 and headcount >= len(_billable_members(team))
+
+
 def _bill_breakdown(team: models.Team, category: str) -> tuple[list[dict], int, int, int]:
-    """Every BILL of this category counts exactly as created — the members it
-    charged, at its own per-member rate, less its discount. Billing doesn't
-    depend on attendance, so nothing is recomputed from who's currently
-    present. Returns (line items for the Invoice, subtotal, discount,
-    total_billed); shared by _category_totals (billing_summary) and
-    get_invoice so they can never show different figures for the same team.
-    A member-less bill (the Security Receipt) is a single line."""
+    """Every BILL of this category counts exactly as created — its quantity
+    at its own per-member rate, less its discount. Billing doesn't depend on
+    attendance or the current roster, so nothing is recomputed. Returns (line
+    items for the Invoice, subtotal, discount, total_billed); shared by
+    _category_totals (billing_summary) and get_invoice so they can never show
+    different figures for the same team. A quantity bill is a single line
+    (carrying "qty"); a bill from before quantity billing lists its members;
+    the Security Receipt is a single flat line."""
     lines: list[dict] = []
     subtotal = 0
     discount = 0
@@ -128,6 +150,14 @@ def _bill_breakdown(team: models.Team, category: str) -> tuple[list[dict], int, 
         if bill_members:
             per_member = bill_subtotal // len(bill_members)
             lines.extend({"name": m["name"], "role": m["role"], "amount": per_member} for m in bill_members)
+        elif p.quantity:
+            rate = bill_subtotal // p.quantity
+            lines.append({
+                "name": f"{receipt.CATEGORY_LABELS[category]} — {p.quantity} member{'s' if p.quantity != 1 else ''} × Rs. {rate:,}",
+                "role": f"Qty {p.quantity}",
+                "qty": p.quantity,
+                "amount": bill_subtotal,
+            })
         else:
             lines.append({
                 "name": "Security Fee (one-time, per team)" if category == "SECURITY"
@@ -190,27 +220,18 @@ def _category_summary(team: models.Team, category: str, roster: list[dict]) -> d
         summary["default_amount"] = receipt.SECURITY_FEE_DEFAULT
         summary["billed"] = summary["bill_count"] > 0
     else:
-        billed_keys = _billed_keys(team, category)
         summary["rate"] = MEMBER_RATES[category]
-        # The Bill dialog's tick list: the whole billable roster, each flagged
-        # if an earlier bill of this category already charged them (those
-        # can't be ticked again) and whether they're marked present — display
-        # only (the Bill dialog shows present members in green); billing itself
-        # stays independent of attendance, and the flag is never stored in a
-        # bill's members snapshot.
-        present_keys = {("participant", p.id) for p in team.participants if p.is_present}
-        present_keys |= {("coach", c.id) for c in team.coaches if c.is_present}
-        summary["members"] = [
-            {**m, "billed": (m["kind"], m["id"]) in billed_keys, "present": (m["kind"], m["id"]) in present_keys}
-            for m in roster
-        ]
+        # Hints for the Bill dialog's single "number of members" field.
+        summary["roster_size"] = len(roster)
+        summary["billed_quantity"] = _billed_headcount(team, category)
     return summary
 
 
 def _billing_summary_dict(team: models.Team) -> dict:
     roster = _billable_members(team)
     categories = {c: _category_summary(team, c, roster) for c in receipt.CATEGORIES}
-    registration = categories["REGISTRATION"]
+    billed_keys = _billed_keys(team)
+    legacy_members = [{**m, "billed": (m["kind"], m["id"]) in billed_keys} for m in roster]
     payments_sorted = sorted(team.payments, key=lambda p: (p.payment_date, p.id), reverse=True)
     return {
         "team_id": team.id,
@@ -218,9 +239,10 @@ def _billing_summary_dict(team: models.Team) -> dict:
         "categories": categories,
         # Top-level figures are the sum across all three bills.
         **_totals(team),
-        # Registration-bill fields kept at the top level for older app builds.
-        "members": registration["members"],
-        "unbilled_present_members": [m for m in registration["members"] if not m["billed"]],
+        # Registration-bill fields kept at the top level for older app builds
+        # (which still tick members); the current dialog bills by quantity.
+        "members": legacy_members,
+        "unbilled_present_members": [m for m in legacy_members if not m["billed"]],
         "per_member_fee": receipt.PER_MEMBER_FEE,
         "daily_member_fee": receipt.DAILY_MEMBER_FEE,
         "event_days": receipt.EVENT_DAYS,
@@ -237,7 +259,7 @@ def _billing_summary_dict(team: models.Team) -> dict:
                 "transaction_id": p.transaction_id,
                 "payment_date": p.payment_date.isoformat(),
                 "reason": p.reason,
-                "member_count": len(p.members) if p.members else None,
+                "member_count": (_bill_quantity(p) or None) if p.kind == "BILL" else None,
                 "subtotal": p.subtotal,
                 "discount": p.discount,
             }
@@ -279,12 +301,15 @@ def create_bill(team_id: int, payload: schemas.BillCreate, db: Session = Depends
     if discount < 0:
         raise HTTPException(400, "Discount can't be negative")
 
-    billed_keys = _billed_keys(team, category)
-    roster = {(m["kind"], m["id"]): m for m in _billable_members(team)}
-    if payload.members is None:
-        # Older app builds send no selection: bill everyone not yet billed.
-        members = [m for k, m in roster.items() if k not in billed_keys]
-    else:
+    members = None
+    if payload.quantity is not None:
+        quantity = payload.quantity
+        if quantity < 1:
+            raise HTTPException(400, "Enter the number of members to bill (at least 1)")
+    elif payload.members:
+        # Older app builds still tick members: bill exactly those, once each.
+        billed_keys = _billed_keys(team, category)
+        roster = {(m["kind"], m["id"]): m for m in _billable_members(team)}
         members = []
         seen = set()
         for ref in payload.members:
@@ -297,16 +322,17 @@ def create_bill(team_id: int, payload: schemas.BillCreate, db: Session = Depends
             if key not in roster:
                 raise HTTPException(400, "A selected member isn't on this team's billable roster")
             members.append(roster[key])
-    if not members:
-        raise HTTPException(400, "Select at least one member who hasn't been billed yet")
+        quantity = None
+    else:
+        raise HTTPException(400, "Enter the number of members to bill (at least 1)")
 
-    subtotal = per_member_amount * len(members)
+    subtotal = per_member_amount * (quantity if members is None else len(members))
     if discount > subtotal:
         raise HTTPException(400, f"Discount can't exceed the bill subtotal of Rs. {subtotal:,}")
 
     db.add(models.Payment(
         team_id=team.id, kind="BILL", category=category, amount=subtotal - discount, payment_date=txn_date,
-        members=members, subtotal=subtotal, discount=discount,
+        members=members, quantity=quantity, subtotal=subtotal, discount=discount,
     ))
     db.commit()
     db.refresh(team)
@@ -320,9 +346,9 @@ def get_invoice(
     db: Session = Depends(get_db),
 ):
     """One category's full current billing state as a PDF — the Registration
-    Fee invoice, the Security Receipt or the ID Card invoice: every member
-    across every BILL of that category (each at that bill's own per-member
-    rate), the aggregate subtotal/discount/total billed, and live Total
+    Fee invoice, the Security Receipt or the ID Card invoice: every BILL of
+    that category (each at that bill's own per-member rate), the aggregate
+    subtotal/discount/total billed, and live Total
     Paid/Balance Due for that category only. Always reflects "now", not a
     frozen snapshot from whenever a bill or payment happened — that's the
     whole point of splitting billing from downloading (see module

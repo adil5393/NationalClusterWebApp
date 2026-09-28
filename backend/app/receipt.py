@@ -367,6 +367,8 @@ def render_invoice_image(
     balance_due = total_billed - total_paid
     summary_rows = 1 + (2 if discount else 0)
     rows_needed = 1 + len(members) + summary_rows
+    # A quantity bill's line stands for several members ("qty").
+    head_count = sum(m.get("qty", 1) for m in members)
 
     meta_h = 110
     stat_h = 88
@@ -423,7 +425,7 @@ def render_invoice_image(
     draw.rounded_rectangle([table_left, y, table_right, y + row_h], radius=4, fill=CLR_NAVY_DARK)
     header_mid = y + row_h / 2
     _cell("S.No", col_x["no"], col_w["no"], header_mid, header_font, (255, 255, 255))
-    _cell("Description" if category == "SECURITY" else "Member Name", col_x["name"], col_w["name"], header_mid, header_font, (255, 255, 255), align="left")
+    _cell("Description" if category == "SECURITY" or any("qty" in m for m in members) else "Member Name", col_x["name"], col_w["name"], header_mid, header_font, (255, 255, 255), align="left")
     _cell("Role / Category", col_x["role"], col_w["role"], header_mid, header_font, (255, 255, 255))
     _cell("Amount (Rs.)", col_x["amount"], col_w["amount"], header_mid, header_font, (255, 255, 255), align="right")
 
@@ -446,7 +448,7 @@ def render_invoice_image(
     # Subtotal and Discount
     if discount:
         subtotal_mid = y + row_h / 2
-        _cell(f"Subtotal ({len(members)} members)",
+        _cell(f"Subtotal ({head_count} members)",
               col_x["no"], col_w["no"] + col_w["name"] + col_w["role"], subtotal_mid, body_font, CLR_NAVY_DARK, align="left")
         _cell(f"{subtotal:,}", col_x["amount"], col_w["amount"], subtotal_mid, body_font, CLR_NAVY_DARK, align="right")
         draw.line([(table_left, y + row_h), (table_right, y + row_h)], fill=CLR_CARD_BORDER, width=1)
@@ -464,7 +466,7 @@ def render_invoice_image(
     total_label = (
         "Total Billed Amount"
         if (discount or category == "SECURITY")
-        else f"Total Billed Amount ({len(members)} member{'s' if len(members) != 1 else ''})"
+        else f"Total Billed Amount ({head_count} member{'s' if head_count != 1 else ''})"
     )
     _cell(total_label, col_x["no"], col_w["no"] + col_w["name"] + col_w["role"], total_mid, total_font, CLR_NAVY_DARK, align="left")
     _cell(f"Rs. {total_billed:,}", col_x["amount"], col_w["amount"], total_mid, total_font, CLR_NAVY_DARK, align="right")

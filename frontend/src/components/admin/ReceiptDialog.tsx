@@ -7,17 +7,6 @@ import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
 
-interface BillableMember {
-  kind: "participant" | "coach";
-  id: number;
-  name: string;
-  role: string;
-  billed?: boolean; // already charged by an earlier bill of this category — can't be ticked again
-  present?: boolean; // marked present at the event — shown in green (billing doesn't depend on it)
-}
-
-const memberKey = (m: { kind: string; id: number }) => `${m.kind}-${m.id}`;
-
 // A team carries three independent bills — each has its own billed/paid/
 // refunded totals, payments and invoice (backend receipt.CATEGORIES).
 type Category = "REGISTRATION" | "SECURITY" | "IDCARD";
@@ -59,11 +48,11 @@ interface CategorySummary {
   refunded_upi: number;
   balance_due: number;
   net_collected: number;
-  // REGISTRATION / IDCARD: flat per-head rate + the whole billable roster
-  // (active participants + coaches/managers, independent of attendance), each
-  // flagged if an earlier bill of THIS category already charged them.
+  // REGISTRATION / IDCARD: billed by quantity at a flat per-head rate. The
+  // roster size and head-count already billed are hints for the quantity field.
   rate?: number;
-  members?: BillableMember[];
+  roster_size?: number;
+  billed_quantity?: number;
   // SECURITY: one flat amount per team, raised once.
   default_amount?: number;
   billed?: boolean;
@@ -151,8 +140,9 @@ export function ReceiptDialog({
   const [refundTxnId, setRefundTxnId] = useState("");
   const [refundDate, setRefundDate] = useState(todayLocal);
 
-  // Members ticked in the Bill tab (memberKey) — the bill charges exactly these.
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Registration / ID card bills are raised by quantity: one field, the total
+  // number of members to bill.
+  const [quantity, setQuantity] = useState("");
 
   // Admin-only "wipe this team's billing" — same admin-password confirmation
   // as the Reports page's clear-all (payments.clear_team_payments).
@@ -179,10 +169,13 @@ export function ReceiptDialog({
     }
   };
 
-  // Start with everyone not yet billed (in this category) ticked, and pre-fill
-  // the security receipt's default amount.
-  const resetSelection = (data: BillingSummary, cat: Category) => {
-    setSelected(new Set((data.categories[cat].members ?? []).filter((m) => !m.billed).map(memberKey)));
+  // Pre-fill the quantity with the members not yet billed in this category
+  // (roster size minus head-count already billed) and the security receipt's
+  // default amount — both are just starting values the organizer can overwrite.
+  const resetDefaults = (data: BillingSummary, cat: Category) => {
+    const c = data.categories[cat];
+    const remaining = Math.max(0, (c.roster_size ?? 0) - (c.billed_quantity ?? 0));
+    setQuantity(remaining > 0 ? String(remaining) : "");
     setSecurityAmount(String(data.categories.SECURITY.default_amount ?? 0));
   };
 
@@ -192,7 +185,7 @@ export function ReceiptDialog({
     try {
       const r = await api.get<BillingSummary>(`/teams/${team.id}/billing-summary`);
       setSummary(r.data);
-      resetSelection(r.data, cat);
+      resetDefaults(r.data, cat);
     } catch {
       toast.error("Could not load billing summary");
     } finally {
@@ -208,7 +201,7 @@ export function ReceiptDialog({
     setRefundAmount("");
     setRefundReason("");
     setRefundTxnId("");
-    if (summary) resetSelection(summary, cat);
+    if (summary) resetDefaults(summary, cat);
   };
 
   useEffect(() => {
@@ -236,23 +229,14 @@ export function ReceiptDialog({
   const cs = summary?.categories[category];
   const label = CATEGORY_LABEL[category];
   const isSecurity = category === "SECURITY";
-  const roster = cs?.members ?? [];
-  const unbilledRoster = roster.filter((m) => !m.billed);
-  const toggleMember = (m: BillableMember) =>
-    setSelected((prev) => {
-      const next = new Set(prev);
-      const k = memberKey(m);
-      if (next.has(k)) next.delete(k);
-      else next.add(k);
-      return next;
-    });
+  const qty = Math.floor(Number(quantity)) || 0;
 
   const billPreview = useMemo(() => {
-    const count = selected.size;
+    const count = qty;
     const subtotal = (cs?.rate ?? 0) * count;
     const disc = Number(discount) || 0;
     return { count, subtotal, discount: disc, total: Math.max(0, subtotal - disc) };
-  }, [cs, discount, selected]);
+  }, [cs, discount, qty]);
 
   const submitBill = async () => {
     if (!team || !summary) return;
@@ -260,7 +244,7 @@ export function ReceiptDialog({
       const amount = Number(securityAmount);
       if (!amount || amount <= 0) return toast.error("Enter the security receipt amount");
     } else {
-      if (selected.size === 0) return toast.error("Tick at least one member to bill");
+      if (qty < 1) return toast.error("Enter the number of members to bill");
       const disc = Number(discount) || 0;
       if (disc < 0) return toast.error("Discount can't be negative");
       if (disc > billPreview.subtotal) return toast.error("Discount can't exceed the bill subtotal");
@@ -270,10 +254,9 @@ export function ReceiptDialog({
       if (isSecurity) {
         await api.post(`/teams/${team.id}/bills`, { category, amount: Number(securityAmount), payment_date: billDate });
       } else {
-        const members = unbilledRoster.filter((m) => selected.has(memberKey(m))).map((m) => ({ kind: m.kind, id: m.id }));
         await api.post(`/teams/${team.id}/bills`, {
           category,
-          members,
+          quantity: qty,
           discount: Number(discount) || 0,
           payment_date: billDate,
         });
@@ -527,98 +510,23 @@ export function ReceiptDialog({
                   </div>
                 ) : (
                   <>
-                    {summary && roster.length > 0 ? (
-                      <div className="rounded-xl border border-white/10 bg-obsidian-950 p-3.5 space-y-2" data-testid="bill-member-picker">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="text-xs font-heading font-bold text-white">
-                            Select members to bill{" "}
-                            <span className="font-mono text-gold">
-                              ({selected.size} of {unbilledRoster.length} not yet billed)
-                            </span>
-                          </p>
-                          {canEdit && unbilledRoster.length > 0 && (
-                            <div className="flex gap-2 text-[11px] font-heading font-bold">
-                              <button
-                                type="button"
-                                onClick={() => setSelected(new Set(unbilledRoster.map(memberKey)))}
-                                className="text-sky-300 hover:underline"
-                                data-testid="bill-select-all"
-                              >
-                                Select all
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setSelected(new Set())}
-                                className="text-slate-400 hover:underline"
-                                data-testid="bill-select-none"
-                              >
-                                Select none
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                        <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
-                          {([
-                            ["participant", "Participants"],
-                            ["coach", "Coaches & Managers"],
-                          ] as const).map(([kind, groupLabel]) => {
-                            const group = roster.filter((m) => m.kind === kind);
-                            if (group.length === 0) return null;
-                            return (
-                              <div key={kind} className="space-y-0.5">
-                                <p className="text-[10px] font-heading font-extrabold uppercase tracking-widest text-slate-500">
-                                  {groupLabel} ({group.length})
-                                </p>
-                                {group.map((m) => {
-                                  const on = selected.has(memberKey(m));
-                                  return (
-                                    <label
-                                      key={memberKey(m)}
-                                      className={`flex items-center gap-2.5 rounded-md px-2 py-1.5 text-xs ${
-                                        m.billed
-                                          ? "opacity-60 cursor-not-allowed"
-                                          : m.present
-                                            ? "bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 cursor-pointer"
-                                            : on
-                                              ? "bg-gold/10 text-white cursor-pointer"
-                                              : "text-slate-300 hover:bg-white/5 cursor-pointer"
-                                      }`}
-                                      data-testid={`bill-member-${memberKey(m)}`}
-                                      data-present={m.present ? "true" : "false"}
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        checked={m.billed ? true : on}
-                                        disabled={m.billed || !canEdit}
-                                        onChange={() => toggleMember(m)}
-                                        className="rounded border-white/20 text-gold focus:ring-gold"
-                                      />
-                                      <span className="flex-1 font-medium">{m.name}</span>
-                                      <span className={`text-[11px] ${m.present ? "text-emerald-400/70" : "text-slate-500"}`}>{m.role}</span>
-                                      {m.present && (
-                                        <span className="rounded border border-emerald-500/40 bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-heading font-bold text-emerald-300">
-                                          Present
-                                        </span>
-                                      )}
-                                      {m.billed && (
-                                        <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-heading font-bold text-emerald-300">
-                                          Billed
-                                        </span>
-                                      )}
-                                    </label>
-                                  );
-                                })}
-                              </div>
-                            );
-                          })}
-                        </div>
-                        {unbilledRoster.length === 0 && (
-                          <p className="text-[11px] text-emerald-300">Everyone on this team has been billed for the {label.toLowerCase()}.</p>
-                        )}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-slate-400 font-body">This team has no participants, coaches or managers to bill yet.</p>
-                    )}
+                    <div>
+                      <Label>Total number of members</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        step={1}
+                        placeholder="e.g. 12"
+                        value={quantity}
+                        onChange={(e) => setQuantity(e.target.value)}
+                        disabled={!canEdit}
+                        data-testid="bill-quantity-input"
+                      />
+                      <p className="mt-1 text-[11px] text-slate-500" data-testid="bill-quantity-hint">
+                        Team roster: {cs?.roster_size ?? 0} · already billed: {cs?.billed_quantity ?? 0}. The bill
+                        charges exactly the number you enter.
+                      </p>
+                    </div>
 
                     <div>
                       <Label>{category === "IDCARD" ? "ID Card Fee (Rs., fixed)" : "Per-Member Fee (Rs., fixed)"}</Label>
@@ -676,7 +584,7 @@ export function ReceiptDialog({
                       variant="gold"
                       size="sm"
                       onClick={submitBill}
-                      disabled={busy || !summary || (!isSecurity && selected.size === 0)}
+                      disabled={busy || !summary || (!isSecurity && qty < 1)}
                       data-testid="submit-bill-btn"
                     >
                       <FileText className="h-3.5 w-3.5" /> {busy ? "Creating…" : `Create ${label} Bill`}

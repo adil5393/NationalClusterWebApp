@@ -172,7 +172,8 @@ class Payment(TimestampMixin, Base):
       snapshots exactly who it charged for ({"kind": "participant"|"coach",
       "id", "name", "role"} per member), so a later bill's UI can compute
       "who's not yet billed" by diffing against every prior BILL's members
-      for that team and category. `subtotal` (per-member amount x count)
+      for that team and category. Current REGISTRATION/IDCARD bills instead
+      carry just a `quantity` (head-count) and no members. `subtotal` (per-member amount x count)
       and `discount` are kept alongside the final `amount` (subtotal minus
       discount) so a re-printed invoice shows the same breakdown later. A
       SECURITY bill has no members: just its flat amount (= subtotal).
@@ -204,7 +205,8 @@ class Payment(TimestampMixin, Base):
     transaction_id = Column(String(100))  # UPI reference; null for Cash or for a BILL
     payment_date = Column(Date, nullable=False)
     reason = Column(Text)  # REFUND only
-    members = Column(JSON)  # BILL only
+    members = Column(JSON)  # BILL only: legacy bills that listed exact members; quantity bills leave it null
+    quantity = Column(Integer)  # BILL only (REGISTRATION/IDCARD): head-count billed at the per-member rate
     subtotal = Column(Integer)  # BILL only: per_member_amount x member count, before discount
     discount = Column(Integer)  # BILL only: flat Rs. knocked off subtotal to get `amount`
     security_fee = Column(Integer)  # legacy: the security fee used to ride on the first bill; now its own SECURITY bill (always null)
@@ -380,19 +382,14 @@ class Participant(TimestampMixin, Base):
 
     @property
     def is_billed(self) -> bool:
-        """Whether a registration-fee BILL on this person's team has charged for
-        them (the participant entries in Payment.members — see
-        routers/payments.py). Shown beside the Present button on the
-        Participants page."""
-        team = self.team
-        if team is None:
+        """Whether this person counts as registration-billed (see
+        routers/payments.py member_is_billed — team-level for quantity bills).
+        Shown beside the Present button on the Participants page."""
+        if self.team is None:
             return False
-        return any(
-            m.get("kind") == "participant" and m.get("id") == self.id
-            for p in team.payments
-            if p.kind == "BILL" and p.category == "REGISTRATION" and p.members
-            for m in p.members
-        )
+        from .routers.payments import member_is_billed
+
+        return member_is_billed(self.team, "participant", self.id)
 
 
 class Coach(TimestampMixin, Base):
@@ -437,19 +434,14 @@ class Coach(TimestampMixin, Base):
 
     @property
     def is_billed(self) -> bool:
-        """Whether a registration-fee BILL on this person's team has charged for
-        them (the coach entries in Payment.members — see
-        routers/payments.py). Shown beside the Present button on the
-        Participants page."""
-        team = self.team
-        if team is None:
+        """Whether this person counts as registration-billed (see
+        routers/payments.py member_is_billed — team-level for quantity bills).
+        Shown beside the Present button on the Participants page."""
+        if self.team is None:
             return False
-        return any(
-            m.get("kind") == "coach" and m.get("id") == self.id
-            for p in team.payments
-            if p.kind == "BILL" and p.category == "REGISTRATION" and p.members
-            for m in p.members
-        )
+        from .routers.payments import member_is_billed
+
+        return member_is_billed(self.team, "coach", self.id)
 
 
 class Volunteer(TimestampMixin, Base):

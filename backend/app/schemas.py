@@ -1627,9 +1627,10 @@ class BillMemberRef(BaseModel):
 
 class BillCreate(BaseModel):
     category: BillCategory = "REGISTRATION"
-    # REGISTRATION / IDCARD: who this bill charges, as ticked in the Bill
-    # dialog. Omitted (older app builds) = every billable member not yet billed
-    # in that category. See payments.create_bill.
+    # REGISTRATION / IDCARD: how many members this bill charges, at the fixed
+    # per-member rate — the Bill dialog's single "number of members" field.
+    quantity: Optional[int] = None
+    # Deprecated: older app builds tick exact members instead. See payments.create_bill.
     members: Optional[List[BillMemberRef]] = None
     discount: Optional[int] = 0  # flat Rs. knocked off the computed subtotal
     # SECURITY only: the flat one-time receipt amount (Rs.); defaults to

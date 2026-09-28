@@ -43,7 +43,7 @@ from ..excel_styler import (
 )
 from openpyxl.styles import PatternFill
 from ..security import has_reports_access, require_admin, require_auth, require_module, require_report
-from .payments import _billable_members, _billed_keys
+from .payments import _billable_members, _billed_headcount, _bill_quantity
 from .public import ASSETS_COACHES_DIR, ASSETS_PARTICIPANTS_DIR
 
 router = APIRouter(prefix="/api/export", tags=["export"])
@@ -1039,14 +1039,12 @@ def _billed_member_counts(team: models.Team) -> tuple[int, int, int]:
     """(registered, billable, billed) for the arrival report's R/T/B column:
     Registered = every participant+coach on the roster; Total = the billable
     roster (payments.py's _billable_members — active participants plus
-    coaches/managers, independent of attendance); Billed = how many of those
-    a BILL has already charged for (payments.py's _billed_keys) — the same
-    definitions the Bill dialog uses."""
+    coaches/managers, independent of attendance); Billed = the head-count the
+    team's registration bills have charged for (payments.py's
+    _billed_headcount), capped at Total."""
     registered = len(team.participants) + len(team.coaches)
-    billable = _billable_members(team)
-    billed_keys = _billed_keys(team)
-    billed = sum(1 for m in billable if (m["kind"], m["id"]) in billed_keys)
-    return registered, len(billable), billed
+    total = len(_billable_members(team))
+    return registered, total, min(_billed_headcount(team), total)
 
 
 _LEDGER_MONEY_KEYS = (
@@ -2730,7 +2728,8 @@ def export_payments_xlsx(db: Session = Depends(get_db)):
     for t in {r["team"].id: r["team"] for r in rows}.values():
         for p in sorted(t.payments, key=lambda p: (p.payment_date, p.id)):
             if p.kind == "BILL":
-                reference = f"{len(p.members)} member{'s' if len(p.members) != 1 else ''}" if p.members else "—"
+                qty = _bill_quantity(p)
+                reference = f"{qty} member{'s' if qty != 1 else ''}" if qty else "—"
             elif p.kind == "REFUND":
                 reference = p.reason or "—"
             else:
