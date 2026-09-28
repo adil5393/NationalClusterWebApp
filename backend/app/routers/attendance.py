@@ -5,14 +5,10 @@ capability without also being able to add, edit, or delete participant
 records. (The generic participant edit endpoints can't touch is_present
 anyway — it isn't part of ParticipantUpdate — so this is the only way in.)
 
-set_weight below is a separate, independent concern: it records a weigh-in
-against the AKFI kabaddi weight-category caps in AGE_GROUP_WEIGHT_CAPS, but
-never touches is_present/checked_in_at — an overweight player still showed
-up and still gets billed (billing is independent of attendance — see
-payments.py's _billable_members). Weight instead gates match/pool/fixture eligibility: see
-matches.py's _team_unplayable_reason, which excludes an overweight
-participant from a team's present-player headcount via is_overweight below.
-Once a weight is saved, changing it again requires an admin password (same
+set_weight below is a separate, independent concern: it just records a
+weigh-in. It never touches is_present/checked_in_at, and no weight limit is
+enforced anywhere — it doesn't affect match/pool/fixture eligibility or
+billing (see payments.py's _billable_members). Once a weight is saved, changing it again requires an admin password (same
 shape as _require_admin_password's un-mark-attendance gate) — only the
 first save is free."""
 from datetime import datetime, timezone
@@ -27,32 +23,6 @@ from ..ws import broadcast_roster_change_sync
 
 router = APIRouter(prefix="/api/participants", tags=["attendance"])
 coach_router = APIRouter(prefix="/api/coaches", tags=["attendance"])
-
-# Rs.-style flat lookup (see receipt.py's fee constants for the same
-# pattern): kg cap per age group, matched case-insensitively/trimmed since
-# Participant.age_group is free text (models.py). Not every age group in
-# use has to be one of these three — see module docstring.
-AGE_GROUP_WEIGHT_CAPS = {
-    "under 14": 51,
-    "under 17": 57,
-    "under 19": 70,
-}
-
-
-def weight_cap_for(age_group: "str | None") -> "float | None":
-    if not age_group:
-        return None
-    return AGE_GROUP_WEIGHT_CAPS.get(age_group.strip().lower())
-
-
-def is_overweight(p: models.Participant) -> bool:
-    """True only when the participant's age group has a defined cap AND a
-    weigh-in has been recorded AND it's over that cap — used by matches.py
-    to exclude them from a team's present-player headcount for match/pool/
-    fixture eligibility. Never affects is_present/attendance/billing."""
-    cap = weight_cap_for(p.age_group)
-    return cap is not None and p.weight is not None and p.weight > cap
-
 
 def _require_admin_password(
     db: Session, password: "str | None", action: str = "mark a present member absent"

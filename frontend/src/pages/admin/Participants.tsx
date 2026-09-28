@@ -61,22 +61,8 @@ const PAGE_SIZE = 25;
 const empty: Partial<Participant> = { full_name: "", role: "Player", is_present: false };
 const emptyCoach: Partial<Coach> = { full_name: "", role: "Coach", is_present: false };
 
-// AKFI kabaddi weight-category caps (kg), keyed case-insensitively — mirrors
-// backend/app/routers/attendance.py AGE_GROUP_WEIGHT_CAPS. For these age
-// groups, attendance is derived from weight (no manual toggle); every other
-// age_group value keeps the manual present/absent toggle.
-const AGE_GROUP_WEIGHT_CAPS: Record<string, number> = {
-  "under 14": 51,
-  "under 17": 57,
-  "under 19": 70,
-};
 function teamOptionLabel(t: Team) {
   return t.is_active === false ? `${t.name} (Inactive)` : t.name;
-}
-
-function weightCapFor(ageGroup?: string): number | undefined {
-  if (!ageGroup) return undefined;
-  return AGE_GROUP_WEIGHT_CAPS[ageGroup.trim().toLowerCase()];
 }
 
 // Round ID-card photo (or initial placeholder) beside a participant's name —
@@ -772,10 +758,7 @@ export default function Participants() {
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <Label className="!mb-0 text-[10px]">Weight (kg)</Label>
                     {(() => {
-                      const cap = weightCapFor(p.age_group);
                       const draft = weightDraftFor(p);
-                      const draftNum = Number(draft);
-                      const overLimit = cap != null && draft !== "" && Number.isFinite(draftNum) && draftNum > cap;
                       if (p.weight != null) {
                         return (
                           <>
@@ -783,14 +766,9 @@ export default function Participants() {
                               type="number"
                               value={String(p.weight)}
                               disabled
-                              className={`h-7 w-20 text-xs ${overLimit ? "border-red-500 text-red-400" : ""}`}
+                              className={`h-7 w-20 text-xs`}
                               data-testid={`participant-weight-mobile-${p.id}`}
                             />
-                            {cap != null && (
-                              <span className={`text-[10px] font-mono ${overLimit ? "text-red-400" : "text-slate-500"}`}>
-                                / {cap} kg
-                              </span>
-                            )}
                             {canMarkAttendance && !teamInactive(p.team_id) && (
                               <button
                                 type="button"
@@ -816,15 +794,10 @@ export default function Participants() {
                             onChange={(e) => setWeightDrafts((d) => ({ ...d, [p.id]: e.target.value }))}
                             onBlur={() => saveWeight(p)}
                             onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-                            placeholder={cap ? `≤ ${cap}` : "—"}
-                            className={`h-7 w-20 text-xs ${overLimit ? "border-red-500 text-red-400" : ""}`}
+                            placeholder="—"
+                            className={`h-7 w-20 text-xs`}
                             data-testid={`participant-weight-mobile-${p.id}`}
                           />
-                          {cap != null && (
-                            <span className={`text-[10px] font-mono ${overLimit ? "text-red-400" : "text-slate-500"}`}>
-                              / {cap} kg
-                            </span>
-                          )}
                         </>
                       );
                     })()}
@@ -1021,10 +994,7 @@ export default function Participants() {
                       </TD>
                       <TD>
                         {(() => {
-                          const cap = weightCapFor(p.age_group);
                           const draft = weightDraftFor(p);
-                          const draftNum = Number(draft);
-                          const overLimit = cap != null && draft !== "" && Number.isFinite(draftNum) && draftNum > cap;
                           if (p.weight != null) {
                             return (
                               <div className="flex items-center gap-1.5">
@@ -1032,14 +1002,9 @@ export default function Participants() {
                                   type="number"
                                   value={String(p.weight)}
                                   disabled
-                                  className={`h-8 w-20 text-xs ${overLimit ? "border-red-500 text-red-400" : ""}`}
+                                  className={`h-8 w-20 text-xs`}
                                   data-testid={`participant-weight-${p.id}`}
                                 />
-                                {cap != null && (
-                                  <span className={`text-[10px] ${overLimit ? "text-red-400" : "text-slate-500"}`}>
-                                    / {cap} kg
-                                  </span>
-                                )}
                                 {canMarkAttendance && !teamInactive(p.team_id) && (
                                   <button
                                     type="button"
@@ -1067,15 +1032,10 @@ export default function Participants() {
                                 }
                                 onBlur={() => saveWeight(p)}
                                 onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-                                placeholder={cap ? `≤ ${cap}` : "—"}
-                                className={`h-8 w-20 text-xs ${overLimit ? "border-red-500 text-red-400" : ""}`}
+                                placeholder="—"
+                                className={`h-8 w-20 text-xs`}
                                 data-testid={`participant-weight-${p.id}`}
                               />
-                              {cap != null && (
-                                <span className={`text-[10px] ${overLimit ? "text-red-400" : "text-slate-500"}`}>
-                                  / {cap} kg
-                                </span>
-                              )}
                             </div>
                           );
                         })()}

@@ -15,7 +15,6 @@ from .. import models, schemas
 from ..database import get_db
 from ..security import require_auth
 from ..ws import broadcast_match_event_sync
-from .attendance import is_overweight
 
 router = APIRouter(tags=["matches"])
 
@@ -163,9 +162,7 @@ def _team_unplayable_reason(db: Session, team: models.Team, tournament: models.T
     squad without touching its Under 17 eligibility), or automatically,
     because too few of its players in this tournament's age group have
     checked in (Tournament.min_present_players; 0 disables this half of the
-    check) — a present player who's over their age group's weight cap
-    (attendance.is_overweight) doesn't count toward that headcount, even
-    though they're still present/billed."""
+    check). Weight plays no part — a recorded weigh-in is only a record."""
     dq = (
         db.query(models.TeamDisqualification)
         .filter(
@@ -199,11 +196,9 @@ def _team_unplayable_reason(db: Session, team: models.Team, tournament: models.T
             )
             .all()
         )
-        overweight = sum(1 for p in present_players if is_overweight(p))
-        present = len(present_players) - overweight
+        present = len(present_players)
         if present < tournament.min_present_players:
-            suffix = f" ({overweight} over the weight limit)" if overweight else ""
-            return f"{team.name} only has {present} of {tournament.min_present_players} required players present{suffix}"
+            return f"{team.name} only has {present} of {tournament.min_present_players} required players present"
     return None
 
 
