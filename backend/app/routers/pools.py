@@ -33,21 +33,29 @@ def _eligible_teams(db: Session, tournament: models.Tournament, round_: models.R
     pools for that round may only draw from it. A round with no entrants
     (Round-1-style, or created the old way) falls back to the tournament-wide
     rule: any team with a registered participant in the tournament's age
-    group, or every team if the tournament isn't scoped to one."""
+    group, or every team if the tournament isn't scoped to one.
+
+    A wholesale-inactive team (Team.is_active) never appears here at all —
+    it's simply not a fixture candidate — even if it's still sitting in an
+    old round's entrants bucket from before it was benched. A team that's
+    only inactive for THIS age group (TeamInactiveAgeGroup) or short on
+    checked-in players still appears, just unplayable (see
+    matches._team_unplayable_reason) — those are shown, disabled, in the
+    pickers built from this list."""
     if round_ is not None and round_.entrants:
-        return sorted(round_.entrants, key=lambda t: t.name)
-    if not tournament.age_group:
-        return db.query(models.Team).order_by(models.Team.name).all()
-    team_ids = {
-        row[0]
-        for row in db.query(models.Participant.team_id)
-        .filter(models.Participant.age_group == tournament.age_group)
-        .distinct()
-        .all()
-    }
-    if not team_ids:
-        return []
-    return db.query(models.Team).filter(models.Team.id.in_(team_ids)).order_by(models.Team.name).all()
+        teams = sorted(round_.entrants, key=lambda t: t.name)
+    elif not tournament.age_group:
+        teams = db.query(models.Team).order_by(models.Team.name).all()
+    else:
+        team_ids = {
+            row[0]
+            for row in db.query(models.Participant.team_id)
+            .filter(models.Participant.age_group == tournament.age_group)
+            .distinct()
+            .all()
+        }
+        teams = db.query(models.Team).filter(models.Team.id.in_(team_ids)).order_by(models.Team.name).all() if team_ids else []
+    return [t for t in teams if t.is_active]
 
 
 def _pool_dict(p: models.Pool) -> dict:

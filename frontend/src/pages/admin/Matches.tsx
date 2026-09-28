@@ -625,18 +625,39 @@ function bracketRoundName(matchCount: number) {
   return `Round of ${matchCount * 2}`;
 }
 
-function teamUnplayableReason(t: Team, tournament: TournamentT | null | undefined): string | null {
-  if (t.is_active === false) return "Inactive";
+// "age_group": the team itself is active, just benched for this one age
+// group (TeamInactiveAgeGroup) — shown in orange. "attendance": active for
+// this age group too, just short of checked-in players — shown in red.
+// Wholesale-inactive teams (Team.is_active) never reach this function at
+// all in practice — they're filtered out of every list before it's built
+// (see eligibleTeams below / backend pools.py _eligible_teams) — but it
+// still reports them (as "age_group", orange) rather than crash if one
+// slips through from a stale prop.
+type UnplayableReason = { text: string; kind: "age_group" | "attendance" };
+
+function teamUnplayableReason(t: Team, tournament: TournamentT | null | undefined): UnplayableReason | null {
+  if (t.is_active === false) return { text: "Inactive", kind: "age_group" };
   if (tournament?.age_group && t.inactive_age_groups?.includes(tournament.age_group)) {
-    return `Inactive for ${tournament.age_group}`;
+    return { text: `Inactive for ${tournament.age_group}`, kind: "age_group" };
   }
   if (!tournament?.age_group) return null;
   const threshold = tournament.min_present_players ?? 10;
   if (threshold <= 0) return null;
   const present = t.present_counts?.[tournament.age_group] ?? 0;
-  if (present < threshold) return `${present} of ${threshold} present`;
+  if (present < threshold) return { text: `${present} of ${threshold} present`, kind: "attendance" };
   return null;
 }
+
+// Tailwind classes for the two UnplayableReason kinds, shared by every
+// team-picker list below.
+const REASON_TEXT_CLASS: Record<UnplayableReason["kind"], string> = {
+  age_group: "text-amber-400",
+  attendance: "text-red-400",
+};
+const REASON_TAG_CLASS: Record<UnplayableReason["kind"], string> = {
+  age_group: "text-amber-500",
+  attendance: "text-red-500",
+};
 
 function roundFormat(r: RoundT): "KNOCKOUT" | "LEAGUE" | null {
   if (r.format) return r.format;
@@ -815,11 +836,14 @@ export default function Matches() {
   }, [participants]);
 
   const eligibleTeams = useMemo(() => {
-    if (!detail?.age_group) return teams;
+    // Wholesale-inactive teams are never fixture candidates — dropped here
+    // regardless of age group, mirroring backend pools.py _eligible_teams.
+    const active = teams.filter((t) => t.is_active !== false);
+    if (!detail?.age_group) return active;
     const ids = new Set(
       participants.filter((p) => p.age_group === detail.age_group).map((p) => p.team_id),
     );
-    return teams.filter((t) => ids.has(t.id));
+    return active.filter((t) => ids.has(t.id));
   }, [teams, participants, detail?.age_group]);
 
   const presentCounts = useMemo(() => {
@@ -1729,8 +1753,13 @@ export default function Matches() {
                 {eligibleTeams.map((t) => {
                   const reason = teamUnplayableReason(t, detail);
                   return (
-                    <option key={t.id} value={t.id} disabled={!!reason}>
-                      {reason ? `⚠ ${t.name} — ${reason}` : t.name}
+                    <option
+                      key={t.id}
+                      value={t.id}
+                      disabled={!!reason}
+                      style={reason ? { color: reason.kind === "attendance" ? "#f87171" : "#fbbf24" } : undefined}
+                    >
+                      {reason ? `⚠ ${t.name} — ${reason.text}` : t.name}
                     </option>
                   );
                 })}
@@ -1748,8 +1777,13 @@ export default function Matches() {
                 {eligibleTeams.map((t) => {
                   const reason = teamUnplayableReason(t, detail);
                   return (
-                    <option key={t.id} value={t.id} disabled={!!reason}>
-                      {reason ? `⚠ ${t.name} — ${reason}` : t.name}
+                    <option
+                      key={t.id}
+                      value={t.id}
+                      disabled={!!reason}
+                      style={reason ? { color: reason.kind === "attendance" ? "#f87171" : "#fbbf24" } : undefined}
+                    >
+                      {reason ? `⚠ ${t.name} — ${reason.text}` : t.name}
                     </option>
                   );
                 })}
@@ -1932,7 +1966,7 @@ export default function Matches() {
                   key={t.id}
                   className={cn(
                     "flex items-center gap-2 rounded px-2 py-1 text-xs cursor-pointer hover:bg-white/5",
-                    reason ? "text-amber-400" : "text-slate-200",
+                    reason ? REASON_TEXT_CLASS[reason.kind] : "text-slate-200",
                   )}
                 >
                   <input
@@ -1943,7 +1977,9 @@ export default function Matches() {
                     className="rounded border-white/20 text-gold focus:ring-gold"
                   />
                   <span>{t.name}</span>
-                  {reason && <span className="text-[10px] text-amber-500 font-mono">— {reason}</span>}
+                  {reason && (
+                    <span className={cn("text-[10px] font-mono", REASON_TAG_CLASS[reason.kind])}>— {reason.text}</span>
+                  )}
                 </label>
               );
             })}
@@ -3795,13 +3831,13 @@ function LeagueSetup({
                       <span
                         className={cn(
                           "truncate font-medium",
-                          reason ? "text-amber-400" : "text-slate-200",
+                          reason ? REASON_TEXT_CLASS[reason.kind] : "text-slate-200",
                         )}
                       >
                         {t.name}
                         {reason && (
-                          <span className="ml-1.5 text-[11px] text-amber-500 font-mono">
-                            — {reason}
+                          <span className={cn("ml-1.5 text-[11px] font-mono", REASON_TAG_CLASS[reason.kind])}>
+                            — {reason.text}
                           </span>
                         )}
                       </span>
@@ -3970,7 +4006,7 @@ function CreatePoolDialog({
                   key={t.id}
                   className={cn(
                     "flex items-center gap-2 rounded px-2 py-1 text-xs cursor-pointer hover:bg-white/5",
-                    reason ? "text-amber-400" : "text-slate-200",
+                    reason ? REASON_TEXT_CLASS[reason.kind] : "text-slate-200",
                   )}
                 >
                   <input
@@ -3981,7 +4017,9 @@ function CreatePoolDialog({
                     className="rounded border-white/20 text-gold focus:ring-gold"
                   />
                   <span>{t.name}</span>
-                  {reason && <span className="text-[10px] text-amber-500 font-mono">— {reason}</span>}
+                  {reason && (
+                    <span className={cn("text-[10px] font-mono", REASON_TAG_CLASS[reason.kind])}>— {reason.text}</span>
+                  )}
                 </label>
               );
             })}
