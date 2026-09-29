@@ -30,6 +30,7 @@ import {
   ShieldOff,
   Lock,
   Unlock,
+  ArrowLeftRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -348,6 +349,14 @@ function RoundMatchesList({
       toast.error(e?.response?.data?.detail ?? "Could not set match index");
     }
   };
+  const swapTeams = async (matchId: number) => {
+    try {
+      await api.post(`/matches/${matchId}/swap-teams`);
+      onScheduleSaved();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not swap teams");
+    }
+  };
   return (
     <>
       {/* MOBILE: CARD LIST */}
@@ -374,7 +383,19 @@ function RoundMatchesList({
                     testId={`match-index-mobile-${m.id}`}
                   />
                 </div>
-                <p className="font-heading font-bold text-white text-sm break-words">{matchLabel(m)}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="font-heading font-bold text-white text-sm break-words">{matchLabel(m)}</p>
+                  {canEdit && m.team_a_id && m.team_b_id && (
+                    <button
+                      onClick={() => swapTeams(m.id)}
+                      title="Swap Team A and Team B"
+                      className="shrink-0 text-slate-400 hover:text-gold"
+                      data-testid={`swap-teams-mobile-${m.id}`}
+                    >
+                      <ArrowLeftRight className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <Badge tone={matchStatusTone(m)} size="sm">
@@ -502,7 +523,19 @@ function RoundMatchesList({
                   </div>
                 </TD>
                 <TD className="font-heading font-bold text-white text-sm">
-                  {matchLabel(m)}
+                  <div className="flex items-center gap-1.5">
+                    <span>{matchLabel(m)}</span>
+                    {canEdit && m.team_a_id && m.team_b_id && (
+                      <button
+                        onClick={() => swapTeams(m.id)}
+                        title="Swap Team A and Team B"
+                        className="shrink-0 text-slate-400 hover:text-gold"
+                        data-testid={`swap-teams-${m.id}`}
+                      >
+                        <ArrowLeftRight className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
                   {m.winner_team_name && (
                     <div className="text-xs font-semibold text-emerald-400 font-body">
                       Winner: {m.winner_team_name}
@@ -4669,7 +4702,28 @@ function PoolDetailDialog({
                           </div>
                         </TD>
                         <TD className="font-heading font-bold text-white text-xs">
-                          {m.team_a_name} vs {m.team_b_name}
+                          <div className="flex items-center gap-1.5">
+                            <span>
+                              {m.team_a_name} vs {m.team_b_name}
+                            </span>
+                            {canEdit && m.team_a_id && m.team_b_id && (
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await api.post(`/matches/${m.id}/swap-teams`);
+                                    load(true);
+                                  } catch (e: any) {
+                                    toast.error(e?.response?.data?.detail ?? "Could not swap teams");
+                                  }
+                                }}
+                                title="Swap Team A and Team B"
+                                className="shrink-0 text-slate-400 hover:text-gold"
+                                data-testid={`pool-swap-teams-${m.id}`}
+                              >
+                                <ArrowLeftRight className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </TD>
                         {canEdit && (
                           <TD className="min-w-[210px]">

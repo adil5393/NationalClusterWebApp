@@ -342,6 +342,29 @@ def set_match_index(match_id: int, payload: schemas.MatchIndexUpdate, db: Sessio
     return _match_dict(m, db)
 
 
+@router.post("/api/matches/{match_id}/swap-teams")
+def swap_match_teams(match_id: int, db: Session = Depends(get_db)):
+    """Flips which slot (A/B) each team sits in — "Team A vs Team B" becomes
+    "Team B vs Team A". Everything that belongs to a SLOT moves with it
+    (that slot's score, and where it's fed from — source_match_a/b_id,
+    source_pool_a/b_id, source_pool_a/b_rank); everything that belongs to a
+    TEAM doesn't need touching at all (winner_team_id, forfeited_team_id are
+    already team ids, not "a"/"b"). Works at any match status — even a
+    completed one, since nothing here is score-dependent; V1: no
+    restriction on when this can be used."""
+    m = db.get(models.Match, match_id)
+    if not m:
+        raise HTTPException(404, "Match not found")
+    m.team_a_id, m.team_b_id = m.team_b_id, m.team_a_id
+    m.team_a_score, m.team_b_score = m.team_b_score, m.team_a_score
+    m.source_match_a_id, m.source_match_b_id = m.source_match_b_id, m.source_match_a_id
+    m.source_pool_a_id, m.source_pool_b_id = m.source_pool_b_id, m.source_pool_a_id
+    m.source_pool_a_rank, m.source_pool_b_rank = m.source_pool_b_rank, m.source_pool_a_rank
+    db.commit()
+    db.refresh(m)
+    return _match_dict(m, db)
+
+
 @router.get("/api/tournaments/{tournament_id}/indices-lock")
 def get_indices_lock(tournament_id: int, db: Session = Depends(get_db)):
     t = db.get(models.Tournament, tournament_id)

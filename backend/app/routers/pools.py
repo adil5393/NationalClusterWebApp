@@ -208,8 +208,37 @@ def _get_pool(db: Session, pool_id: int) -> models.Pool:
     return p
 
 
+def _pool_team_order_key(index_map: dict[int, str], team: models.Team):
+    """Sorts a pool's teams by their Team Index Number (see models.TeamIndex)
+    ahead of round-robin pairing, so "who plays who first" follows the
+    organizer's own numbering rather than pool.teams' incidental insertion
+    order. A numeric index sorts numerically; a non-numeric one (V1 allows
+    any text) still sorts as "indexed", just after every numeric one, by its
+    own text. A team with no index at all sorts last of all, by name — the
+    same deterministic fallback whether or not any indices have been set
+    yet (e.g. auto-create finalizes immediately, before any index exists)."""
+    idx = index_map.get(team.id)
+    if idx is None:
+        return (2, 0.0, team.name)
+    try:
+        return (0, float(idx), team.name)
+    except ValueError:
+        return (1, 0.0, idx)
+
+
 def _generate_pool_matches(db: Session, pool: models.Pool) -> int:
-    team_ids = [t.id for t in pool.teams]
+    index_map = {
+        row.team_id: row.index_number
+        for row in db.query(models.TeamIndex)
+        .filter(
+            models.TeamIndex.tournament_id == pool.tournament_id,
+            models.TeamIndex.team_id.in_([t.id for t in pool.teams]),
+        )
+        .all()
+        if row.index_number
+    }
+    ordered_teams = sorted(pool.teams, key=lambda t: _pool_team_order_key(index_map, t))
+    team_ids = [t.id for t in ordered_teams]
     pairs = round_robin_pairs(team_ids)
     for a, b in pairs:
         db.add(models.Match(
