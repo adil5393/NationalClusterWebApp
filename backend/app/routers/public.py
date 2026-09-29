@@ -300,43 +300,60 @@ def public_gallery(db: Session = Depends(get_db)):
     )
 
 
-# A spectator's own photo, submitted from the public Live page's "Action
+# A spectator's own photo(s), submitted from the public Live page's "Action
 # Captured on the Mat" gallery — no login, no team association, so this is
 # rate-limited purely per visitor address (nginx's X-Real-IP), same shape as
-# the reveal-contacts/callback limiters above.
+# the reveal-contacts/callback limiters above. Counted per PHOTO, not per
+# request, so one request can't dodge the limit by carrying more files.
 _MAT_PHOTO_WINDOW_SECONDS = 60 * 60
-_MAT_PHOTO_MAX_SENT = 10
+_MAT_PHOTO_MAX_SENT = 30
+_MAX_MAT_PHOTOS_PER_REQUEST = 10
 _sent_mat_photos: dict[str, list[float]] = {}
 _MAT_PHOTO_SAFE_STEM_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 @router.post("/gallery/mat-photos", status_code=201)
-def upload_mat_photo(request: Request, file: UploadFile = File(...), db: Session = Depends(get_db)):
-    """A spectator submits their own mat-side photo. Lands in the same
-    Championship Photo Gallery as admin uploads (routers/gallery.py), tagged
-    "Fan Submission" — but created with is_approved=False, so it's invisible
-    on public_gallery above until an admin approves it (PUT
-    /gallery/photos/{id}, same endpoint admins already use to re-tag)."""
+def upload_mat_photo(request: Request, files: list[UploadFile] = File(...), db: Session = Depends(get_db)):
+    """A spectator submits up to 10 of their own mat-side photos in one go
+    (mirrors routers/gallery.py's admin bulk upload shape — one file's
+    failure doesn't sink the rest). Each lands in the same Championship
+    Photo Gallery as admin uploads, tagged "Fan Submission" — but created
+    with is_approved=False, so it's invisible on public_gallery above until
+    an admin approves it (PUT /gallery/photos/{id}, same endpoint admins
+    already use to re-tag)."""
+    if len(files) > _MAX_MAT_PHOTOS_PER_REQUEST:
+        raise HTTPException(400, f"Upload at most {_MAX_MAT_PHOTOS_PER_REQUEST} photos at a time")
+
     visitor = _visitor_key(request)
-    sent = _recent(_sent_mat_photos, visitor, _MAT_PHOTO_WINDOW_SECONDS)
-    if len(sent) >= _MAT_PHOTO_MAX_SENT:
-        raise HTTPException(429, "Too many uploads from this device — try again later")
-
-    ext = Path(file.filename or "").suffix.lower()
-    if ext not in VALID_IMAGE_EXTENSIONS:
-        raise HTTPException(400, "Unsupported file type — please upload a JPG, PNG, or WEBP")
-
     ASSETS_ABOUT_DIR.mkdir(parents=True, exist_ok=True)
-    stem = _MAT_PHOTO_SAFE_STEM_RE.sub("_", Path(file.filename or "photo").stem)[:40] or "photo"
-    name = f"fan-{stem}-{uuid.uuid4().hex[:8]}{ext}"
-    content = optimize_image(file.file.read(), ext)
-    (ASSETS_ABOUT_DIR / name).write_bytes(content)
+    uploaded = []
+    errors = []
+    for f in files:
+        sent = _recent(_sent_mat_photos, visitor, _MAT_PHOTO_WINDOW_SECONDS)
+        if len(sent) >= _MAT_PHOTO_MAX_SENT:
+            errors.append(f"{f.filename}: too many uploads from this device — try again later")
+            continue
+        ext = Path(f.filename or "").suffix.lower()
+        if ext not in VALID_IMAGE_EXTENSIONS:
+            errors.append(f"{f.filename}: unsupported file type (use JPG, PNG, or WEBP)")
+            continue
 
-    photo = models.GalleryPhoto(filename=name, tag="Fan Submission", is_approved=False)
-    db.add(photo)
+        stem = _MAT_PHOTO_SAFE_STEM_RE.sub("_", Path(f.filename or "photo").stem)[:40] or "photo"
+        name = f"fan-{stem}-{uuid.uuid4().hex[:8]}{ext}"
+        content = optimize_image(f.file.read(), ext)
+        (ASSETS_ABOUT_DIR / name).write_bytes(content)
+
+        photo = models.GalleryPhoto(filename=name, tag="Fan Submission", is_approved=False)
+        db.add(photo)
+        db.flush()
+        sent.append(time.time())
+        uploaded.append({"id": photo.id, "filename": name})
     db.commit()
-    sent.append(time.time())
-    return {"message": "Thanks! Your photo will appear here once an organizer approves it."}
+    return {
+        "uploaded_count": len(uploaded),
+        "errors": errors,
+        "message": f"Thanks! {len(uploaded)} photo{'s' if len(uploaded) != 1 else ''} received — pending approval before they appear here.",
+    }
 
 
 @router.get("/accommodation-rules", response_model=list[schemas.AccommodationRuleRead])

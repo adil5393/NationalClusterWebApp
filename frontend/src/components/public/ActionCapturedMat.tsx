@@ -52,25 +52,34 @@ export function ActionCapturedMat() {
   };
   useEffect(loadGallery, []);
 
-  const uploadPhoto = async (file: File) => {
+  const MAX_UPLOAD_FILES = 10;
+  const uploadPhotos = async (files: File[]) => {
+    if (files.length === 0) return;
+    if (files.length > MAX_UPLOAD_FILES) {
+      toast.error(`Upload at most ${MAX_UPLOAD_FILES} photos at a time`);
+      files = files.slice(0, MAX_UPLOAD_FILES);
+    }
     setUploading(true);
     try {
       const fd = new FormData();
-      fd.append("file", file);
-      const r = await api.post<{ message: string }>("/public/gallery/mat-photos", fd, {
-        headers: { "Content-Type": undefined } as any,
-      });
-      toast.success(r.data.message || "Thanks! Your photo is pending approval.");
+      for (const f of files) fd.append("files", f);
+      const r = await api.post<{ uploaded_count: number; errors: string[]; message: string }>(
+        "/public/gallery/mat-photos",
+        fd,
+        { headers: { "Content-Type": undefined } as any },
+      );
+      if (r.data.uploaded_count > 0) toast.success(r.data.message);
+      for (const err of r.data.errors) toast.error(err);
     } catch (e: any) {
-      toast.error(e?.response?.data?.detail ?? "Could not upload photo");
+      toast.error(e?.response?.data?.detail ?? "Could not upload photo(s)");
     } finally {
       setUploading(false);
     }
   };
-  const onPickUploadFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const onPickUploadFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
     e.target.value = "";
-    if (file) uploadPhoto(file);
+    uploadPhotos(files);
   };
 
   const tags = useMemo(
@@ -169,8 +178,9 @@ export function ActionCapturedMat() {
               ref={fileInputRef}
               type="file"
               accept="image/jpeg,image/png,image/webp"
+              multiple
               className="hidden"
-              onChange={onPickUploadFile}
+              onChange={onPickUploadFiles}
               data-testid="mat-photo-upload-input"
             />
             <button
@@ -180,7 +190,7 @@ export function ActionCapturedMat() {
               className="inline-flex items-center gap-1.5 rounded-lg border border-gold/40 bg-gold/10 px-3.5 py-1.5 text-xs font-heading font-bold text-gold hover:bg-gold/20 transition-colors disabled:opacity-50"
               data-testid="mat-photo-upload-btn"
             >
-              <UploadCloud className="h-3.5 w-3.5" /> {uploading ? "Uploading…" : "Got a shot? Upload it"}
+              <UploadCloud className="h-3.5 w-3.5" /> {uploading ? "Uploading…" : "Got shots? Upload up to 10"}
             </button>
             <p className="mt-1 flex items-center justify-center gap-1 text-[10px] text-slate-500 font-body">
               <Clock className="h-3 w-3" /> Reviewed by organizers before it appears here.
