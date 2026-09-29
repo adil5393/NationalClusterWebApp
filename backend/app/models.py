@@ -67,6 +67,14 @@ class AppSettings(Base):
     # instead. Doesn't touch the map itself (courts/navigation stay) or any
     # already-assigned Room/AccommodationAssignment data — display only.
     room_lookup_disabled = Column(Boolean, nullable=False, default=False, server_default="false")
+    # Freezes every attendance change — participants AND coaches/managers,
+    # every team — once flipped on (routers/attendance.py's
+    # get/set_attendance_lock). Blocks both set_attendance and
+    # set_coach_attendance outright, in either direction (marking present OR
+    # un-marking), for every account regardless of its own admin-password
+    # un-mark gate (_require_admin_password) — that gate still applies once
+    # this is off. Doesn't touch weight (set_weight) or is_active.
+    attendance_locked = Column(Boolean, nullable=False, default=False, server_default="false")
 
 
 class Event(TimestampMixin, Base):

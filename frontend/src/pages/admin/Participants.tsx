@@ -145,6 +145,36 @@ export default function Participants() {
   const [savingWeightId, setSavingWeightId] = useState<number | null>(null);
   const [pendingWeightEdit, setPendingWeightEdit] = useState<{ id: number; name: string } | null>(null);
   const [weightEditValue, setWeightEditValue] = useState("");
+
+  // Organizer-wide Attendance Lock — freezes present/absent changes for
+  // every participant AND coach/manager, every team, both directions, once
+  // on (see backend/app/routers/attendance.py get/set_attendance_lock).
+  const [attendanceLocked, setAttendanceLocked] = useState(false);
+  const [attendanceLockBusy, setAttendanceLockBusy] = useState(false);
+
+  useEffect(() => {
+    api
+      .get<{ locked: boolean }>("/participants/attendance/lock")
+      .then((r) => setAttendanceLocked(r.data.locked))
+      .catch(() => {});
+  }, []);
+
+  const toggleAttendanceLock = () => {
+    const next = !attendanceLocked;
+    setAttendanceLockBusy(true);
+    api
+      .put<{ locked: boolean }>("/participants/attendance/lock", { locked: next })
+      .then((r) => {
+        setAttendanceLocked(r.data.locked);
+        toast.success(
+          r.data.locked
+            ? "Attendance locked — no one can mark present/absent for any member until unlocked"
+            : "Attendance unlocked",
+        );
+      })
+      .catch((e) => toast.error(e?.response?.data?.detail ?? "Could not update attendance lock"))
+      .finally(() => setAttendanceLockBusy(false));
+  };
   const [weightEditPassword, setWeightEditPassword] = useState("");
   const [weightEditBusy, setWeightEditBusy] = useState(false);
   const [pendingActiveChange, setPendingActiveChange] = useState<
@@ -528,6 +558,24 @@ export default function Participants() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {canMarkAttendance && (
+            <Button
+              variant={attendanceLocked ? "danger" : "outline"}
+              size="sm"
+              onClick={toggleAttendanceLock}
+              disabled={attendanceLockBusy}
+              data-testid="toggle-attendance-lock-btn"
+              className="text-xs font-semibold"
+              title={
+                attendanceLocked
+                  ? "Attendance is locked for every member — click to unlock"
+                  : "Lock attendance for every participant, coach & manager, every team"
+              }
+            >
+              {attendanceLocked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5 text-gold" />}
+              {attendanceLocked ? "Unlock Attendance" : "Lock Attendance"}
+            </Button>
+          )}
           {view === "players" && canEdit && (
             <Button
               variant="outline"
@@ -587,6 +635,16 @@ export default function Participants() {
           )}
         </div>
       </div>
+
+      {attendanceLocked && (
+        <div
+          className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3.5 py-2.5 text-xs font-semibold text-red-300"
+          data-testid="attendance-locked-banner"
+        >
+          <Lock className="h-4 w-4 shrink-0" /> Attendance is locked — no one can mark participants or coaches/managers
+          present or absent until an organizer unlocks it above.
+        </div>
+      )}
 
       {/* VIEW TABS */}
       <div className="flex gap-2" data-testid="participants-view-tabs">
@@ -725,7 +783,7 @@ export default function Participants() {
                     </div>
 
                     <div className="inline-flex flex-col items-end shrink-0 gap-1">
-                      {(canMarkAttendance && !teamInactive(p.team_id)) ? (
+                      {(canMarkAttendance && !attendanceLocked && !teamInactive(p.team_id)) ? (
                         <button
                           onClick={() => toggleAttendance(p)}
                           data-testid={`attendance-toggle-mobile-${p.id}`}
@@ -1042,7 +1100,7 @@ export default function Participants() {
                       </TD>
                       <TD>
                         <div className="inline-flex flex-col items-start gap-1">
-                          {(canMarkAttendance && !teamInactive(p.team_id)) ? (
+                          {(canMarkAttendance && !attendanceLocked && !teamInactive(p.team_id)) ? (
                             <button
                               onClick={() => toggleAttendance(p)}
                               data-testid={`attendance-toggle-${p.id}`}
@@ -1262,7 +1320,7 @@ export default function Participants() {
                     </div>
 
                     <div className="inline-flex flex-col items-end shrink-0 gap-1">
-                      {canMarkAttendance ? (
+                      {canMarkAttendance && !attendanceLocked ? (
                         <button
                           onClick={() => toggleCoachAttendance(c)}
                           data-testid={`coach-attendance-toggle-mobile-${c.id}`}
@@ -1433,7 +1491,7 @@ export default function Participants() {
                       <TD className="text-xs text-slate-400">{c.email || "—"}</TD>
                       <TD>
                         <div className="inline-flex flex-col items-start gap-1">
-                          {canMarkAttendance ? (
+                          {canMarkAttendance && !attendanceLocked ? (
                             <button
                               onClick={() => toggleCoachAttendance(c)}
                               data-testid={`coach-attendance-toggle-${c.id}`}

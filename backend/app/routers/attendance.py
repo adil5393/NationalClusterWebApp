@@ -10,7 +10,12 @@ weigh-in. It never touches is_present/checked_in_at, and no weight limit is
 enforced anywhere — it doesn't affect match/pool/fixture eligibility or
 billing (see payments.py's _billable_members). Once a weight is saved, changing it again requires an admin password (same
 shape as _require_admin_password's un-mark-attendance gate) — only the
-first save is free."""
+first save is free.
+
+get/set_attendance_lock below is a third, organizer-wide switch: while on,
+set_attendance/set_coach_attendance refuse every change outright, for every
+participant/coach on every team, regardless of direction or admin password —
+see _require_attendance_unlocked."""
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -23,6 +28,51 @@ from ..ws import broadcast_roster_change_sync
 
 router = APIRouter(prefix="/api/participants", tags=["attendance"])
 coach_router = APIRouter(prefix="/api/coaches", tags=["attendance"])
+
+
+def _get_app_settings(db: Session) -> models.AppSettings:
+    settings_row = db.get(models.AppSettings, 1)
+    if not settings_row:
+        # Guards against a hand-seeded/older DB missing the migration's
+        # INSERT — never expected in practice, but cheaper than crashing.
+        settings_row = models.AppSettings(id=1)
+        db.add(settings_row)
+        db.commit()
+        db.refresh(settings_row)
+    return settings_row
+
+
+def _require_attendance_unlocked(db: Session) -> None:
+    """Blocks set_attendance/set_coach_attendance outright while the
+    organizer-wide Attendance Lock is on (models.AppSettings.attendance_locked)
+    — every member, every team, both directions (marking present OR
+    un-marking). Checked before _require_admin_password below, which still
+    applies on top of this once the lock is off."""
+    if _get_app_settings(db).attendance_locked:
+        raise HTTPException(423, "Attendance is currently locked by the organizers.")
+
+
+# Two path segments, not one — routers/participants.py (mounted at this
+# same /api/participants prefix, registered earlier in main.py) already
+# claims a bare PUT "/{participant_id}", and Starlette matches routes by
+# registration order across ALL routers sharing a prefix: a one-segment
+# "/attendance-lock" here would lose to that PUT and 422 as an invalid
+# participant id, no matter where in this file it's defined. Two literal
+# segments can't structurally collide with any "/{participant_id}/..."
+# pattern in this app. One switch for every participant AND coach/manager
+# at once (see set_attendance/set_coach_attendance below).
+@router.get("/attendance/lock", response_model=schemas.AttendanceLockRead)
+def get_attendance_lock(db: Session = Depends(get_db)):
+    return {"locked": _get_app_settings(db).attendance_locked}
+
+
+@router.put("/attendance/lock", response_model=schemas.AttendanceLockRead)
+def set_attendance_lock(payload: schemas.AttendanceLockUpdate, db: Session = Depends(get_db)):
+    settings_row = _get_app_settings(db)
+    settings_row.attendance_locked = payload.locked
+    db.commit()
+    return {"locked": settings_row.attendance_locked}
+
 
 def _require_admin_password(
     db: Session, password: "str | None", action: str = "mark a present member absent"
@@ -50,6 +100,7 @@ def _require_admin_password(
 
 @router.post("/{participant_id}/attendance", response_model=schemas.ParticipantRead)
 def set_attendance(participant_id: int, payload: schemas.AttendanceUpdate, db: Session = Depends(get_db)):
+    _require_attendance_unlocked(db)
     p = db.get(models.Participant, participant_id)
     if not p:
         raise HTTPException(404, "Participant not found")
@@ -121,6 +172,7 @@ def set_active(participant_id: int, payload: schemas.ActiveUpdate, db: Session =
 
 @coach_router.post("/{coach_id}/attendance", response_model=schemas.CoachRead)
 def set_coach_attendance(coach_id: int, payload: schemas.AttendanceUpdate, db: Session = Depends(get_db)):
+    _require_attendance_unlocked(db)
     c = db.get(models.Coach, coach_id)
     if not c:
         raise HTTPException(404, "Coach not found")

@@ -134,6 +134,14 @@ class RoomLookupStatusUpdate(BaseModel):
     disabled: bool
 
 
+class AttendanceLockRead(BaseModel):
+    locked: bool
+
+
+class AttendanceLockUpdate(BaseModel):
+    locked: bool
+
+
 class LastYearAwardEntry(ORMModel):
     age_group: str
     award: Literal["gold", "silver", "bronze"]
