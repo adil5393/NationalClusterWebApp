@@ -58,8 +58,46 @@ def _eligible_teams(db: Session, tournament: models.Tournament, round_: models.R
     return [t for t in teams if t.is_active]
 
 
-def _pool_dict(p: models.Pool) -> dict:
+def _team_index_map(db: Session, tournament_id: int, team_ids: list[int]) -> dict[int, str]:
+    if not team_ids:
+        return {}
+    return {
+        row.team_id: row.index_number
+        for row in db.query(models.TeamIndex)
+        .filter(models.TeamIndex.tournament_id == tournament_id, models.TeamIndex.team_id.in_(team_ids))
+        .all()
+        if row.index_number
+    }
+
+
+def _team_index_order_key(index_map: dict[int, str], team: models.Team):
+    """A numeric index sorts numerically; a non-numeric one (V1 allows any
+    text) still sorts as "indexed", just after every numeric one, by its own
+    text. A team with no index at all sorts last of all, by name — the same
+    deterministic fallback whether or not any indices have been set yet
+    (e.g. auto-create finalizes immediately, before any index exists)."""
+    idx = index_map.get(team.id)
+    if idx is None:
+        return (2, 0.0, team.name)
+    try:
+        return (0, float(idx), team.name)
+    except ValueError:
+        return (1, 0.0, idx)
+
+
+def _sorted_by_team_index(db: Session, tournament_id: int, teams: list[models.Team]) -> list[models.Team]:
+    """Teams sorted by their Team Index Number (models.TeamIndex) within one
+    tournament — used everywhere a pool's teams are listed OR paired (see
+    _generate_pool_matches below), so display order and round-robin pairing
+    both follow the organizer's own numbering instead of pool.teams'
+    incidental insertion order."""
+    index_map = _team_index_map(db, tournament_id, [t.id for t in teams])
+    return sorted(teams, key=lambda t: _team_index_order_key(index_map, t))
+
+
+def _pool_dict(p: models.Pool, db: Session) -> dict:
     n = len(p.teams)
+    ordered_teams = _sorted_by_team_index(db, p.tournament_id, p.teams)
     return {
         "id": p.id,
         "tournament_id": p.tournament_id,
@@ -70,7 +108,7 @@ def _pool_dict(p: models.Pool) -> dict:
         "match_count": len(p.matches),
         "expected_match_count": n * (n - 1) // 2,
         "is_valid": n == 0 or n >= MIN_POOL_SIZE,
-        "teams": [{"id": t.id, "name": t.name} for t in p.teams],
+        "teams": [{"id": t.id, "name": t.name} for t in ordered_teams],
     }
 
 
@@ -208,36 +246,8 @@ def _get_pool(db: Session, pool_id: int) -> models.Pool:
     return p
 
 
-def _pool_team_order_key(index_map: dict[int, str], team: models.Team):
-    """Sorts a pool's teams by their Team Index Number (see models.TeamIndex)
-    ahead of round-robin pairing, so "who plays who first" follows the
-    organizer's own numbering rather than pool.teams' incidental insertion
-    order. A numeric index sorts numerically; a non-numeric one (V1 allows
-    any text) still sorts as "indexed", just after every numeric one, by its
-    own text. A team with no index at all sorts last of all, by name — the
-    same deterministic fallback whether or not any indices have been set
-    yet (e.g. auto-create finalizes immediately, before any index exists)."""
-    idx = index_map.get(team.id)
-    if idx is None:
-        return (2, 0.0, team.name)
-    try:
-        return (0, float(idx), team.name)
-    except ValueError:
-        return (1, 0.0, idx)
-
-
 def _generate_pool_matches(db: Session, pool: models.Pool) -> int:
-    index_map = {
-        row.team_id: row.index_number
-        for row in db.query(models.TeamIndex)
-        .filter(
-            models.TeamIndex.tournament_id == pool.tournament_id,
-            models.TeamIndex.team_id.in_([t.id for t in pool.teams]),
-        )
-        .all()
-        if row.index_number
-    }
-    ordered_teams = sorted(pool.teams, key=lambda t: _pool_team_order_key(index_map, t))
+    ordered_teams = _sorted_by_team_index(db, pool.tournament_id, pool.teams)
     team_ids = [t.id for t in ordered_teams]
     pairs = round_robin_pairs(team_ids)
     for a, b in pairs:
@@ -262,7 +272,7 @@ def league_summary(tournament_id: int, round_id: int, db: Session = Depends(get_
     unassigned = [team for team in eligible if team.id not in assigned_map]
 
     pools = db.query(models.Pool).filter(models.Pool.round_id == round_id).order_by(models.Pool.name).all()
-    pool_summaries = [_pool_dict(p) for p in pools]
+    pool_summaries = [_pool_dict(p, db) for p in pools]
     all_valid = all(p["is_valid"] for p in pool_summaries)
     all_finalized = len(pool_summaries) > 0 and all(p["status"] == "finalized" for p in pool_summaries)
 
@@ -286,7 +296,7 @@ def league_summary(tournament_id: int, round_id: int, db: Session = Depends(get_
 def list_pools(tournament_id: int, round_id: int, db: Session = Depends(get_db)):
     _get_round(db, tournament_id, round_id)
     pools = db.query(models.Pool).filter(models.Pool.round_id == round_id).order_by(models.Pool.name).all()
-    return [_pool_dict(p) for p in pools]
+    return [_pool_dict(p, db) for p in pools]
 
 
 @router.post("/api/tournaments/{tournament_id}/rounds/{round_id}/pools", status_code=201)
@@ -309,12 +319,12 @@ def create_pool(tournament_id: int, round_id: int, payload: schemas.PoolCreate, 
 
     db.commit()
     db.refresh(pool)
-    return _pool_dict(pool)
+    return _pool_dict(pool, db)
 
 
 @router.get("/api/pools/{pool_id}")
 def get_pool(pool_id: int, db: Session = Depends(get_db)):
-    return _pool_dict(_get_pool(db, pool_id))
+    return _pool_dict(_get_pool(db, pool_id), db)
 
 
 @router.put("/api/pools/{pool_id}")
@@ -327,19 +337,7 @@ def update_pool(pool_id: int, payload: schemas.PoolUpdate, db: Session = Depends
         pool.name = name
     db.commit()
     db.refresh(pool)
-    return _pool_dict(pool)
-
-
-def _clear_team_index(db: Session, tournament_id: int, team_id: int) -> None:
-    """A Team Index Number only means something while a team is actually
-    seated in a pool (indexing happens AFTER assignment, from inside the
-    pool's own team list) — so once it leaves one, by the whole pool being
-    deleted or by being individually removed, its index for this tournament
-    resets rather than lingering stale. See models.TeamIndex /
-    routers/matches.py's team-index endpoints."""
-    db.query(models.TeamIndex).filter(
-        models.TeamIndex.tournament_id == tournament_id, models.TeamIndex.team_id == team_id
-    ).delete()
+    return _pool_dict(pool, db)
 
 
 @router.delete("/api/pools/{pool_id}", status_code=204)
@@ -348,8 +346,9 @@ def delete_pool(pool_id: int, db: Session = Depends(get_db)):
     started = [m for m in pool.matches if m.status != "SCHEDULED"]
     if started:
         raise HTTPException(409, f"Can't delete — {len(started)} match(es) in this pool have already started or finished")
-    for team in pool.teams:
-        _clear_team_index(db, pool.tournament_id, team.id)
+    # Team Index Number is a persistent identity, not this pool's — it stays
+    # on the team (models.TeamIndex) regardless of the pool it was set in
+    # being deleted, moved out of, or advanced past into a later round.
     db.delete(pool)
     db.commit()
 
@@ -388,7 +387,7 @@ def add_team_to_pool(pool_id: int, payload: schemas.PoolTeamAdd, db: Session = D
         pool.status = "draft"  # team list changed — stale fixtures need an explicit regenerate
     db.commit()
     db.refresh(pool)
-    return _pool_dict(pool)
+    return _pool_dict(pool, db)
 
 
 @router.delete("/api/pools/{pool_id}/teams/{team_id}", status_code=204)
@@ -399,7 +398,9 @@ def remove_team_from_pool(pool_id: int, team_id: int, db: Session = Depends(get_
     team = db.get(models.Team, team_id)
     if team in pool.teams:
         pool.teams.remove(team)
-        _clear_team_index(db, pool.tournament_id, team_id)
+        # Team Index Number stays with the team (models.TeamIndex) even
+        # after leaving this pool — it's a persistent identity, not reset
+        # by removal.
         if pool.status == "finalized":
             pool.status = "draft"
         db.commit()
@@ -413,8 +414,8 @@ def move_team_between_pools(pool_id: int, team_id: int, payload: schemas.PoolTea
     calls. Goes through the exact same checks as remove_team_from_pool (no
     started match in the source) and add_team_to_pool (destination not
     underway, eligibility, roster conflicts) — just as one atomic move.
-    Same as any other pool departure, the team's Team Index Number resets
-    (see _clear_team_index): its old pool's identity doesn't carry over."""
+    Team Index Number is untouched by the move — it's a persistent identity
+    (models.TeamIndex), not reset by which pool the team currently sits in."""
     from_pool = _get_pool(db, pool_id)
     to_pool = _get_pool(db, payload.to_pool_id)
     if to_pool.id == from_pool.id:
@@ -432,7 +433,6 @@ def move_team_between_pools(pool_id: int, team_id: int, payload: schemas.PoolTea
 
     tournament = db.get(models.Tournament, from_pool.tournament_id)
     from_pool.teams.remove(team)
-    _clear_team_index(db, from_pool.tournament_id, team_id)
     if from_pool.status == "finalized":
         from_pool.status = "draft"
 
@@ -443,7 +443,7 @@ def move_team_between_pools(pool_id: int, team_id: int, payload: schemas.PoolTea
     db.commit()
     db.refresh(from_pool)
     db.refresh(to_pool)
-    return {"from_pool": _pool_dict(from_pool), "to_pool": _pool_dict(to_pool)}
+    return {"from_pool": _pool_dict(from_pool, db), "to_pool": _pool_dict(to_pool, db)}
 
 
 # ---------- Finalize / generate fixtures ----------
@@ -469,7 +469,7 @@ def finalize_pool(pool_id: int, payload: schemas.FinalizePoolRequest, db: Sessio
     pool.status = "finalized"
     db.commit()
     db.refresh(pool)
-    d = _pool_dict(pool)
+    d = _pool_dict(pool, db)
     d["matches_created"] = created
     return d
 
@@ -522,14 +522,17 @@ def auto_create_pools(tournament_id: int, round_id: int, payload: schemas.AutoCr
         created_pools.append(pool)
 
     db.commit()
-    return {"preview": False, "pool_count": len(created_pools), "pools": [_pool_dict(p) for p in created_pools]}
+    return {"preview": False, "pool_count": len(created_pools), "pools": [_pool_dict(p, db) for p in created_pools]}
 
 
 # ---------- Matches ----------
 @router.get("/api/pools/{pool_id}/matches")
 def list_pool_matches(pool_id: int, db: Session = Depends(get_db)):
+    from .reports import _match_index_order_key  # local import: avoids a hard import-order dependency between routers
+
     pool = _get_pool(db, pool_id)
-    return [_match_dict(m, db) for m in pool.matches]
+    ordered_matches = sorted(pool.matches, key=_match_index_order_key)
+    return [_match_dict(m, db) for m in ordered_matches]
 
 
 @router.post("/api/pools/{pool_id}/generate-matches")
@@ -652,4 +655,4 @@ def resolve_pool_tiebreak(pool_id: int, payload: schemas.ResolveTiebreakRequest,
     _propagate_pool_qualifiers(db, pool)
     db.commit()
     db.refresh(pool)
-    return _pool_dict(pool)
+    return _pool_dict(pool, db)

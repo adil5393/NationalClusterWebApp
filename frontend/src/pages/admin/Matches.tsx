@@ -306,6 +306,22 @@ function canControlMatchFor(me: Me | null, canEdit: boolean, matchId: number): b
   return canEdit || (me?.assigned_match_ids?.includes(matchId) ?? false);
 }
 
+// Sorts matches by their manual Match index (m.match_index) — mirrors the
+// backend's own ordering exactly (routers/reports.py _match_index_order_key,
+// used everywhere a match list is shown): numeric index first ascending,
+// then a non-numeric one (V1 allows any text) by its own text, then an
+// unset index last of all, by id (creation order) — the same fallback
+// every match list used before match_index existed.
+function compareMatchIndex(a: MatchT, b: MatchT): number {
+  const rank = (m: MatchT) => (!m.match_index ? 2 : Number.isNaN(Number(m.match_index)) ? 1 : 0);
+  const ra = rank(a);
+  const rb = rank(b);
+  if (ra !== rb) return ra - rb;
+  if (ra === 0) return Number(a.match_index) - Number(b.match_index) || a.id - b.id;
+  if (ra === 1) return (a.match_index as string).localeCompare(b.match_index as string) || a.id - b.id;
+  return a.id - b.id;
+}
+
 function matchLabel(m: MatchT) {
   if (m.notes === "Bye") return `${m.team_a_name ?? m.team_b_name} — Bye`;
   const a =
@@ -1550,13 +1566,17 @@ export default function Matches() {
                     );
                     const collapsed = !expandedRounds.has(r.id);
                     const query = (roundSearch[r.id] ?? "").trim().toLowerCase();
-                    const filteredMatches = query
-                      ? r.matches.filter(
-                          (m) =>
-                            m.team_a_name?.toLowerCase().includes(query) ||
-                            m.team_b_name?.toLowerCase().includes(query),
-                        )
-                      : r.matches;
+                    const filteredMatches = (
+                      query
+                        ? r.matches.filter(
+                            (m) =>
+                              m.team_a_name?.toLowerCase().includes(query) ||
+                              m.team_b_name?.toLowerCase().includes(query),
+                          )
+                        : r.matches
+                    )
+                      .slice()
+                      .sort(compareMatchIndex);
 
                     return (
                       <div
@@ -4352,11 +4372,10 @@ function PoolDetailDialog({
   const [loading, setLoading] = useState(true);
   const [assignStaffMatch, setAssignStaffMatch] = useState<MatchT | null>(null);
 
-  // Team Index Number (models.TeamIndex) — only editable here, once a team
-  // is actually seated in a pool: setting one for a still-unassigned team is
-  // refused server-side, and it resets automatically the moment a team
-  // leaves this pool (individually removed, or the whole pool deleted —
-  // see routers/pools.py's _clear_team_index).
+  // Team Index Number (models.TeamIndex) — can only be SET here, while a
+  // team is currently seated in a pool (refused server-side otherwise), but
+  // once set it's a persistent identity: it stays with the team afterward
+  // regardless of pool moves, removal, or advancing into a later round.
   const [teamIndices, setTeamIndices] = useState<Record<number, string | null>>({});
   const loadTeamIndices = (tournamentId: number) => {
     api

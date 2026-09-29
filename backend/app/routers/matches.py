@@ -262,15 +262,14 @@ def set_team_index(
     tournament_id: int, team_id: int, payload: schemas.TeamIndexUpdate, db: Session = Depends(get_db)
 ):
     """Sets (or clears) one team's Team Index Number, persisted for this
-    tournament — see models.TeamIndex. Indexing only makes sense once a team
-    is actually seated in a pool (see routers/pools.py's _clear_team_index,
-    which resets this the moment a team leaves one, whether by removal or
-    the whole pool being deleted) — so setting a NON-EMPTY index is refused
-    for a team that isn't currently in any pool of this tournament, and must
-    be unique among its current poolmates (this is the team's identity
-    WITHIN that pool, not a tournament-wide number — two different pools can
-    happily reuse the same index). Clearing (index_number None/"") is always
-    allowed. V1: no format validation beyond that."""
+    tournament — see models.TeamIndex. A NON-EMPTY index can only be SET
+    while the team is currently seated in a pool (refused otherwise), and
+    must be unique among its current poolmates at that moment — but once
+    set, it's the team's own persistent identity: it stays attached to the
+    team as-is through anything that follows (moved to a different pool,
+    pushed into a new round via the bucket, its old pool deleted, ...).
+    Nothing clears or re-validates it automatically after this call. V1: no
+    format validation beyond the checks above."""
     t = db.get(models.Tournament, tournament_id)
     if not t:
         raise HTTPException(404, "Tournament not found")

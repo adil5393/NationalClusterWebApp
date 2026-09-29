@@ -100,6 +100,21 @@ def _team_idx(index_map: Dict[int, str], team_id: "int | None") -> str:
     return (index_map.get(team_id) if team_id else None) or "—"
 
 
+def _match_index_order_key(m: models.Match):
+    """Sorts matches by their manual Match index (models.Match.match_index)
+    ahead of creation order — a numeric index sorts numerically, a
+    non-numeric one (V1 allows any text) sorts after every numeric one by
+    its own text, and an unset index sorts last of all, by match id (the
+    same fallback the fixtures table always used before match_index
+    existed)."""
+    if not m.match_index:
+        return (2, 0.0, m.id)
+    try:
+        return (0, float(m.match_index), m.id)
+    except ValueError:
+        return (1, 0.0, m.match_index)
+
+
 def _render_round_sheet(
     ws: Worksheet,
     round_: models.Round,
@@ -110,7 +125,9 @@ def _render_round_sheet(
     """Builds a luxury executive layout for a single competition round."""
     fmt = _round_format(round_)
     is_league = fmt == "LEAGUE"
-    matches = sorted(round_.matches, key=lambda m: ((m.pool.name if m.pool else ""), m.id))
+    matches = sorted(
+        round_.matches, key=lambda m: ((m.pool.name if m.pool else ""), _match_index_order_key(m))
+    )
     index_map = _team_index_map(db, tournament.id)
     
     total_matches = len(matches)

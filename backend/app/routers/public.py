@@ -480,11 +480,14 @@ def public_tournaments(db: Session = Depends(get_db)):
 
 
 def _public_pool_dict(p: models.Pool, db: Session) -> dict:
+    from .pools import _sorted_by_team_index  # local import: avoids a hard import-order dependency between routers
+
     # A cancelled match needs no result to count as resolved (same rule as
     # the organizer-side readiness check in routers/matches.py
     # _compute_advancing_teams) — so a pool with one cancelled match and the
     # rest completed is done, not stuck "in progress" forever.
     pending_count = sum(1 for m in p.matches if m.status not in ("COMPLETED", "CANCELLED"))
+    ordered_teams = _sorted_by_team_index(db, p.tournament_id, p.teams)
     return {
         "id": p.id,
         "name": p.name,
@@ -493,7 +496,8 @@ def _public_pool_dict(p: models.Pool, db: Session) -> dict:
         "match_count": len(p.matches),
         "pending_count": pending_count,
         "teams": [
-            {"id": t.id, "name": t.name, "index_number": _team_index(db, p.tournament_id, t.id)} for t in p.teams
+            {"id": t.id, "name": t.name, "index_number": _team_index(db, p.tournament_id, t.id)}
+            for t in ordered_teams
         ],
     }
 
@@ -529,14 +533,17 @@ def public_bracket(tournament_id: int, db: Session = Depends(get_db)):
 
 @router.get("/pools/{pool_id}")
 def public_pool_detail(pool_id: int, db: Session = Depends(get_db)):
+    from .reports import _match_index_order_key  # local import: avoids a hard import-order dependency between routers
+
     p = db.get(models.Pool, pool_id)
     if not p:
         raise HTTPException(404, "Pool not found")
+    ordered_matches = sorted(p.matches, key=_match_index_order_key)
     return {
         **_public_pool_dict(p, db),
         "tournament_id": p.tournament_id,
         "round_id": p.round_id,
-        "matches": [_public_match_dict(m, db) for m in p.matches],
+        "matches": [_public_match_dict(m, db) for m in ordered_matches],
     }
 
 
