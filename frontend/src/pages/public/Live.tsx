@@ -22,6 +22,13 @@ const NEUTRAL = "#334155";
 // elsewhere on this page.
 const ADVANCE = "#10b981";
 
+// A team's manually-assigned Team Index Number (its identity within the
+// pool it's seated in — see backend/app/models.TeamIndex) is the ONLY team
+// numbering this page shows; there's no positional/array-order fallback.
+function teamLabel(name: string, index?: string | null): string {
+  return index ? `#${index} ${name}` : name;
+}
+
 export interface MatchT {
   id: number;
   tournament_id: number;
@@ -31,8 +38,11 @@ export interface MatchT {
   round_name?: string | null;
   team_a_id?: number | null;
   team_a_name?: string | null;
+  team_a_index?: string | null;
   team_b_id?: number | null;
   team_b_name?: string | null;
+  team_b_index?: string | null;
+  match_index?: string | null;
   source_match_a_id?: number | null;
   source_match_b_id?: number | null;
   venue_name?: string | null;
@@ -52,7 +62,7 @@ interface PoolSummaryT {
   team_count: number;
   match_count: number;
   pending_count: number;
-  teams: { id: number; name: string }[];
+  teams: { id: number; name: string; index_number?: string | null }[];
 }
 
 interface RoundT {
@@ -197,8 +207,8 @@ function LiveMatchCard({ initial }: { initial: MatchT }) {
       </div>
 
       <div className="mt-3 space-y-1.5">
-        <ScoreLine label={m.team_a_name ?? "TBD"} value={m.team_a_score} leading={leader === "a"} color={RED} />
-        <ScoreLine label={m.team_b_name ?? "TBD"} value={m.team_b_score} leading={leader === "b"} color={BLUE} />
+        <ScoreLine label={teamLabel(m.team_a_name ?? "TBD", m.team_a_index)} value={m.team_a_score} leading={leader === "a"} color={RED} />
+        <ScoreLine label={teamLabel(m.team_b_name ?? "TBD", m.team_b_index)} value={m.team_b_score} leading={leader === "b"} color={BLUE} />
       </div>
     </div>
   );
@@ -504,7 +514,11 @@ export function BracketMatchCard({
           )}
           title={m.team_a_name ?? m.team_b_name ?? "Bye"}
         >
-          {m.team_a_name ?? m.team_b_name}
+          {m.team_a_name
+            ? teamLabel(m.team_a_name, m.team_a_index)
+            : m.team_b_name
+            ? teamLabel(m.team_b_name, m.team_b_index)
+            : null}
         </span>
         <span
           className={cn(
@@ -567,7 +581,7 @@ export function BracketMatchCard({
             style={{ color: RED }}
             title={m.team_a_name ?? "TBD"}
           >
-            {m.team_a_name ?? "TBD"}
+            {teamLabel(m.team_a_name ?? "TBD", m.team_a_index)}
           </span>
           {(live || done) && (
             <span
@@ -601,7 +615,7 @@ export function BracketMatchCard({
             style={{ color: BLUE }}
             title={m.team_b_name ?? "TBD"}
           >
-            {m.team_b_name ?? "TBD"}
+            {teamLabel(m.team_b_name ?? "TBD", m.team_b_index)}
           </span>
           {(live || done) && (
             <span
@@ -681,7 +695,7 @@ export function BracketMatchCard({
                   LEADING
                 </span>
               )}
-              <span className="truncate" title={m.team_a_name ?? "TBD"}>{m.team_a_name ?? "TBD"}</span>
+              <span className="truncate" title={m.team_a_name ?? "TBD"}>{teamLabel(m.team_a_name ?? "TBD", m.team_a_index)}</span>
             </span>
             {(live || done) && (
               <span
@@ -715,7 +729,7 @@ export function BracketMatchCard({
                   LEADING
                 </span>
               )}
-              <span className="truncate" title={m.team_b_name ?? "TBD"}>{m.team_b_name ?? "TBD"}</span>
+              <span className="truncate" title={m.team_b_name ?? "TBD"}>{teamLabel(m.team_b_name ?? "TBD", m.team_b_index)}</span>
             </span>
             {(live || done) && (
               <span
@@ -808,7 +822,7 @@ export function BracketMatchCard({
           {live && m.team_a_score > m.team_b_score && (
             <Flag className="h-2.5 w-2.5 shrink-0 text-emerald-400" />
           )}
-          <span className="truncate" title={m.team_a_name ?? "TBD"}>{m.team_a_name ?? "TBD"}</span>
+          <span className="truncate" title={m.team_a_name ?? "TBD"}>{teamLabel(m.team_a_name ?? "TBD", m.team_a_index)}</span>
         </span>
         {(live || done) && (
           <span
@@ -849,7 +863,7 @@ export function BracketMatchCard({
           {live && m.team_b_score > m.team_a_score && (
             <Flag className="h-2.5 w-2.5 shrink-0 text-emerald-400" />
           )}
-          <span className="truncate" title={m.team_b_name ?? "TBD"}>{m.team_b_name ?? "TBD"}</span>
+          <span className="truncate" title={m.team_b_name ?? "TBD"}>{teamLabel(m.team_b_name ?? "TBD", m.team_b_index)}</span>
         </span>
         {(live || done) && (
           <span
@@ -904,7 +918,11 @@ export function MatchRosterDialog({ matchId, onClose }: { matchId: number; onClo
     <Dialog
       open
       onClose={onClose}
-      title={detail ? `${detail.team_a_name ?? "TBD"} vs ${detail.team_b_name ?? "TBD"}` : "Match Details"}
+      title={
+        detail
+          ? `${teamLabel(detail.team_a_name ?? "TBD", detail.team_a_index)} vs ${teamLabel(detail.team_b_name ?? "TBD", detail.team_b_index)}`
+          : "Match Details"
+      }
       className="max-w-2xl"
       testId="public-match-roster-dialog"
     >
@@ -918,8 +936,8 @@ export function MatchRosterDialog({ matchId, onClose }: { matchId: number; onClo
             {detail.scheduled_at && <span>{formatDate(detail.scheduled_at)}</span>}
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <RosterColumn name={detail.team_a_name ?? "Team A"} color={RED} roster={detail.team_a_roster} />
-            <RosterColumn name={detail.team_b_name ?? "Team B"} color={BLUE} roster={detail.team_b_roster} />
+            <RosterColumn name={teamLabel(detail.team_a_name ?? "Team A", detail.team_a_index)} color={RED} roster={detail.team_a_roster} />
+            <RosterColumn name={teamLabel(detail.team_b_name ?? "Team B", detail.team_b_index)} color={BLUE} roster={detail.team_b_roster} />
           </div>
         </div>
       )}
@@ -1320,7 +1338,7 @@ function PoolsSegment({
                   </span>
                 </div>
                 <ol className="mt-2.5 space-y-1 text-xs text-slate-300">
-                  {p.teams.map((t, i) => {
+                  {p.teams.map((t) => {
                     const isTeamActive = highlightedTeamId === t.id;
                     return (
                       <li
@@ -1342,7 +1360,7 @@ function PoolsSegment({
                             : "hover:bg-white/5 hover:text-white",
                         )}
                       >
-                        {i + 1}. {t.name}
+                        {t.index_number ? `#${t.index_number} ${t.name}` : t.name}
                       </li>
                     );
                   })}
