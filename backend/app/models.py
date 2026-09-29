@@ -326,6 +326,27 @@ class TeamDisqualification(TimestampMixin, Base):
     tournament = relationship("Tournament")
 
 
+class TeamIndex(TimestampMixin, Base):
+    """A manually-assigned secondary identifier for one team within one
+    Tournament — e.g. a draw/seed number printed on brackets or pool sheets,
+    independent of Team.name/school_code. Set once, persists across every
+    round of that tournament (not re-entered per round) — see
+    routers/matches.py's team-index endpoints. A team can carry a different
+    index in a different tournament (a school entering two age groups isn't
+    forced to share one number across both). Editable only while
+    Tournament.indices_locked is off. V1: index_number is free text, no
+    uniqueness or format validation."""
+    __tablename__ = "team_indices"
+    __table_args__ = (UniqueConstraint("tournament_id", "team_id", name="uq_team_index"),)
+    id = Column(Integer, primary_key=True)
+    tournament_id = Column(Integer, ForeignKey("tournaments.id", ondelete="CASCADE"), nullable=False)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    index_number = Column(String(20))
+
+    team = relationship("Team")
+    tournament = relationship("Tournament")
+
+
 class Participant(TimestampMixin, Base):
     __tablename__ = "participants"
     id = Column(Integer, primary_key=True)
@@ -1240,6 +1261,12 @@ class Tournament(TimestampMixin, Base):
     # never used Generate Bracket (built the old way, plain POST /rounds) —
     # treated like MANUAL everywhere this is checked.
     bracket_mode = Column(String(10))
+    # Freezes every team index number (TeamIndex, below) and match index
+    # (Match.match_index) in THIS tournament once on — see routers/matches.py
+    # get/set_indices_lock. Locking needs no password; unlocking does (same
+    # "protective direction is free, risky direction needs a password" shape
+    # as attendance.py's _require_admin_password). V1: no other validation.
+    indices_locked = Column(Boolean, nullable=False, default=False, server_default="false")
 
     rounds = relationship(
         "Round", back_populates="tournament", cascade="all, delete-orphan", order_by="Round.sequence"
@@ -1441,6 +1468,14 @@ class Match(TimestampMixin, Base):
     started_at = Column(DateTime(timezone=True))
     ended_at = Column(DateTime(timezone=True))
     notes = Column(Text)
+    # A manually-assigned secondary identifier for this one match — e.g. a
+    # draw sheet's match number, independent of the auto-computed
+    # match_number (matches.py _match_number, this match's position within
+    # its round). Works for both a KNOCKOUT match and a LEAGUE/pool match —
+    # see routers/matches.py's set_match_index. Editable only while
+    # this match's Tournament.indices_locked is off. V1: free text, no
+    # uniqueness or format validation.
+    match_index = Column(String(20))
 
     tournament = relationship("Tournament")
     round = relationship("Round", back_populates="matches", foreign_keys=[round_id])

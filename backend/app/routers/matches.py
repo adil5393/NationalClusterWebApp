@@ -12,6 +12,7 @@ from sqlalchemy import func, update
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
+from ..auth_utils import verify_password
 from ..database import get_db
 from ..security import require_auth
 from ..ws import broadcast_match_event_sync
@@ -86,6 +87,7 @@ def _match_dict(m: models.Match, db: Session, number: int | None = None) -> dict
         "started_at": m.started_at.isoformat() if m.started_at else None,
         "ended_at": m.ended_at.isoformat() if m.ended_at else None,
         "notes": m.notes,
+        "match_index": m.match_index,
         "assigned_users": [{"id": u.id, "username": u.username, "full_name": u.full_name} for u in m.assigned_users],
     }
 
@@ -114,6 +116,7 @@ def _tournament_dict(t: models.Tournament, db: Session, with_rounds: bool = Fals
         "min_present_players": t.min_present_players,
         "league_advance_count": t.league_advance_count,
         "bracket_mode": t.bracket_mode,
+        "indices_locked": t.indices_locked,
         "round_count": len(t.rounds),
         "match_count": sum(len(r.matches) for r in t.rounds),
     }
@@ -213,6 +216,152 @@ def _check_team_playable(db: Session, team_id: int, tournament: models.Tournamen
     reason = _team_unplayable_reason(db, team, tournament)
     if reason:
         raise HTTPException(400, f"{reason} — can't be scheduled")
+
+
+def _require_indices_unlocked(tournament: models.Tournament) -> None:
+    """Blocks Team Index Number / Match index edits outright while this
+    tournament's Indices Lock is on (models.Tournament.indices_locked) —
+    see set_team_index/set_match_index/set_indices_lock below."""
+    if tournament.indices_locked:
+        raise HTTPException(423, "Team/match indices are currently locked for this tournament.")
+
+
+def _require_admin_password_for_unlock(db: Session, password: "str | None") -> None:
+    """Unlocking the Indices Lock needs an admin account's password — same
+    shape as attendance.py's _require_admin_password (locking itself, the
+    "safe" direction, is free)."""
+    if not password:
+        raise HTTPException(401, "Admin password is required to unlock indices")
+    admins = (
+        db.query(models.OrganizerUser)
+        .filter(models.OrganizerUser.is_active.is_(True), models.OrganizerUser.is_admin.is_(True))
+        .all()
+    )
+    if not any(verify_password(password, u.password_hash) for u in admins):
+        raise HTTPException(401, "Incorrect admin password")
+
+
+@router.get("/api/tournaments/{tournament_id}/team-indices")
+def list_team_indices(tournament_id: int, db: Session = Depends(get_db)):
+    """Every team's Team Index Number for this tournament (V1: every team in
+    the system, not just ones currently eligible/entered — no validation
+    scopes this list; see models.TeamIndex). Null index_number means unset."""
+    t = db.get(models.Tournament, tournament_id)
+    if not t:
+        raise HTTPException(404, "Tournament not found")
+    existing = {
+        row.team_id: row.index_number
+        for row in db.query(models.TeamIndex).filter(models.TeamIndex.tournament_id == tournament_id).all()
+    }
+    teams = db.query(models.Team).order_by(models.Team.name).all()
+    return [{"team_id": team.id, "team_name": team.name, "index_number": existing.get(team.id)} for team in teams]
+
+
+@router.put("/api/tournaments/{tournament_id}/team-indices/{team_id}")
+def set_team_index(
+    tournament_id: int, team_id: int, payload: schemas.TeamIndexUpdate, db: Session = Depends(get_db)
+):
+    """Sets (or clears) one team's Team Index Number, persisted for this
+    tournament — see models.TeamIndex. Indexing only makes sense once a team
+    is actually seated in a pool (see routers/pools.py's _clear_team_index,
+    which resets this the moment a team leaves one, whether by removal or
+    the whole pool being deleted) — so setting a NON-EMPTY index is refused
+    for a team that isn't currently in any pool of this tournament, and must
+    be unique among its current poolmates (this is the team's identity
+    WITHIN that pool, not a tournament-wide number — two different pools can
+    happily reuse the same index). Clearing (index_number None/"") is always
+    allowed. V1: no format validation beyond that."""
+    t = db.get(models.Tournament, tournament_id)
+    if not t:
+        raise HTTPException(404, "Tournament not found")
+    _require_indices_unlocked(t)
+    team = db.get(models.Team, team_id)
+    if not team:
+        raise HTTPException(404, "Team not found")
+    if payload.index_number:
+        pools_here = [p for p in team.pools if p.tournament_id == tournament_id]
+        if not pools_here:
+            raise HTTPException(400, f"{team.name} isn't assigned to a pool in this tournament yet")
+        teammate_ids = {mate.id for p in pools_here for mate in p.teams if mate.id != team_id}
+        if teammate_ids:
+            clash = (
+                db.query(models.TeamIndex)
+                .filter(
+                    models.TeamIndex.tournament_id == tournament_id,
+                    models.TeamIndex.team_id.in_(teammate_ids),
+                    models.TeamIndex.index_number == payload.index_number,
+                )
+                .first()
+            )
+            if clash:
+                clash_team = db.get(models.Team, clash.team_id)
+                raise HTTPException(
+                    409,
+                    f'Index "{payload.index_number}" is already used by '
+                    f"{clash_team.name if clash_team else 'another team'} in this pool",
+                )
+
+    row = (
+        db.query(models.TeamIndex)
+        .filter(models.TeamIndex.tournament_id == tournament_id, models.TeamIndex.team_id == team_id)
+        .first()
+    )
+    if not row:
+        row = models.TeamIndex(tournament_id=tournament_id, team_id=team_id)
+        db.add(row)
+    row.index_number = payload.index_number
+    db.commit()
+    return {"team_id": team_id, "index_number": row.index_number}
+
+
+@router.put("/api/matches/{match_id}/index")
+def set_match_index(match_id: int, payload: schemas.MatchIndexUpdate, db: Session = Depends(get_db)):
+    """Sets (or clears) one match's manual index — works the same for a
+    KNOCKOUT match or a LEAGUE/pool match. A non-empty index must be unique
+    among every OTHER match in the same Round (clearing is always allowed).
+    V1: no format validation beyond that."""
+    m = db.get(models.Match, match_id)
+    if not m:
+        raise HTTPException(404, "Match not found")
+    _require_indices_unlocked(m.tournament)
+    if payload.match_index:
+        clash = (
+            db.query(models.Match)
+            .filter(
+                models.Match.round_id == m.round_id,
+                models.Match.id != m.id,
+                models.Match.match_index == payload.match_index,
+            )
+            .first()
+        )
+        if clash:
+            raise HTTPException(409, f"Index \"{payload.match_index}\" is already used by another match in this round")
+    m.match_index = payload.match_index
+    db.commit()
+    db.refresh(m)
+    return _match_dict(m, db)
+
+
+@router.get("/api/tournaments/{tournament_id}/indices-lock")
+def get_indices_lock(tournament_id: int, db: Session = Depends(get_db)):
+    t = db.get(models.Tournament, tournament_id)
+    if not t:
+        raise HTTPException(404, "Tournament not found")
+    return {"locked": t.indices_locked}
+
+
+@router.put("/api/tournaments/{tournament_id}/indices-lock")
+def set_indices_lock(tournament_id: int, payload: schemas.IndicesLockUpdate, db: Session = Depends(get_db)):
+    """Locking is free; unlocking needs an admin password (same shape as
+    attendance.py's attendance lock) — see _require_admin_password_for_unlock."""
+    t = db.get(models.Tournament, tournament_id)
+    if not t:
+        raise HTTPException(404, "Tournament not found")
+    if not payload.locked:
+        _require_admin_password_for_unlock(db, payload.admin_password)
+    t.indices_locked = payload.locked
+    db.commit()
+    return {"locked": t.indices_locked}
 
 
 def _propagate_winner(db: Session, match: models.Match) -> None:
@@ -872,13 +1021,17 @@ def _compute_advancing_teams(db: Session, round_: models.Round) -> dict:
     if not matches:
         raise HTTPException(400, "This round has no matches yet")
     incomplete = [m for m in matches if m.status not in ("COMPLETED", "CANCELLED")]
-    ready = not incomplete
+    ready = not incomplete  # "every match in the round is done" — informational only now
+    # A winner is pullable the moment ITS OWN match decides one, independent
+    # of any sibling match still being played — pulling into the bucket is
+    # per-match, not gated on the whole round finishing (mirrors LEAGUE's
+    # per-pool readiness above). `ready`/`blocking` stay as a "how much of
+    # the round is left" signal for the UI, not a pull gate.
     teams = []
-    if ready:
-        for m in matches:
-            if m.winner_team_id:
-                team = db.get(models.Team, m.winner_team_id)
-                teams.append({"id": m.winner_team_id, "name": team.name if team else None})
+    for m in matches:
+        if m.winner_team_id:
+            team = db.get(models.Team, m.winner_team_id)
+            teams.append({"id": m.winner_team_id, "name": team.name if team else None})
     return {
         "round_id": round_.id,
         "format": "KNOCKOUT",
@@ -886,7 +1039,7 @@ def _compute_advancing_teams(db: Session, round_: models.Round) -> dict:
         "blocking": None if ready else f"{len(incomplete)} match(es) still in progress",
         "has_unresolved_ties": False,
         "pools": None,
-        "teams": teams if ready else None,
+        "teams": teams,
     }
 
 

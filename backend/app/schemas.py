@@ -1387,6 +1387,22 @@ class TournamentUpdate(BaseModel):
         return v
 
 
+# --- Team Index Number / Match index (routers/matches.py) — V1, no validation ---
+class TeamIndexUpdate(BaseModel):
+    index_number: Optional[str] = None
+
+
+class MatchIndexUpdate(BaseModel):
+    match_index: Optional[str] = None
+
+
+class IndicesLockUpdate(BaseModel):
+    locked: bool
+    # Required (and checked) only when locked=False — same "locking is free,
+    # unlocking needs a password" shape as attendance.py's attendance lock.
+    admin_password: Optional[str] = None
+
+
 class RoundCreate(BaseModel):
     name: str
     sequence: int = 0
@@ -1576,6 +1592,10 @@ class PoolUpdate(BaseModel):
 
 class PoolTeamAdd(BaseModel):
     team_id: int
+
+
+class PoolTeamMove(BaseModel):
+    to_pool_id: int
 
 
 class AutoCreatePoolsRequest(BaseModel):

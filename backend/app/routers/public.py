@@ -416,6 +416,21 @@ def _public_team_name(db: Session, team_id):
     return t.name if t else None
 
 
+def _team_index(db: Session, tournament_id: "int | None", team_id: "int | None") -> "str | None":
+    """A team's manual Team Index Number for one tournament (models.TeamIndex)
+    — this IS the public-facing team identifier wherever a pool/match lists
+    teams (see _public_pool_dict/_public_match_dict below); nothing here
+    ever falls back to a positional/array-index counter."""
+    if not tournament_id or not team_id:
+        return None
+    row = (
+        db.query(models.TeamIndex)
+        .filter(models.TeamIndex.tournament_id == tournament_id, models.TeamIndex.team_id == team_id)
+        .first()
+    )
+    return row.index_number if row else None
+
+
 def _public_match_dict(m: models.Match, db: Session) -> dict:
     venue = db.get(models.Venue, m.venue_id) if m.venue_id else None
     return {
@@ -430,8 +445,11 @@ def _public_match_dict(m: models.Match, db: Session) -> dict:
         "pool_name": m.pool.name if m.pool else None,
         "team_a_id": m.team_a_id,
         "team_a_name": _public_team_name(db, m.team_a_id),
+        "team_a_index": _team_index(db, m.tournament_id, m.team_a_id),
         "team_b_id": m.team_b_id,
         "team_b_name": _public_team_name(db, m.team_b_id),
+        "team_b_index": _team_index(db, m.tournament_id, m.team_b_id),
+        "match_index": m.match_index,
         "source_match_a_id": m.source_match_a_id,
         "source_match_b_id": m.source_match_b_id,
         "source_pool_a_name": m.source_pool_a.name if m.source_pool_a else None,
@@ -461,7 +479,7 @@ def public_tournaments(db: Session = Depends(get_db)):
     return [{"id": t.id, "name": t.name, "sport": t.sport, "status": t.status} for t in rows]
 
 
-def _public_pool_dict(p: models.Pool) -> dict:
+def _public_pool_dict(p: models.Pool, db: Session) -> dict:
     # A cancelled match needs no result to count as resolved (same rule as
     # the organizer-side readiness check in routers/matches.py
     # _compute_advancing_teams) — so a pool with one cancelled match and the
@@ -474,7 +492,9 @@ def _public_pool_dict(p: models.Pool) -> dict:
         "team_count": len(p.teams),
         "match_count": len(p.matches),
         "pending_count": pending_count,
-        "teams": [{"id": t.id, "name": t.name} for t in p.teams],
+        "teams": [
+            {"id": t.id, "name": t.name, "index_number": _team_index(db, p.tournament_id, t.id)} for t in p.teams
+        ],
     }
 
 
@@ -500,7 +520,7 @@ def public_bracket(tournament_id: int, db: Session = Depends(get_db)):
                 # Knockout tree matches only here — pool/league matches live under
                 # this round's "pools" instead, each with its own round-robin set.
                 "matches": [_public_match_dict(m, db) for m in r.matches if m.match_type == "KNOCKOUT"],
-                "pools": [_public_pool_dict(p) for p in r.pools],
+                "pools": [_public_pool_dict(p, db) for p in r.pools],
             }
             for r in t.rounds
         ],
@@ -513,7 +533,7 @@ def public_pool_detail(pool_id: int, db: Session = Depends(get_db)):
     if not p:
         raise HTTPException(404, "Pool not found")
     return {
-        **_public_pool_dict(p),
+        **_public_pool_dict(p, db),
         "tournament_id": p.tournament_id,
         "round_id": p.round_id,
         "matches": [_public_match_dict(m, db) for m in p.matches],

@@ -207,9 +207,15 @@ def pull_into_bucket(bucket_id: int, payload: schemas.BucketPullRequest, db: Ses
         for tid in team_ids:
             db.add(models.BucketTeam(bucket_id=bucket.id, team_id=tid, source_pool_id=payload.pool_id, seed_rank=rank_by_team.get(tid)))
     else:
-        if not advancing["ready"]:
-            raise HTTPException(409, advancing["blocking"] or "This round isn't finished yet")
+        # Per-match, not per-round: a winner is pullable the moment ITS match
+        # decides one, even while sibling matches in the same round are
+        # still ongoing/unscored — advancing["teams"] is already only the
+        # matches that HAVE a winner_team_id set (see
+        # matches._compute_advancing_teams), so there's nothing left to
+        # gate on here.
         available = {row["id"] for row in (advancing["teams"] or [])}
+        if not available:
+            raise HTTPException(409, advancing["blocking"] or "No match in this round has a winner yet")
         if any(tid not in available for tid in team_ids):
             raise HTTPException(400, "team_ids must be current winners of this round")
         already = {e.team_id for e in bucket.entries}

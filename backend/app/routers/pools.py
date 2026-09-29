@@ -301,12 +301,26 @@ def update_pool(pool_id: int, payload: schemas.PoolUpdate, db: Session = Depends
     return _pool_dict(pool)
 
 
+def _clear_team_index(db: Session, tournament_id: int, team_id: int) -> None:
+    """A Team Index Number only means something while a team is actually
+    seated in a pool (indexing happens AFTER assignment, from inside the
+    pool's own team list) — so once it leaves one, by the whole pool being
+    deleted or by being individually removed, its index for this tournament
+    resets rather than lingering stale. See models.TeamIndex /
+    routers/matches.py's team-index endpoints."""
+    db.query(models.TeamIndex).filter(
+        models.TeamIndex.tournament_id == tournament_id, models.TeamIndex.team_id == team_id
+    ).delete()
+
+
 @router.delete("/api/pools/{pool_id}", status_code=204)
 def delete_pool(pool_id: int, db: Session = Depends(get_db)):
     pool = _get_pool(db, pool_id)
     started = [m for m in pool.matches if m.status != "SCHEDULED"]
     if started:
         raise HTTPException(409, f"Can't delete — {len(started)} match(es) in this pool have already started or finished")
+    for team in pool.teams:
+        _clear_team_index(db, pool.tournament_id, team.id)
     db.delete(pool)
     db.commit()
 
@@ -356,9 +370,51 @@ def remove_team_from_pool(pool_id: int, team_id: int, db: Session = Depends(get_
     team = db.get(models.Team, team_id)
     if team in pool.teams:
         pool.teams.remove(team)
+        _clear_team_index(db, pool.tournament_id, team_id)
         if pool.status == "finalized":
             pool.status = "draft"
         db.commit()
+
+
+@router.post("/api/pools/{pool_id}/teams/{team_id}/move")
+def move_team_between_pools(pool_id: int, team_id: int, payload: schemas.PoolTeamMove, db: Session = Depends(get_db)):
+    """Switches a team from one pool straight into another in the same
+    round — auto-created pools land teams randomly, so this is the fix-up
+    for "wrong pool" without having to remove-then-re-add as two separate
+    calls. Goes through the exact same checks as remove_team_from_pool (no
+    started match in the source) and add_team_to_pool (destination not
+    underway, eligibility, roster conflicts) — just as one atomic move.
+    Same as any other pool departure, the team's Team Index Number resets
+    (see _clear_team_index): its old pool's identity doesn't carry over."""
+    from_pool = _get_pool(db, pool_id)
+    to_pool = _get_pool(db, payload.to_pool_id)
+    if to_pool.id == from_pool.id:
+        raise HTTPException(400, "Team is already in this pool")
+    if to_pool.round_id != from_pool.round_id:
+        raise HTTPException(400, "Can only move a team to another pool in the same round")
+
+    team = db.get(models.Team, team_id)
+    if not team or team not in from_pool.teams:
+        raise HTTPException(404, "Team not found in the source pool")
+    if any(m.status != "SCHEDULED" for m in from_pool.matches if m.team_a_id == team_id or m.team_b_id == team_id):
+        raise HTTPException(409, "This team has a match already underway or finished in the source pool")
+    if any(m.status != "SCHEDULED" for m in to_pool.matches):
+        raise HTTPException(409, "Destination pool has matches already underway — remove/reschedule them before changing teams")
+
+    tournament = db.get(models.Tournament, from_pool.tournament_id)
+    from_pool.teams.remove(team)
+    _clear_team_index(db, from_pool.tournament_id, team_id)
+    if from_pool.status == "finalized":
+        from_pool.status = "draft"
+
+    _add_teams_to_pool(db, tournament, to_pool, [team_id])
+    if to_pool.status == "finalized":
+        to_pool.status = "draft"
+
+    db.commit()
+    db.refresh(from_pool)
+    db.refresh(to_pool)
+    return {"from_pool": _pool_dict(from_pool), "to_pool": _pool_dict(to_pool)}
 
 
 # ---------- Finalize / generate fixtures ----------

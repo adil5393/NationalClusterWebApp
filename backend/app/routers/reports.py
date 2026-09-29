@@ -18,7 +18,6 @@ from sqlalchemy.orm import Session
 
 from .. import models
 from ..database import get_db
-from .matches import _match_number
 from ..excel_styler import (
     ALIGN_CENTER,
     ALIGN_HEADER_CENTER,
@@ -81,23 +80,45 @@ def _compute_pool_standings(pool: models.Pool) -> list[dict]:
     return compute_standings(pool)
 
 
+def _team_index_map(db: Session, tournament_id: int) -> Dict[int, str]:
+    """team_id -> Team Index Number (models.TeamIndex) for one tournament,
+    fetched once per report render. This IS the team identifier these
+    reports show from here on — the old auto-numbered "M-<n>" match label
+    and any positional team ordering are gone; a team/match with no manual
+    index set just shows "—", it never falls back to one."""
+    return {
+        row.team_id: row.index_number
+        for row in db.query(models.TeamIndex).filter(models.TeamIndex.tournament_id == tournament_id).all()
+        if row.index_number
+    }
+
+
+def _team_idx(index_map: Dict[int, str], team_id: "int | None") -> str:
+    """A team's Team Index Number for one of these reports' own INDEX
+    columns — never blended into the name cell (see _render_round_sheet's
+    TEAM INDEX / A INDEX / B INDEX columns)."""
+    return (index_map.get(team_id) if team_id else None) or "—"
+
+
 def _render_round_sheet(
     ws: Worksheet,
     round_: models.Round,
     tournament: models.Tournament,
+    db: Session,
     is_snapshot: bool = True,
 ) -> None:
     """Builds a luxury executive layout for a single competition round."""
     fmt = _round_format(round_)
     is_league = fmt == "LEAGUE"
     matches = sorted(round_.matches, key=lambda m: ((m.pool.name if m.pool else ""), m.id))
+    index_map = _team_index_map(db, tournament.id)
     
     total_matches = len(matches)
     completed_matches = sum(1 for m in matches if m.status == "COMPLETED")
     live_matches = sum(1 for m in matches if m.status in ("LIVE", "IN_PROGRESS"))
     scheduled_matches = total_matches - completed_matches - live_matches
 
-    max_cols = 12
+    max_cols = 14  # widest table now: fixtures = 14 cols (incl. A INDEX/B INDEX); standings = 13
 
     # 1. Top Banner
     badge = "OFFICIAL SNAPSHOT RECORD" if is_snapshot else "LIVE TOURNAMENT ROUND"
@@ -131,6 +152,7 @@ def _render_round_sheet(
         standings_headers = [
             ("POS", 6, ALIGN_HEADER_CENTER),
             ("POOL", 10, ALIGN_HEADER_CENTER),
+            ("TEAM INDEX", 10, ALIGN_HEADER_CENTER),
             ("TEAM NAME", 26, ALIGN_HEADER_LEFT),
             ("PLAYED", 9, ALIGN_HEADER_CENTER),
             ("WON", 8, ALIGN_HEADER_CENTER),
@@ -167,6 +189,7 @@ def _render_round_sheet(
                 row_vals = [
                     (pos, ALIGN_CENTER, FONT_TD_BOLD),
                     (pool.name, ALIGN_CENTER, FONT_TD),
+                    (_team_idx(index_map, s.get("team_id")), ALIGN_CENTER, FONT_TD_BOLD),
                     (s.get("team_name", "Unknown"), ALIGN_LEFT, FONT_TD_BOLD),
                     (s.get("played", 0), ALIGN_CENTER, FONT_TD),
                     (s.get("won", 0), ALIGN_CENTER, FONT_TD),
@@ -207,13 +230,15 @@ def _render_round_sheet(
     next_row = style_section_bar(ws, fixture_section_title, next_row, max_col=max_cols, icon="⚔️")
 
     fixture_headers = [
-        ("MATCH #", 9, ALIGN_HEADER_CENTER),
+        ("MATCH INDEX", 11, ALIGN_HEADER_CENTER),
         ("STAGE / POOL", 14, ALIGN_HEADER_CENTER),
+        ("A INDEX", 9, ALIGN_HEADER_CENTER),
         ("TEAM A", 22, ALIGN_HEADER_LEFT),
         ("SCORE A", 9, ALIGN_HEADER_CENTER),
         ("VS", 5, ALIGN_HEADER_CENTER),
         ("SCORE B", 9, ALIGN_HEADER_CENTER),
         ("TEAM B", 22, ALIGN_HEADER_LEFT),
+        ("B INDEX", 9, ALIGN_HEADER_CENTER),
         ("WINNER / ADVANCED", 22, ALIGN_HEADER_LEFT),
         ("STATUS", 13, ALIGN_HEADER_CENTER),
         ("VENUE & COURT", 18, ALIGN_HEADER_LEFT),
@@ -258,13 +283,15 @@ def _render_round_sheet(
             st_fill, st_font = get_status_style(status_text)
 
             row_data = [
-                (f"M-{_match_number(m)}", ALIGN_CENTER, FONT_TD_BOLD, fill),
+                (m.match_index or "—", ALIGN_CENTER, FONT_TD_BOLD, fill),
                 (stage_name, ALIGN_CENTER, FONT_TD, fill),
+                (_team_idx(index_map, m.team_a_id), ALIGN_CENTER, FONT_TD, fill),
                 (team_a_name, ALIGN_LEFT, FONT_TD_BOLD, fill),
                 (score_a, ALIGN_CENTER, FONT_TD_BOLD, fill),
                 ("vs", ALIGN_CENTER, FONT_TD_MUTED, fill),
                 (score_b, ALIGN_CENTER, FONT_TD_BOLD, fill),
                 (team_b_name, ALIGN_LEFT, FONT_TD_BOLD, fill),
+                (_team_idx(index_map, m.team_b_id), ALIGN_CENTER, FONT_TD, fill),
                 (winner_name, ALIGN_LEFT, FONT_TD_BOLD if m.winner_team else FONT_TD, FILL_WINNER if m.winner_team else fill),
                 (status_text, ALIGN_CENTER, st_font, st_fill),
                 (venue_info, ALIGN_LEFT, FONT_TD, fill),
@@ -486,12 +513,12 @@ def _render_overview_sheet(
     enable_sheet_ergonomics(ws, freeze_pane="A7")
 
 
-def _round_sheet_bytes(round_: models.Round, tournament: models.Tournament) -> bytes:
+def _round_sheet_bytes(round_: models.Round, tournament: models.Tournament, db: Session) -> bytes:
     """Renders exactly one round into a beautifully styled one-sheet .xlsx snapshot."""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = _safe_sheet_name(round_.name)
-    _render_round_sheet(ws, round_, tournament, is_snapshot=True)
+    _render_round_sheet(ws, round_, tournament, db, is_snapshot=True)
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -499,7 +526,7 @@ def _round_sheet_bytes(round_: models.Round, tournament: models.Tournament) -> b
     return buf.getvalue()
 
 
-def _build_full_workbook(tournament: models.Tournament) -> bytes:
+def _build_full_workbook(tournament: models.Tournament, db: Session) -> bytes:
     """Renders the entire tournament into an executive multi-sheet master workbook."""
     wb = openpyxl.Workbook()
     
@@ -523,7 +550,7 @@ def _build_full_workbook(tournament: models.Tournament) -> bytes:
         used_names.add(sheet_name)
 
         ws = wb.create_sheet(title=sheet_name)
-        _render_round_sheet(ws, r, tournament, is_snapshot=False)
+        _render_round_sheet(ws, r, tournament, db, is_snapshot=False)
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -552,7 +579,7 @@ def generate_round_report(tournament_id: int, round_id: int, db: Session = Depen
     if not r or r.tournament_id != tournament_id:
         raise HTTPException(404, "Round not found for this tournament")
 
-    file_bytes = _round_sheet_bytes(r, t)
+    file_bytes = _round_sheet_bytes(r, t, db)
     report = models.Report(
         tournament_id=tournament_id,
         round_id=round_id,
@@ -608,7 +635,7 @@ def download_full_report(tournament_id: int, db: Session = Depends(get_db)):
     t = db.get(models.Tournament, tournament_id)
     if not t:
         raise HTTPException(404, "Tournament not found")
-    file_bytes = _build_full_workbook(t)
+    file_bytes = _build_full_workbook(t, db)
     filename = f"{_safe_sheet_name(t.name)}_full_report.xlsx"
     return StreamingResponse(
         iter([file_bytes]),
