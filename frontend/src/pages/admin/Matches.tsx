@@ -28,6 +28,8 @@ import {
   RotateCcw,
   Users,
   ShieldOff,
+  Lock,
+  Unlock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -97,6 +99,7 @@ interface MatchT {
   started_at?: string | null;
   ended_at?: string | null;
   notes?: string | null;
+  match_index?: string | null;
   assigned_users?: { id: number; username: string; full_name?: string | null }[];
 }
 interface RoundT {
@@ -118,6 +121,7 @@ interface TournamentT {
   min_present_players?: number;
   league_advance_count?: number;
   bracket_mode?: string | null;
+  indices_locked?: boolean;
   round_count: number;
   match_count: number;
   rounds?: RoundT[];
@@ -216,6 +220,81 @@ function PresentCount({
   );
 }
 
+/** V1 Team Index Number / Match index: a click-to-edit "#—" badge that saves
+ * on blur/Enter straight to its own endpoint. No client-side format/
+ * uniqueness validation (matches the backend) — a locked tournament just
+ * surfaces the backend's 423 as a toast rather than disabling the control,
+ * since neither call site here currently threads indices_locked through. */
+function IndexEditBadge({
+  value,
+  canEdit,
+  onSave,
+  testId,
+  placeholder = "+ Idx",
+}: {
+  value?: string | null;
+  canEdit: boolean;
+  onSave: (next: string) => Promise<void>;
+  testId: string;
+  placeholder?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value ?? "");
+  useEffect(() => {
+    if (!editing) setDraft(value ?? "");
+  }, [value, editing]);
+
+  if (!canEdit) {
+    return value ? (
+      <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-mono font-bold text-slate-300" data-testid={testId}>
+        #{value}
+      </span>
+    ) : null;
+  }
+
+  const commit = async () => {
+    setEditing(false);
+    const next = draft.trim();
+    if (next === (value ?? "")) return;
+    await onSave(next);
+  };
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          if (e.key === "Escape") {
+            setDraft(value ?? "");
+            setEditing(false);
+          }
+        }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-16 h-5 rounded border border-gold/40 bg-obsidian-950 px-1 text-[10px] font-mono text-white focus:outline-none"
+        data-testid={testId}
+      />
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        setEditing(true);
+      }}
+      className="rounded border border-dashed border-white/20 px-1.5 py-0.5 text-[10px] font-mono text-slate-400 hover:border-gold/50 hover:text-gold transition-colors"
+      data-testid={testId}
+      title="Click to set index"
+    >
+      {value ? `#${value}` : placeholder}
+    </button>
+  );
+}
+
 /** Whether the current account can run the plain lifecycle actions
  * (start/score/pause/resume/complete/cancel/forfeit/postpone) on this one
  * match — full "matches" edit access always can; otherwise only if assigned
@@ -261,6 +340,14 @@ function RoundMatchesList({
   onScheduleSaved: () => void;
 }) {
   const me = useMe();
+  const saveMatchIndex = async (matchId: number, next: string) => {
+    try {
+      await api.put(`/matches/${matchId}/index`, { match_index: next || null });
+      onScheduleSaved();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not set match index");
+    }
+  };
   return (
     <>
       {/* MOBILE: CARD LIST */}
@@ -278,7 +365,15 @@ function RoundMatchesList({
           >
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <span className="text-[10px] font-mono text-slate-500">#{m.match_number}</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-mono text-slate-500">#{m.match_number}</span>
+                  <IndexEditBadge
+                    value={m.match_index}
+                    canEdit={canEdit}
+                    onSave={(next) => saveMatchIndex(m.id, next)}
+                    testId={`match-index-mobile-${m.id}`}
+                  />
+                </div>
                 <p className="font-heading font-bold text-white text-sm break-words">{matchLabel(m)}</p>
               </div>
               <div className="flex items-center gap-1 shrink-0">
@@ -395,7 +490,17 @@ function RoundMatchesList({
                 data-testid={`match-row-${m.id}`}
                 className={me?.assigned_match_ids?.includes(m.id) ? "bg-gold/5 border-l-2 border-l-gold" : undefined}
               >
-                <TD className="font-mono text-xs text-slate-500">{m.match_number}</TD>
+                <TD className="font-mono text-xs text-slate-500">
+                  <div className="flex items-center gap-1.5">
+                    <span>{m.match_number}</span>
+                    <IndexEditBadge
+                      value={m.match_index}
+                      canEdit={canEdit}
+                      onSave={(next) => saveMatchIndex(m.id, next)}
+                      testId={`match-index-${m.id}`}
+                    />
+                  </div>
+                </TD>
                 <TD className="font-heading font-bold text-white text-sm">
                   {matchLabel(m)}
                   {m.winner_team_name && (
@@ -2121,11 +2226,12 @@ function LiveConsole({
   const [m, setM] = useState<MatchT | null>(null);
   const [loading, setLoading] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
-  // 2-step scoring: tapping a value only stages it — nothing hits the server
-  // (or the official score) until it's explicitly confirmed. Catches misclicks
-  // during fast live-raid scoring instead of committing on the very first tap.
-  const [pendingScore, setPendingScore] = useState<{ a: number | null; b: number | null }>({ a: null, b: null });
   const [forfeitOpen, setForfeitOpen] = useState(false);
+  // The score isn't always available/entered (e.g. mat-side rules where the
+  // ref just announces a winner) — this still has to be able to complete
+  // and move the bracket/pool forward, so a tied/blank scoreline opens a
+  // pick-the-winner panel instead of refusing outright.
+  const [pickWinnerOpen, setPickWinnerOpen] = useState(false);
   const [disqualifyPickerOpen, setDisqualifyPickerOpen] = useState(false);
   const [disqualifyOpen, setDisqualifyOpen] = useState<{ teamId: number; teamName: string } | null>(null);
   const [disqualifyReason, setDisqualifyReason] = useState("");
@@ -2142,9 +2248,9 @@ function LiveConsole({
       .finally(() => setLoading(false));
   useEffect(() => {
     load();
-    setPendingScore({ a: null, b: null });
     setResetOpen(false);
     setForfeitOpen(false);
+    setPickWinnerOpen(false);
     setDisqualifyPickerOpen(false);
     setDisqualifyOpen(null);
     setDisqualifyReason("");
@@ -2176,19 +2282,6 @@ function LiveConsole({
       toast.error(e?.response?.data?.detail ?? "Could not update score");
     }
   };
-  // Step 1: stage a value (or clear it, tapping the same one again). Nothing
-  // is submitted yet.
-  const pickScore = (side: "a" | "b", n: number) => {
-    setPendingScore((p) => ({ ...p, [side]: p[side] === n ? null : n }));
-  };
-  // Step 2: actually submit the staged value.
-  const confirmScore = (side: "a" | "b") => {
-    const n = pendingScore[side];
-    if (n == null) return;
-    setPendingScore((p) => ({ ...p, [side]: null }));
-    score(side, n);
-  };
-  const cancelScore = (side: "a" | "b") => setPendingScore((p) => ({ ...p, [side]: null }));
 
   const act = async (action: "pause" | "resume" | "cancel", label: string) => {
     try {
@@ -2273,11 +2366,28 @@ function LiveConsole({
   };
   const complete = async () => {
     if (!m) return;
-    if (m.team_a_score === m.team_b_score)
-      return toast.error("Scores are tied — resolve tie-breaker before completing");
+    if (m.team_a_score === m.team_b_score) {
+      // Tied (0-0 included — the no-score-entered case): the scoreline alone
+      // can't decide it, so let the organizer name the winner directly.
+      setPickWinnerOpen(true);
+      return;
+    }
     if (!confirm("End this match and declare official winner?")) return;
     try {
       await api.post(`/matches/${matchId}/complete`, {});
+      toast.success("Match completed");
+      onChanged();
+      onClose();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not complete match");
+    }
+  };
+
+  const completeWithWinner = async (winnerId: number, winnerName: string) => {
+    if (!confirm(`Declare ${winnerName} the winner and end this match? The score stays as-is.`)) return;
+    try {
+      await api.post(`/matches/${matchId}/complete`, { winner_team_id: winnerId });
+      setPickWinnerOpen(false);
       toast.success("Match completed");
       onChanged();
       onClose();
@@ -2351,45 +2461,26 @@ function LiveConsole({
             </div>
             {canControl && m.status === "ONGOING" && (
               <div className="flex flex-col items-center gap-2 pt-2 sm:pt-4">
-                {pendingScore.a == null ? (
-                  <div className="flex justify-center gap-2">
-                    {[1, 2, 3].map((n) => (
-                      <Button
-                        key={n}
-                        variant="outline"
-                        className="text-base sm:text-lg font-black px-4 sm:px-6 py-3 sm:py-4 border-red-500/40 hover:bg-red-500/20"
-                        onClick={() => pickScore("a", n)}
-                      >
-                        +{n}
-                      </Button>
-                    ))}
+                <div className="flex justify-center gap-2">
+                  {[1, 2, 3].map((n) => (
                     <Button
+                      key={n}
                       variant="outline"
-                      className="text-base sm:text-lg font-black px-4 sm:px-6 py-3 sm:py-4 border-white/15 text-slate-400 hover:bg-white/10"
-                      onClick={() => pickScore("a", -1)}
-                      title="Correct a scoring mistake"
+                      className="text-base sm:text-lg font-black px-4 sm:px-6 py-3 sm:py-4 border-red-500/40 hover:bg-red-500/20"
+                      onClick={() => score("a", n)}
                     >
-                      −1
+                      +{n}
                     </Button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2.5" data-testid="score-a-confirm-row">
-                    <span className="font-heading text-lg font-black text-gold">
-                      {pendingScore.a > 0 ? `+${pendingScore.a}` : pendingScore.a}?
-                    </span>
-                    <Button
-                      variant="gold"
-                      className="font-black px-5 py-3"
-                      onClick={() => confirmScore("a")}
-                      data-testid="confirm-score-a"
-                    >
-                      <Check className="h-4 w-4" /> Confirm
-                    </Button>
-                    <Button variant="outline" className="px-3 py-3" onClick={() => cancelScore("a")}>
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                )}
+                  ))}
+                  <Button
+                    variant="outline"
+                    className="text-base sm:text-lg font-black px-4 sm:px-6 py-3 sm:py-4 border-white/15 text-slate-400 hover:bg-white/10"
+                    onClick={() => score("a", -1)}
+                    title="Correct a scoring mistake"
+                  >
+                    −1
+                  </Button>
+                </div>
               </div>
             )}
           </div>
@@ -2419,45 +2510,26 @@ function LiveConsole({
             </div>
             {canControl && m.status === "ONGOING" && (
               <div className="flex flex-col items-center gap-2 pt-4">
-                {pendingScore.b == null ? (
-                  <div className="flex justify-center gap-2">
-                    {[1, 2, 3].map((n) => (
-                      <Button
-                        key={n}
-                        variant="outline"
-                        className="text-lg font-black px-6 py-4 border-blue-500/40 hover:bg-blue-500/20"
-                        onClick={() => pickScore("b", n)}
-                      >
-                        +{n}
-                      </Button>
-                    ))}
+                <div className="flex justify-center gap-2">
+                  {[1, 2, 3].map((n) => (
                     <Button
+                      key={n}
                       variant="outline"
-                      className="text-lg font-black px-6 py-4 border-white/15 text-slate-400 hover:bg-white/10"
-                      onClick={() => pickScore("b", -1)}
-                      title="Correct a scoring mistake"
+                      className="text-lg font-black px-6 py-4 border-blue-500/40 hover:bg-blue-500/20"
+                      onClick={() => score("b", n)}
                     >
-                      −1
+                      +{n}
                     </Button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2.5" data-testid="score-b-confirm-row">
-                    <span className="font-heading text-lg font-black text-gold">
-                      {pendingScore.b > 0 ? `+${pendingScore.b}` : pendingScore.b}?
-                    </span>
-                    <Button
-                      variant="gold"
-                      className="font-black px-5 py-3"
-                      onClick={() => confirmScore("b")}
-                      data-testid="confirm-score-b"
-                    >
-                      <Check className="h-4 w-4" /> Confirm
-                    </Button>
-                    <Button variant="outline" className="px-3 py-3" onClick={() => cancelScore("b")}>
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                )}
+                  ))}
+                  <Button
+                    variant="outline"
+                    className="text-lg font-black px-6 py-4 border-white/15 text-slate-400 hover:bg-white/10"
+                    onClick={() => score("b", -1)}
+                    title="Correct a scoring mistake"
+                  >
+                    −1
+                  </Button>
+                </div>
               </div>
             )}
           </div>
@@ -2486,6 +2558,40 @@ function LiveConsole({
             </div>
           )}
         </div>
+
+        {/* PICK WINNER WITHOUT A SCORE — scores are tied (0-0 included), so
+            the scoreline alone can't decide it; the winner is still known
+            and the bracket/pool has to move on regardless. */}
+        {canControl && pickWinnerOpen && m.team_a_id && m.team_b_id && (
+          <div className="rounded-xl border border-gold/30 bg-gold/10 p-3 space-y-2" data-testid="pick-winner-panel">
+            <p className="text-xs font-semibold text-gold">
+              Scores are tied — who actually won? The score stays as-is.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-gold hover:bg-gold/10"
+                onClick={() => completeWithWinner(m.team_a_id!, m.team_a_name ?? "Team A")}
+                data-testid="pick-winner-a-btn"
+              >
+                {m.team_a_name ?? "Team A"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-gold hover:bg-gold/10"
+                onClick={() => completeWithWinner(m.team_b_id!, m.team_b_name ?? "Team B")}
+                data-testid="pick-winner-b-btn"
+              >
+                {m.team_b_name ?? "Team B"}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setPickWinnerOpen(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -2566,55 +2672,30 @@ function LiveConsole({
                     {value}
                   </span>
                   {canControl && m.status === "ONGOING" && (
-                    pendingScore[side] == null ? (
-                      <div className="flex gap-1.5">
-                        {[1, 2, 3].map((n) => (
-                          <Button
-                            key={n}
-                            size="sm"
-                            variant="outline"
-                            className="font-bold text-xs h-9 w-9 px-0 hover:bg-white/10"
-                            onClick={() => pickScore(side, n)}
-                            data-testid={`score-${side}-plus-${n}`}
-                          >
-                            +{n}
-                          </Button>
-                        ))}
+                    <div className="flex gap-1.5">
+                      {[1, 2, 3].map((n) => (
                         <Button
+                          key={n}
                           size="sm"
                           variant="outline"
-                          className="font-bold text-xs h-9 w-9 px-0 text-slate-400 hover:bg-white/10"
-                          onClick={() => pickScore(side, -1)}
-                          data-testid={`score-${side}-minus-1`}
-                          title="Correct a scoring mistake"
+                          className="font-bold text-xs h-9 w-9 px-0 hover:bg-white/10"
+                          onClick={() => score(side, n)}
+                          data-testid={`score-${side}-plus-${n}`}
                         >
-                          −1
+                          +{n}
                         </Button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1.5" data-testid={`score-${side}-confirm-row`}>
-                        <span className="font-heading text-sm font-black text-gold">
-                          {pendingScore[side]! > 0 ? `+${pendingScore[side]}` : pendingScore[side]}?
-                        </span>
-                        <Button
-                          size="sm"
-                          variant="gold"
-                          className="h-9 px-2.5 font-bold text-xs"
-                          onClick={() => confirmScore(side)}
-                          data-testid={`confirm-score-${side}`}
-                        >
-                          <Check className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-9 w-9 px-0"
-                          onClick={() => cancelScore(side)}
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    )
+                      ))}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="font-bold text-xs h-9 w-9 px-0 text-slate-400 hover:bg-white/10"
+                        onClick={() => score(side, -1)}
+                        data-testid={`score-${side}-minus-1`}
+                        title="Correct a scoring mistake"
+                      >
+                        −1
+                      </Button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -2697,6 +2778,40 @@ function LiveConsole({
               >
                 <Flag className="h-4 w-4" /> Conclude Match
               </Button>
+            </div>
+          )}
+
+          {/* PICK WINNER WITHOUT A SCORE — scores are tied (0-0 included), so
+              the scoreline alone can't decide it; the winner is still known
+              and the bracket/pool has to move on regardless. */}
+          {canControl && pickWinnerOpen && m && m.team_a_id && m.team_b_id && (
+            <div className="rounded-xl border border-gold/30 bg-gold/10 p-3 space-y-2" data-testid="pick-winner-panel">
+              <p className="text-xs font-semibold text-gold">
+                Scores are tied — who actually won? The score stays as-is.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-gold hover:bg-gold/10"
+                  onClick={() => completeWithWinner(m.team_a_id!, m.team_a_name ?? "Team A")}
+                  data-testid="pick-winner-a-btn"
+                >
+                  {m.team_a_name ?? "Team A"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-gold hover:bg-gold/10"
+                  onClick={() => completeWithWinner(m.team_b_id!, m.team_b_name ?? "Team B")}
+                  data-testid="pick-winner-b-btn"
+                >
+                  {m.team_b_name ?? "Team B"}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setPickWinnerOpen(false)}>
+                  Cancel
+                </Button>
+              </div>
             </div>
           )}
 
@@ -3263,16 +3378,18 @@ function BucketDialog({
           {bucket.knockout && (
             <div>
               <Label>Knockout Winners Feed</Label>
-              {!bucket.knockout.ready ? (
-                <p className="text-xs text-slate-400 py-1">
-                  {bucket.knockout.blocking ?? "Previous round matches still in progress."}
-                </p>
-              ) : bucket.knockout.new_winners.length === 0 ? (
-                <p className="text-xs text-slate-400 py-1">
-                  All current winners are already pulled into the bucket.
-                </p>
-              ) : (
+              {/* A decided match's winner is pullable the moment IT completes —
+                  never waits on sibling matches still in progress. The "round
+                  not finished" message only shows once there's truly nothing
+                  new to pull yet. */}
+              {bucket.knockout.new_winners.length > 0 ? (
                 <div className="space-y-2">
+                  {!bucket.knockout.ready && (
+                    <p className="text-[11px] text-amber-400">
+                      {bucket.knockout.blocking} — pulling these {bucket.knockout.new_winners.length} decided winner
+                      {bucket.knockout.new_winners.length === 1 ? "" : "s"} now still works.
+                    </p>
+                  )}
                   <div className="flex flex-wrap gap-1.5">
                     {bucket.knockout.new_winners.map((t) => (
                       <span
@@ -3296,6 +3413,14 @@ function BucketDialog({
                     </Button>
                   </div>
                 </div>
+              ) : bucket.knockout.ready ? (
+                <p className="text-xs text-slate-400 py-1">
+                  All current winners are already pulled into the bucket.
+                </p>
+              ) : (
+                <p className="text-xs text-slate-400 py-1">
+                  {bucket.knockout.blocking ?? "Previous round matches still in progress."}
+                </p>
               )}
             </div>
           )}
@@ -3436,6 +3561,7 @@ function BucketDialog({
 
 interface PoolT {
   id: number;
+  tournament_id: number;
   round_id: number;
   name: string;
   status: "draft" | "finalized";
@@ -3494,6 +3620,45 @@ function LeagueSetup({
   const [autoSaving, setAutoSaving] = useState(false);
   const [teamsPerPool, setTeamsPerPool] = useState("5");
   const [detailPoolId, setDetailPoolId] = useState<number | null>(null);
+
+  // Indices Lock — freezes team/match index edits for this tournament.
+  // Locking is free; unlocking needs an admin password (see
+  // backend/app/routers/matches.py set_indices_lock).
+  const [indicesLocked, setIndicesLocked] = useState(!!tournament.indices_locked);
+  const [unlockPromptOpen, setUnlockPromptOpen] = useState(false);
+  const [unlockPassword, setUnlockPassword] = useState("");
+  const [lockBusy, setLockBusy] = useState(false);
+  useEffect(() => setIndicesLocked(!!tournament.indices_locked), [tournament.indices_locked]);
+  const lockIndices = async () => {
+    setLockBusy(true);
+    try {
+      await api.put(`/tournaments/${tournamentId}/indices-lock`, { locked: true });
+      setIndicesLocked(true);
+      toast.success("Team/match indices locked for this tournament");
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not lock indices");
+    } finally {
+      setLockBusy(false);
+    }
+  };
+  const unlockIndices = async () => {
+    if (!unlockPassword.trim()) return toast.error("Enter the admin password");
+    setLockBusy(true);
+    try {
+      await api.put(`/tournaments/${tournamentId}/indices-lock`, {
+        locked: false,
+        admin_password: unlockPassword.trim(),
+      });
+      setIndicesLocked(false);
+      setUnlockPromptOpen(false);
+      setUnlockPassword("");
+      toast.success("Indices unlocked");
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not unlock indices");
+    } finally {
+      setLockBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (!roundId && leagueRounds.length > 0) setRoundId(leagueRounds[0].id);
@@ -3561,7 +3726,7 @@ function LeagueSetup({
   const finalizePool = async (pool: PoolT, regenerate: boolean) => {
     try {
       await api.post(`/pools/${pool.id}/finalize`, { regenerate });
-      toast.success(pool.status === "finalized" ? "Fixtures regenerated" : "Fixtures generated");
+      toast.success(pool.match_count > 0 ? "Fixtures regenerated" : "Fixtures generated");
       refresh();
     } catch (e: any) {
       const detail = e?.response?.data?.detail;
@@ -3610,6 +3775,24 @@ function LeagueSetup({
               </option>
             ))}
           </Select>
+          {canEdit && (
+            <Button
+              variant={indicesLocked ? "danger" : "outline"}
+              size="sm"
+              onClick={() => (indicesLocked ? setUnlockPromptOpen(true) : lockIndices())}
+              disabled={lockBusy}
+              data-testid="toggle-indices-lock-btn"
+              className="text-xs font-semibold"
+              title={
+                indicesLocked
+                  ? "Team/match indices are locked for this tournament — click to unlock (admin password)"
+                  : "Lock every Team Index Number and match index for this tournament"
+              }
+            >
+              {indicesLocked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5 text-gold" />}
+              {indicesLocked ? "Unlock Indices" : "Lock Indices"}
+            </Button>
+          )}
         </div>
 
         {canEdit && summary && (
@@ -3747,10 +3930,18 @@ function LeagueSetup({
                       <Button
                         size="icon-sm"
                         variant="ghost"
-                        onClick={() => finalizePool(p, p.status === "finalized")}
-                        title={p.status === "finalized" ? "Regenerate fixtures" : "Finalize pool"}
+                        // Keyed off match_count, not status: assigning a team
+                        // to an already-finalized pool flips it back to
+                        // "draft" (routers/pools.py add_team_to_pool) but its
+                        // stale fixtures are still sitting there — status
+                        // alone would misreport this as a fresh "Finalize"
+                        // and send regenerate=false, which the backend
+                        // rejects (409 "already has fixtures"). match_count
+                        // tells the truth regardless of status.
+                        onClick={() => finalizePool(p, p.match_count > 0)}
+                        title={p.match_count > 0 ? "Regenerate fixtures" : "Finalize pool"}
                       >
-                        {p.status === "finalized" ? (
+                        {p.match_count > 0 ? (
                           <Shuffle className="h-3.5 w-3.5 text-gold" />
                         ) : (
                           <Play className="h-3.5 w-3.5 text-emerald-400" />
@@ -3932,12 +4123,57 @@ function LeagueSetup({
       {detailPoolId && (
         <PoolDetailDialog
           poolId={detailPoolId}
+          otherPools={(summary?.pools ?? []).filter((p) => p.id !== detailPoolId).map((p) => ({ id: p.id, name: p.name }))}
           canEdit={canEdit}
           onClose={() => setDetailPoolId(null)}
           onOpenConsole={onOpenConsole}
           onChanged={refresh}
         />
       )}
+
+      {/* UNLOCK INDICES — admin password required */}
+      <Dialog
+        open={unlockPromptOpen}
+        onClose={() => {
+          setUnlockPromptOpen(false);
+          setUnlockPassword("");
+        }}
+        title="Unlock Team &amp; Match Indices"
+        testId="unlock-indices-dialog"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-slate-300">
+            Team Index Numbers and match indices are locked for this tournament. Enter an admin account's password
+            to unlock editing again.
+          </p>
+          <div>
+            <Label>Admin Password</Label>
+            <Input
+              type="password"
+              value={unlockPassword}
+              onChange={(e) => setUnlockPassword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && unlockIndices()}
+              autoFocus
+              data-testid="unlock-indices-password-input"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setUnlockPromptOpen(false);
+                setUnlockPassword("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button variant="gold" size="sm" onClick={unlockIndices} disabled={lockBusy} data-testid="confirm-unlock-indices-btn">
+              {lockBusy ? "Unlocking…" : "Unlock"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }
@@ -4060,12 +4296,14 @@ interface StandingRow {
 
 function PoolDetailDialog({
   poolId,
+  otherPools,
   canEdit,
   onClose,
   onOpenConsole,
   onChanged,
 }: {
   poolId: number;
+  otherPools: { id: number; name: string }[];
   canEdit: boolean;
   onClose: () => void;
   onOpenConsole: (id: number) => void;
@@ -4081,6 +4319,30 @@ function PoolDetailDialog({
   const [loading, setLoading] = useState(true);
   const [assignStaffMatch, setAssignStaffMatch] = useState<MatchT | null>(null);
 
+  // Team Index Number (models.TeamIndex) — only editable here, once a team
+  // is actually seated in a pool: setting one for a still-unassigned team is
+  // refused server-side, and it resets automatically the moment a team
+  // leaves this pool (individually removed, or the whole pool deleted —
+  // see routers/pools.py's _clear_team_index).
+  const [teamIndices, setTeamIndices] = useState<Record<number, string | null>>({});
+  const loadTeamIndices = (tournamentId: number) => {
+    api
+      .get<{ team_id: number; index_number: string | null }[]>(`/tournaments/${tournamentId}/team-indices`)
+      .then((r) => setTeamIndices(Object.fromEntries(r.data.map((x) => [x.team_id, x.index_number]))))
+      .catch(() => {});
+  };
+  const saveTeamIndex = async (tournamentId: number, teamId: number, next: string) => {
+    try {
+      const r = await api.put<{ team_id: number; index_number: string | null }>(
+        `/tournaments/${tournamentId}/team-indices/${teamId}`,
+        { index_number: next || null },
+      );
+      setTeamIndices((prev) => ({ ...prev, [teamId]: r.data.index_number }));
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not set team index");
+    }
+  };
+
   const load = (silent = false) => {
     if (!silent) setLoading(true);
     Promise.all([
@@ -4095,6 +4357,7 @@ function PoolDetailDialog({
         setStandings(s.data);
         setQualifierInfo(q.data);
         setTiePicks([]);
+        loadTeamIndices(p.data.tournament_id);
       })
       .finally(() => setLoading(false));
   };
@@ -4133,13 +4396,47 @@ function PoolDetailDialog({
   };
 
   const removeTeam = async (teamId: number) => {
-    if (!confirm("Remove this squad from the pool?")) return;
+    const msg =
+      pool?.status === "finalized"
+        ? "Remove this squad from the pool? Since this pool is finalized, that reopens it as draft — you'll need to regenerate its fixtures."
+        : "Remove this squad from the pool?";
+    if (!confirm(msg)) return;
     try {
       await api.delete(`/pools/${poolId}/teams/${teamId}`);
       load(true);
       onChanged();
     } catch (e: any) {
       toast.error(e?.response?.data?.detail ?? "Could not remove squad");
+    }
+  };
+
+  // Whether removing/moving this team is even worth offering — mirrors the
+  // backend's OWN check exactly (routers/pools.py remove_team_from_pool /
+  // move_team_between_pools both key off the team's match status, never
+  // pool.status). A finalized pool with all-SCHEDULED matches still allows
+  // this; team changes just revert it back to draft for a regenerate.
+  const teamHasStartedMatch = (teamId: number) =>
+    matches.some((m) => (m.team_a_id === teamId || m.team_b_id === teamId) && m.status !== "SCHEDULED");
+
+  // Auto-create/auto-pool distributes teams randomly — this is the fix-up
+  // for "wrong pool" without a separate remove-then-re-add round trip.
+  const moveTeam = async (teamId: number, toPoolId: number) => {
+    if (pool?.status === "finalized") {
+      const toName = otherPools.find((p) => p.id === toPoolId)?.name ?? "the other pool";
+      if (
+        !confirm(
+          `Move this squad to ${toName}? Since this pool is finalized, that reopens both pools as draft — you'll need to regenerate fixtures for both.`,
+        )
+      )
+        return;
+    }
+    try {
+      await api.post(`/pools/${poolId}/teams/${teamId}/move`, { to_pool_id: toPoolId });
+      toast.success("Squad moved");
+      load(true);
+      onChanged();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not move squad");
     }
   };
 
@@ -4168,11 +4465,37 @@ function PoolDetailDialog({
                   key={t.id}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-obsidian-950 px-2.5 py-1 text-xs font-semibold text-white"
                 >
+                  <IndexEditBadge
+                    value={teamIndices[t.id]}
+                    canEdit={canEdit}
+                    onSave={(next) => saveTeamIndex(pool.tournament_id, t.id, next)}
+                    testId={`team-index-${t.id}`}
+                  />
                   {t.name}
-                  {canEdit && pool.status !== "finalized" && (
+                  {canEdit && !teamHasStartedMatch(t.id) && otherPools.length > 0 && (
+                    <select
+                      defaultValue=""
+                      onChange={(e) => {
+                        if (e.target.value) moveTeam(t.id, Number(e.target.value));
+                        e.target.value = "";
+                      }}
+                      className="rounded border-0 bg-transparent text-[10px] text-slate-400 hover:text-gold focus:outline-none"
+                      title="Move to a different pool"
+                      data-testid={`move-team-${t.id}`}
+                    >
+                      <option value="">Move…</option>
+                      {otherPools.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {canEdit && !teamHasStartedMatch(t.id) && (
                     <button
                       onClick={() => removeTeam(t.id)}
                       className="text-slate-400 hover:text-red-400 font-bold"
+                      title={pool.status === "finalized" ? "Removing reopens this pool as draft for a regenerate" : "Remove"}
                     >
                       ×
                     </button>
@@ -4327,7 +4650,24 @@ function PoolDetailDialog({
                         key={m.id}
                         className={me?.assigned_match_ids?.includes(m.id) ? "bg-gold/5 border-l-2 border-l-gold" : undefined}
                       >
-                        <TD className="font-mono text-xs text-slate-500">{m.match_number}</TD>
+                        <TD className="font-mono text-xs text-slate-500">
+                          <div className="flex items-center gap-1.5">
+                            <span>{m.match_number}</span>
+                            <IndexEditBadge
+                              value={m.match_index}
+                              canEdit={canEdit}
+                              onSave={async (next) => {
+                                try {
+                                  await api.put(`/matches/${m.id}/index`, { match_index: next || null });
+                                  load(true);
+                                } catch (e: any) {
+                                  toast.error(e?.response?.data?.detail ?? "Could not set match index");
+                                }
+                              }}
+                              testId={`pool-match-index-${m.id}`}
+                            />
+                          </div>
+                        </TD>
                         <TD className="font-heading font-bold text-white text-xs">
                           {m.team_a_name} vs {m.team_b_name}
                         </TD>
