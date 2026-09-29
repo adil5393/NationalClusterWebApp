@@ -617,7 +617,12 @@ def public_match_detail(match_id: int, db: Session = Depends(get_db)):
         if not team:
             return []
         participants = team.participants if not age_group else [p for p in team.participants if p.age_group == age_group]
-        return [{"full_name": p.full_name, "role": p.role} for p in participants]
+        # Every registered participant is still listed (not just who's
+        # checked in) — is_present just flags it, so a parent/visitor can
+        # still find a player who hasn't been marked present yet. Present
+        # players sort first.
+        ordered = sorted(participants, key=lambda p: (not p.is_present, p.full_name))
+        return [{"full_name": p.full_name, "role": p.role, "is_present": p.is_present} for p in ordered]
 
     d["team_a_roster"] = _roster(m.team_a)
     d["team_b_roster"] = _roster(m.team_b)

@@ -882,6 +882,7 @@ export function BracketMatchCard({
 interface RosterEntry {
   full_name: string;
   role?: string | null;
+  is_present?: boolean;
 }
 interface MatchDetail extends MatchT {
   team_a_roster?: RosterEntry[];
@@ -897,9 +898,18 @@ function RosterColumn({ name, color, roster }: { name: string; color: string; ro
       </div>
       <ul className="mt-2 space-y-1.5 text-xs">
         {(roster ?? []).map((p, i) => (
-          <li key={i} className="flex items-center justify-between gap-2 text-slate-300">
-            <span className="truncate font-medium">{p.full_name}</span>
-            {p.role && <span className="text-[10px] text-slate-500 font-mono">{p.role}</span>}
+          <li
+            key={i}
+            className={cn("flex items-center justify-between gap-2", p.is_present ? "text-slate-200" : "text-slate-500")}
+          >
+            <span className="flex items-center gap-1.5 min-w-0">
+              <span
+                className={cn("h-1.5 w-1.5 shrink-0 rounded-full", p.is_present ? "bg-emerald-400" : "bg-slate-600")}
+                title={p.is_present ? "Present" : "Not checked in"}
+              />
+              <span className="truncate font-medium">{p.full_name}</span>
+            </span>
+            {p.role && <span className="text-[10px] text-slate-500 font-mono shrink-0">{p.role}</span>}
           </li>
         ))}
         {(roster ?? []).length === 0 && <li className="text-xs text-slate-500 py-2">No roster members listed</li>}
