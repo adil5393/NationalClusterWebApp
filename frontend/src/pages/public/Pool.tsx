@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Trophy, Shield, Calendar, Users, Activity } from "lucide-react";
 import { api } from "@/lib/api";
 import { connectLive, tournamentChannel } from "@/lib/live";
-import { BracketMatchCard, MatchRosterDialog, MatchT } from "./Live";
+import { BracketMatchCard, MatchRosterDialog, MatchT, compareMatchIndex } from "./Live";
 import { Badge } from "@/components/ui/badge";
 import { Table, THead, TH, TR, TD, TBody } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
@@ -64,9 +64,15 @@ export default function Pool() {
     pool?.matches.filter((m) => m.status !== "COMPLETED" && m.status !== "CANCELLED").length ?? 0;
   const isDone = !!pool && pool.status === "finalized" && pool.matches.length > 0 && pendingCount === 0;
 
-  const liveMatches = pool?.matches.filter((m) => m.status === "ONGOING" || m.status === "PAUSED") ?? [];
-  const pendingMatches = pool?.matches.filter((m) => m.status === "SCHEDULED" || m.status === "POSTPONED") ?? [];
-  const completedMatches = pool?.matches.filter((m) => m.status === "COMPLETED") ?? [];
+  const liveMatches = (pool?.matches.filter((m) => m.status === "ONGOING" || m.status === "PAUSED") ?? [])
+    .slice()
+    .sort(compareMatchIndex);
+  const pendingMatches = (pool?.matches.filter((m) => m.status === "SCHEDULED" || m.status === "POSTPONED") ?? [])
+    .slice()
+    .sort(compareMatchIndex);
+  const completedMatches = (pool?.matches.filter((m) => m.status === "COMPLETED") ?? [])
+    .slice()
+    .sort(compareMatchIndex);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8 space-y-8">
@@ -155,6 +161,7 @@ export default function Pool() {
                       <TH className="text-right">Drawn</TH>
                       <TH className="text-right">Pts For</TH>
                       <TH className="text-right">Pts Agst</TH>
+                      <TH className="text-right">Difference</TH>
                       <TH className="text-right">Total Pts</TH>
                     </TR>
                   </THead>
@@ -192,6 +199,19 @@ export default function Pool() {
                           </TD>
                           <TD className="text-right font-mono text-xs text-slate-400">
                             {s.points_against}
+                          </TD>
+                          <TD
+                            className={cn(
+                              "text-right font-mono text-xs font-bold",
+                              s.points_for - s.points_against > 0
+                                ? "text-emerald-400"
+                                : s.points_for - s.points_against < 0
+                                ? "text-red-400"
+                                : "text-slate-400",
+                            )}
+                          >
+                            {s.points_for - s.points_against > 0 ? "+" : ""}
+                            {s.points_for - s.points_against}
                           </TD>
                           <TD
                             className={cn(

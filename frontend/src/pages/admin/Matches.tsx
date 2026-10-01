@@ -4577,6 +4577,7 @@ function PoolDetailDialog({
                       <TH className="text-right">D</TH>
                       <TH className="text-right">PF</TH>
                       <TH className="text-right">PA</TH>
+                      <TH className="text-right">Diff</TH>
                       <TH className="text-right" title="Tiebreaker — sum of this team's own winning margins, used to auto-resolve a points-tie">
                         TB
                       </TH>
@@ -4599,6 +4600,19 @@ function PoolDetailDialog({
                         </TD>
                         <TD className="text-right font-mono text-xs text-slate-400">
                           {s.points_against}
+                        </TD>
+                        <TD
+                          className={cn(
+                            "text-right font-mono text-xs font-bold",
+                            s.points_for - s.points_against > 0
+                              ? "text-emerald-400"
+                              : s.points_for - s.points_against < 0
+                              ? "text-red-400"
+                              : "text-slate-400",
+                          )}
+                        >
+                          {s.points_for - s.points_against > 0 ? "+" : ""}
+                          {s.points_for - s.points_against}
                         </TD>
                         <TD className="text-right font-mono text-xs text-amber-400">
                           {s.tiebreak_score}

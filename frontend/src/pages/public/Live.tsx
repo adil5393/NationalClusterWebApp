@@ -29,6 +29,20 @@ function teamLabel(name: string, index?: string | null): string {
   return index ? `#${index} ${name}` : name;
 }
 
+// Same 3-tier sort as the backend's _match_index_order_key: numeric index
+// first (ascending), then non-numeric text index (alphabetical), then
+// unset matches last (fallback to id) — so fixture lists order the same
+// way the admin side and the exports do.
+export function compareMatchIndex(a: MatchT, b: MatchT): number {
+  const rank = (m: MatchT) => (!m.match_index ? 2 : Number.isNaN(Number(m.match_index)) ? 1 : 0);
+  const ra = rank(a);
+  const rb = rank(b);
+  if (ra !== rb) return ra - rb;
+  if (ra === 0) return Number(a.match_index) - Number(b.match_index) || a.id - b.id;
+  if (ra === 1) return (a.match_index as string).localeCompare(b.match_index as string) || a.id - b.id;
+  return a.id - b.id;
+}
+
 export interface MatchT {
   id: number;
   tournament_id: number;
@@ -559,6 +573,11 @@ export function BracketMatchCard({
         data-testid={`bracket-match-${m.id}`}
       >
         {isChampion && done && <ChampionshipCelebration />}
+        {m.match_index && (
+          <span className="absolute -top-1.5 -right-1.5 z-10 rounded bg-obsidian-900 border border-white/10 px-1 text-[9px] font-bold text-gold leading-tight">
+            #{m.match_index}
+          </span>
+        )}
         <div
           ref={(el) => {
             if (m.team_a_id != null) registerAnchor?.(m.round_id, m.team_a_id, el);
@@ -654,6 +673,9 @@ export function BracketMatchCard({
           <span className="flex items-center gap-1 truncate flex-1 min-w-0 mr-2" title={m.venue_name ?? "Court TBD"}>
             <MapPin className="h-3 w-3 text-slate-500 shrink-0" />
             <span className="truncate">{m.venue_name ?? "Court TBD"}</span>
+            {m.match_index && (
+              <span className="shrink-0 rounded bg-white/5 px-1 py-0.5 text-gold font-bold">#{m.match_index}</span>
+            )}
           </span>
           {live && (
             <span className="inline-flex items-center gap-1 shrink-0 font-heading font-black text-emerald-400 text-xs tracking-wider">
@@ -773,8 +795,11 @@ export function BracketMatchCard({
     >
       {isChampion && done && <ChampionshipCelebration />}
       <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono border-b border-white/5 pb-1 min-w-0">
-        <span className="truncate flex-1 min-w-0 mr-1" title={m.venue_name ?? "Court TBD"}>
-          {m.venue_name ?? "Court TBD"}
+        <span className="flex items-center gap-1 truncate flex-1 min-w-0 mr-1" title={m.venue_name ?? "Court TBD"}>
+          <span className="truncate">{m.venue_name ?? "Court TBD"}</span>
+          {m.match_index && (
+            <span className="shrink-0 rounded bg-white/5 px-1 py-0.5 text-gold font-bold">#{m.match_index}</span>
+          )}
         </span>
         {live && (
           <span className="inline-flex items-center gap-1 shrink-0 font-heading font-black text-emerald-400 tracking-wider">
