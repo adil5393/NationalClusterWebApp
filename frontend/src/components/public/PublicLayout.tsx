@@ -7,7 +7,6 @@ import {
   Trophy,
   Radio,
   Users,
-  Calendar,
   MapPin,
   HelpCircle,
   Megaphone,
@@ -22,7 +21,6 @@ const NAV = [
   { to: "/", label: "Home" },
   { to: "/about", label: "About" },
   { to: "/teams", label: "Teams" },
-  { to: "/schedule", label: "Schedule" },
   { to: "/live", label: "Live", isLive: true },
   { to: "/venues", label: "Venues" },
   { to: "/accommodation", label: "Accommodation" },
@@ -273,11 +271,6 @@ export function PublicLayout() {
                     </Link>
                   </li>
                   <li>
-                    <Link to="/schedule" className="flex items-center gap-1.5 hover:text-gold transition-colors">
-                      <Calendar className="h-3.5 w-3.5 text-slate-400" /> Tournament Schedule & Fixtures
-                    </Link>
-                  </li>
-                  <li>
                     <Link to="/announcements" className="flex items-center gap-1.5 hover:text-gold transition-colors">
                       <Megaphone className="h-3.5 w-3.5 text-slate-400" /> Official Announcements
                     </Link>
@@ -299,11 +292,6 @@ export function PublicLayout() {
                   <li>
                     <Link to="/accommodation" className="hover:text-gold transition-colors">
                       Hostel & Accommodation Blocks
-                    </Link>
-                  </li>
-                  <li>
-                    <Link to="/schedule?tab=food" className="hover:text-gold transition-colors">
-                      Food Courts & Dining Timings
                     </Link>
                   </li>
                   <li>
