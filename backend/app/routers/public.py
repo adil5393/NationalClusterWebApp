@@ -51,16 +51,46 @@ def _normalize_age_group(g: str) -> str:
     return s
 
 
+# Shared "any active admin account's password" gate for public sections that
+# organizers want kept off the open internet — the Teams directory listing
+# (participant names/counts aren't meant for casual visitors) and the Live
+# match-roster view (clicking a match to see its two squads). Same
+# rate-limited-per-visitor-IP shape as reveal_team_contacts/photo upload
+# below, just not tied to one team. NOT applied to the single-team portal
+# (GET /teams/{id}) — that's a direct link shared with the team itself for
+# self-service (photo upload, schedule, accommodation), not something a
+# casual visitor browses to; see public_team_detail.
+_GATE_WINDOW_SECONDS = 15 * 60
+_GATE_MAX_ATTEMPTS = 5
+_failed_gate_attempts: dict[str, list[float]] = {}
+
+
+def _require_gate_password(db: Session, request: Request, password: "str | None") -> None:
+    visitor = request.headers.get("x-real-ip") or (request.client.host if request.client else "unknown")
+    now = time.time()
+    attempts = [t for t in _failed_gate_attempts.get(visitor, []) if now - t < _GATE_WINDOW_SECONDS]
+    _failed_gate_attempts[visitor] = attempts
+    if len(attempts) >= _GATE_MAX_ATTEMPTS:
+        raise HTTPException(429, "Too many attempts — try again later")
+    if not password or not _verify_any_admin_password(db, password):
+        attempts.append(now)
+        raise HTTPException(401, "Admin password required")
+    _failed_gate_attempts.pop(visitor, None)
+
+
 @router.get("/teams", response_model=list[schemas.TeamPublic])
-def public_teams(db: Session = Depends(get_db)):
+def public_teams(request: Request, admin_password: "str | None" = None, db: Session = Depends(get_db)):
     """The public directory/listing — every team, active and inactive alike,
     each carrying its own is_active flag so the frontend can render them in
     separate sections (Teams.tsx: Active/Competing vs Inactive) rather than
     the backend deciding what a visitor gets to see. Also includes cluster
     (the CBSE cluster this team won/qualified through), age groups, gender,
-    and arrival status. The single-team portal (GET /teams/{id}) is unaffected
-    either way — that's a direct link shared with the team itself, not
-    something a visitor browses to."""
+    and arrival status. Gated behind _require_gate_password — a casual
+    visitor must type an admin password before seeing this directory at all
+    (participant counts/names live inside it). The single-team portal
+    (GET /teams/{id}) is unaffected either way — that's a direct link shared
+    with the team itself, not something a visitor browses to."""
+    _require_gate_password(db, request, admin_password)
     from .teams import _age_group_counts_map
     from ..seed_cluster_winners_active import WINNERS
 
@@ -591,7 +621,13 @@ def public_live_matches(db: Session = Depends(get_db)):
 
 
 @router.get("/matches/{match_id}")
-def public_match_detail(match_id: int, db: Session = Depends(get_db)):
+def public_match_detail(match_id: int, request: Request, admin_password: "str | None" = None, db: Session = Depends(get_db)):
+    """Only called by the public Live/Pool pages' match-roster dialog (a
+    visitor clicking a match card to see its two squads) — every other
+    public view of a match's score/status comes from the bracket/pool-list
+    endpoints instead, which don't carry rosters. Gated behind
+    _require_gate_password so that click requires an admin password."""
+    _require_gate_password(db, request, admin_password)
     m = db.get(models.Match, match_id)
     if not m:
         raise HTTPException(404, "Match not found")

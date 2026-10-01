@@ -8,6 +8,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { ActionCapturedMat } from "@/components/public/ActionCapturedMat";
+import { AdminGateForm } from "@/components/public/AdminGateForm";
 
 // Every match has two sides — team A is always red, team B is always blue,
 // regardless of which actual team ends up in that slot as the bracket fills
@@ -945,9 +946,40 @@ function RosterColumn({ name, color, roster }: { name: string; color: string; ro
 
 export function MatchRosterDialog({ matchId, onClose }: { matchId: number; onClose: () => void }) {
   const [detail, setDetail] = useState<MatchDetail | null>(null);
+  // Viewing a match's squad rosters is gated behind an admin password (see
+  // backend routers/public.py's _require_gate_password on GET
+  // /public/matches/{id}). Deliberately NOT remembered across loads (no
+  // sessionStorage) — this dialog is a fresh mount every time a match card
+  // is clicked (see rosterMatchId && <MatchRosterDialog .../> below), so it
+  // asks again every single time, same as the Teams directory.
+  const [gatePassword, setGatePasswordState] = useState<string | null>(null);
+  const [gateError, setGateError] = useState<string | null>(null);
+  const [gateBusy, setGateBusy] = useState(false);
+
   useEffect(() => {
-    api.get<MatchDetail>(`/public/matches/${matchId}`).then((r) => setDetail(r.data));
-  }, [matchId]);
+    if (!gatePassword) return;
+    setGateBusy(true);
+    api
+      .get<MatchDetail>(`/public/matches/${matchId}`, { params: { admin_password: gatePassword } })
+      .then((r) => {
+        setDetail(r.data);
+        setGateError(null);
+      })
+      .catch((err) => {
+        if (err?.response?.status === 401) {
+          setGatePasswordState(null);
+          setGateError("Incorrect password");
+        } else {
+          setGateError("Something went wrong loading this match — try again.");
+        }
+      })
+      .finally(() => setGateBusy(false));
+  }, [matchId, gatePassword]);
+
+  const handleGateSubmit = (password: string) => {
+    setGateError(null);
+    setGatePasswordState(password);
+  };
 
   return (
     <Dialog
@@ -961,7 +993,9 @@ export function MatchRosterDialog({ matchId, onClose }: { matchId: number; onClo
       className="max-w-2xl"
       testId="public-match-roster-dialog"
     >
-      {!detail ? (
+      {!gatePassword || gateError ? (
+        <AdminGateForm onSubmit={handleGateSubmit} busy={gateBusy} error={gateError} compact />
+      ) : !detail ? (
         <p className="text-xs text-slate-400 py-6 text-center">Loading match squad rosters…</p>
       ) : (
         <div className="space-y-4">

@@ -20,6 +20,7 @@ import { Spinner } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { TeamAvatar } from "@/components/ui/team-badge";
 import { cn } from "@/lib/utils";
+import { AdminGateForm } from "@/components/public/AdminGateForm";
 
 interface Team {
   id: number;
@@ -404,6 +405,15 @@ export default function PublicTeams() {
   const [loading, setLoading] = useState(true);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
+  // This whole directory is gated behind an admin password (see backend
+  // routers/public.py's _require_gate_password) — participant counts live
+  // in every card here, which organizers don't want open to casual visitors.
+  // Deliberately NOT remembered across loads (no sessionStorage) — every
+  // fresh visit to this page asks again, even within the same browser tab.
+  const [gatePassword, setGatePasswordState] = useState<string | null>(null);
+  const [gateError, setGateError] = useState<string | null>(null);
+  const [gateBusy, setGateBusy] = useState(false);
+
   // Read initial state from URL query parameters (Active filter is ON by default)
   const qParam = searchParams.get("search") || searchParams.get("q") || "";
   const clusterParam = searchParams.get("cluster") || "all";
@@ -531,13 +541,38 @@ export default function PublicTeams() {
     setSearchParams({}, { replace: true });
   };
 
-  // Fetch all public teams once
+  // Fetch all public teams once we have a gate password to try
   useEffect(() => {
+    if (!gatePassword) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setGateBusy(true);
     api
-      .get<Team[]>("/public/teams")
-      .then((r) => setTeams(r.data))
-      .finally(() => setLoading(false));
-  }, []);
+      .get<Team[]>("/public/teams", { params: { admin_password: gatePassword } })
+      .then((r) => {
+        setTeams(r.data);
+        setGateError(null);
+      })
+      .catch((err) => {
+        if (err?.response?.status === 401) {
+          setGatePasswordState(null);
+          setGateError("Incorrect password");
+        } else {
+          setGateError("Something went wrong loading teams — try again.");
+        }
+      })
+      .finally(() => {
+        setLoading(false);
+        setGateBusy(false);
+      });
+  }, [gatePassword]);
+
+  const handleGateSubmit = (password: string) => {
+    setGateError(null);
+    setGatePasswordState(password);
+  };
 
   // Compute available clusters from loaded data + standard roman list
   const clusterOptions = useMemo(() => {
@@ -706,6 +741,17 @@ export default function PublicTeams() {
   }, [clusterFilter, ageGroupFilter, statusFilter, genderFilter, q]);
 
   const hasActiveFilters = activeFiltersCount > 0;
+
+  if (!gatePassword || gateError) {
+    return (
+      <div
+        className="mx-auto flex min-h-[70vh] max-w-7xl items-center justify-center px-4 py-10 text-slate-100"
+        data-testid="public-teams"
+      >
+        <AdminGateForm onSubmit={handleGateSubmit} busy={gateBusy} error={gateError} />
+      </div>
+    );
+  }
 
   return (
     <div
