@@ -14,7 +14,7 @@ import { TeamArrivalImportDialog } from "@/components/admin/TeamArrivalImportDia
 import { ReceiptDialog } from "@/components/admin/ReceiptDialog";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
-import { useModuleAccess, useMe } from "@/lib/permissions";
+import { useModuleAccess } from "@/lib/permissions";
 import { driveThumbnail } from "@/lib/meta";
 import { cn } from "@/lib/utils";
 import { TeamAvatar } from "@/components/ui/team-badge";
@@ -558,7 +558,6 @@ export default function AdminTeams() {
   // not Teams edit — see backend teams.set_team_arrived.
   const { canEdit: canSetArrived } = useModuleAccess("team_arrival");
   const billingAccess = useModuleAccess("billing");
-  const gateDisabled = !!useMe()?.admin_password_gate_disabled;
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -645,18 +644,6 @@ export default function AdminTeams() {
       stay: blank(form.stay),
       notes: blank(form.notes),
     };
-    // Changing an existing team's label (set, changed, or cleared) needs an
-    // admin password — same gate as turning Active/Arrived off (see
-    // backend routers/teams.py _require_admin_password) — so this doesn't
-    // save yet; it hands off to the same password dialog those toggles use.
-    if (form.id) {
-      const original = teams.find((x) => x.id === form.id);
-      if (original && payload.label !== (original.label ?? null)) {
-        setOpen(false);
-        setPendingToggle({ kind: "label", team: original, payload });
-        return;
-      }
-    }
     try {
       if (form.id) await api.put(`/teams/${form.id}`, payload);
       else await api.post("/teams", payload);
@@ -681,95 +668,25 @@ export default function AdminTeams() {
   const [photosTeam, setPhotosTeam] = useState<Team | null>(null);
   const [idCardTeam, setIdCardTeam] = useState<Team | null>(null);
 
-  // Turning any of these three toggles OFF (Active -> Inactive, Arrived ->
-  // Not Arrived, an age group -> Inactive) requires an admin password —
-  // same "type it again to unlock" shape as un-marking attendance (see
-  // backend routers/teams.py _require_admin_password). Turning one ON never
-  // needs this, so those calls go straight through. "label" reuses the same
-  // dialog for any change to Team.label from the main edit form (see save()).
-  const [pendingToggle, setPendingToggle] = useState<
-    | { kind: "active"; team: Team }
-    | { kind: "arrived"; team: Team }
-    | { kind: "ageGroup"; team: Team; ageGroup: string }
-    | { kind: "label"; team: Team; payload: Record<string, unknown> }
-    | null
-  >(null);
-  const [togglePassword, setTogglePassword] = useState("");
-  const [toggleBusy, setToggleBusy] = useState(false);
-
-  const closeToggleDialog = () => {
-    setPendingToggle(null);
-    setTogglePassword("");
-  };
-
   const toggleActive = (t: Team) => {
-    const turningOn = t.is_active === false;
-    if (turningOn || gateDisabled) {
-      api
-        .put(`/teams/${t.id}`, { is_active: turningOn })
-        .then(() => load(true))
-        .catch((e: any) => toast.error(e?.response?.data?.detail ?? "Could not update active status"));
-    } else {
-      setPendingToggle({ kind: "active", team: t });
-    }
+    api
+      .put(`/teams/${t.id}`, { is_active: t.is_active === false })
+      .then(() => load(true))
+      .catch((e: any) => toast.error(e?.response?.data?.detail ?? "Could not update active status"));
   };
 
   const toggleArrived = (t: Team) => {
-    const turningOn = t.has_arrived !== true;
-    if (turningOn || gateDisabled) {
-      api
-        .put(`/teams/${t.id}/arrived`, { has_arrived: turningOn })
-        .then(() => load(true))
-        .catch((e: any) => toast.error(e?.response?.data?.detail ?? "Could not update arrival status"));
-    } else {
-      setPendingToggle({ kind: "arrived", team: t });
-    }
+    api
+      .put(`/teams/${t.id}/arrived`, { has_arrived: t.has_arrived !== true })
+      .then(() => load(true))
+      .catch((e: any) => toast.error(e?.response?.data?.detail ?? "Could not update arrival status"));
   };
 
   const toggleAgeGroupActive = (t: Team, ageGroup: string, active: boolean) => {
-    if (active || gateDisabled) {
-      api
-        .put(`/teams/${t.id}/age-groups/${encodeURIComponent(ageGroup)}/active`, { is_active: active })
-        .then(() => load(true))
-        .catch((e: any) => toast.error(e?.response?.data?.detail ?? `Could not update ${ageGroup} status`));
-    } else {
-      setPendingToggle({ kind: "ageGroup", team: t, ageGroup });
-    }
-  };
-
-  const confirmToggle = async () => {
-    if (!pendingToggle) return;
-    if (!togglePassword.trim()) return toast.error("Enter the admin password");
-    setToggleBusy(true);
-    try {
-      if (pendingToggle.kind === "active") {
-        await api.put(`/teams/${pendingToggle.team.id}`, {
-          is_active: false,
-          admin_password: togglePassword.trim(),
-        });
-      } else if (pendingToggle.kind === "arrived") {
-        await api.put(`/teams/${pendingToggle.team.id}/arrived`, {
-          has_arrived: false,
-          admin_password: togglePassword.trim(),
-        });
-      } else if (pendingToggle.kind === "ageGroup") {
-        await api.put(`/teams/${pendingToggle.team.id}/age-groups/${encodeURIComponent(pendingToggle.ageGroup)}/active`, {
-          is_active: false,
-          admin_password: togglePassword.trim(),
-        });
-      } else {
-        await api.put(`/teams/${pendingToggle.team.id}`, {
-          ...pendingToggle.payload,
-          admin_password: togglePassword.trim(),
-        });
-      }
-      load(true);
-      closeToggleDialog();
-    } catch (e: any) {
-      toast.error(e?.response?.status === 401 ? "Incorrect admin password" : "Could not update status");
-    } finally {
-      setToggleBusy(false);
-    }
+    api
+      .put(`/teams/${t.id}/age-groups/${encodeURIComponent(ageGroup)}/active`, { is_active: active })
+      .then(() => load(true))
+      .catch((e: any) => toast.error(e?.response?.data?.detail ?? `Could not update ${ageGroup} status`));
   };
 
   const emptyTeamCount = teams.filter((t) => (t.participant_count ?? 0) === 0).length;
@@ -1924,58 +1841,6 @@ export default function AdminTeams() {
               <p className="text-xs text-slate-400">One PDF per card — for picking &amp; arranging in design/print layout software</p>
             </div>
           </a>
-        </div>
-      </Dialog>
-
-      <Dialog
-        open={pendingToggle !== null}
-        onClose={closeToggleDialog}
-        title="Confirm Admin Password"
-        testId="toggle-admin-password-dialog"
-      >
-        <div className="space-y-4">
-          <p className="text-xs text-slate-400 font-body">
-            {pendingToggle?.kind === "active" && (
-              <>Marking <span className="text-white font-bold">{pendingToggle.team.name}</span> Inactive removes it from fixture eligibility. Requires an admin account's password.</>
-            )}
-            {pendingToggle?.kind === "arrived" && (
-              <>Marking <span className="text-white font-bold">{pendingToggle.team.name}</span> Not Arrived requires an admin account's password.</>
-            )}
-            {pendingToggle?.kind === "ageGroup" && (
-              <>
-                Marking <span className="text-white font-bold">{pendingToggle.ageGroup}</span> inactive for{" "}
-                <span className="text-white font-bold">{pendingToggle.team.name}</span> requires an admin account's password.
-              </>
-            )}
-            {pendingToggle?.kind === "label" && (
-              <>Changing <span className="text-white font-bold">{pendingToggle.team.name}</span>'s label requires an admin account's password — it controls which teams can never share a pool.</>
-            )}
-          </p>
-          <div>
-            <Label>Admin Password</Label>
-            <Input
-              type="password"
-              value={togglePassword}
-              onChange={(e) => setTogglePassword(e.target.value)}
-              data-testid="toggle-admin-password-input"
-              autoFocus
-              onKeyDown={(e) => e.key === "Enter" && confirmToggle()}
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
-            <Button variant="outline" size="sm" onClick={closeToggleDialog}>
-              Cancel
-            </Button>
-            <Button
-              variant="gold"
-              size="sm"
-              onClick={confirmToggle}
-              disabled={toggleBusy}
-              data-testid="confirm-toggle-btn"
-            >
-              {toggleBusy ? "Verifying…" : "Confirm"}
-            </Button>
-          </div>
         </div>
       </Dialog>
     </div>

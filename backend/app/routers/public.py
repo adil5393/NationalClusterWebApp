@@ -79,7 +79,7 @@ def _require_gate_password(db: Session, request: Request, password: "str | None"
 
 
 @router.get("/teams", response_model=list[schemas.TeamPublic])
-def public_teams(request: Request, admin_password: "str | None" = None, db: Session = Depends(get_db)):
+def public_teams(db: Session = Depends(get_db)):
     """The public directory/listing — every team, active and inactive alike,
     each carrying its own is_active flag so the frontend can render them in
     separate sections (Teams.tsx: Active/Competing vs Inactive) rather than
@@ -90,7 +90,6 @@ def public_teams(request: Request, admin_password: "str | None" = None, db: Sess
     (participant counts/names live inside it). The single-team portal
     (GET /teams/{id}) is unaffected either way — that's a direct link shared
     with the team itself, not something a visitor browses to."""
-    _require_gate_password(db, request, admin_password)
     from .teams import _age_group_counts_map
     from ..seed_cluster_winners_active import WINNERS
 

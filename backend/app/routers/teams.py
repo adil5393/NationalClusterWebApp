@@ -3,8 +3,6 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
-from ..auth_utils import verify_password
-from ..config import settings
 from ..database import get_db
 from ..security import require_auth
 from ..ws import broadcast_roster_change_sync
@@ -15,37 +13,6 @@ router = APIRouter(prefix="/api/teams", tags=["teams"])
 # "team_arrival" permission instead of "teams" — so a Boarding account can mark
 # a team arrived without being able to edit anything else about teams.
 arrival_router = APIRouter(prefix="/api/teams", tags=["teams"])
-
-
-def _require_admin_password(db: Session, password: "str | None") -> None:
-    """Turning a Teams-tab toggle OFF (Active -> Inactive, Arrived -> Not
-    Arrived, an age group's squad -> Inactive) needs an admin account's
-    password — same "type an admin password to unlock" shape as
-    attendance.py's un-mark-attendance. Flipping a toggle ON never needs
-    this; only the negative direction is gated, since that's the one that
-    can quietly drop a team out of fixture eligibility or off the arrival
-    checklist by a mis-click.
-
-    Also gates any change to Team.label (set, changed, or cleared) — unlike
-    the toggles above this isn't one-directional: a mis-typed or mis-cleared
-    label can just as easily let two teams that must stay apart end up in
-    the same pool as it can wrongly block two that don't conflict, so every
-    change needs the password, not just one direction.
-
-    Dev/testing only: DISABLE_ADMIN_PASSWORD_GATE skips this entirely so
-    toggles can be flipped off without an admin password on hand — never set
-    in production (see config.py)."""
-    if settings.disable_admin_password_gate:
-        return
-    if not password:
-        raise HTTPException(401, "Admin password is required to turn this off")
-    admins = (
-        db.query(models.OrganizerUser)
-        .filter(models.OrganizerUser.is_active.is_(True), models.OrganizerUser.is_admin.is_(True))
-        .all()
-    )
-    if not any(verify_password(password, u.password_hash) for u in admins):
-        raise HTTPException(401, "Incorrect admin password")
 
 
 def _participant_counts(db: Session) -> dict[int, int]:
@@ -369,12 +336,8 @@ def update_team(team_id: int, payload: schemas.TeamUpdate, db: Session = Depends
         if "has_arrived" in data or payload.last_year_awards is not None:
             raise HTTPException(400, "This team is inactive — arrival and awards can't be changed.")
     data.pop("last_year_awards", None)
-    admin_password = data.pop("admin_password", None)
+    data.pop("admin_password", None)  # legacy field, no longer required
     _check_team_codes_free(db, data, exclude_id=team.id)
-
-    label_changed = "label" in data and data["label"] != team.label
-    if data.get("is_active") is False or data.get("has_arrived") is False or label_changed:
-        _require_admin_password(db, admin_password)
 
     if payload.last_year_awards is not None:
         _replace_last_year_awards(db, team, payload.last_year_awards)
@@ -399,15 +362,12 @@ def update_team(team_id: int, payload: schemas.TeamUpdate, db: Session = Depends
 @arrival_router.put("/{team_id}/arrived", response_model=schemas.TeamRead)
 def set_team_arrived(team_id: int, payload: schemas.TeamArrivalUpdate, db: Session = Depends(get_db)):
     """The Teams page's Arrived toggle. Same rules as setting has_arrived via
-    update_team: an inactive team's arrival can't change, and marking a team
-    Not Arrived needs an admin password (_require_admin_password)."""
+    update_team: an inactive team's arrival can't change,"""
     team = db.get(models.Team, team_id)
     if not team:
         raise HTTPException(404, "Team not found")
     if not team.is_active:
         raise HTTPException(400, "This team is inactive — arrival and awards can't be changed.")
-    if payload.has_arrived is False:
-        _require_admin_password(db, payload.admin_password)
     team.has_arrived = payload.has_arrived
     db.commit()
     db.refresh(team)
@@ -426,9 +386,6 @@ def set_team_age_group_active(team_id: int, age_group: str, payload: schemas.Tea
         raise HTTPException(404, "Team not found")
     if not team.is_active:
         raise HTTPException(400, "This team is inactive — age groups can't be changed.")
-
-    if not payload.is_active:
-        _require_admin_password(db, payload.admin_password)
 
     existing = (
         db.query(models.TeamInactiveAgeGroup)
