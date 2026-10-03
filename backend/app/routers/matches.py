@@ -521,6 +521,73 @@ def _propagate_pool_qualifiers(db: Session, pool: models.Pool) -> None:
             broadcast_match_event_sync(dep, "match_updated")
 
 
+_SLOT_SOURCE_KEYS = (
+    "source_match_a_id", "source_match_b_id",
+    "source_pool_a_id", "source_pool_a_rank",
+    "source_pool_b_id", "source_pool_b_rank",
+)
+
+
+def _pool_qualifier_team_id(db: Session, pool_id: int, rank: int | None) -> int | None:
+    """The team holding `rank` in a pool, once that pool's standings are settled
+    (every match done and no tie at the qualifying spot) — the same readiness
+    rule _propagate_pool_qualifiers uses. None means not decided yet."""
+    if not rank or rank < 1:
+        return None
+    pool = db.get(models.Pool, pool_id)
+    if not pool:
+        return None
+    advancing = _compute_advancing_teams(db, pool.round)
+    info = next((p for p in advancing["pools"] if p["pool_id"] == pool.id), None)
+    if not info or not info["ready"] or info["needs_tiebreak"]:
+        return None
+    qualifiers = info["qualifiers"]
+    return qualifiers[rank - 1]["id"] if rank <= len(qualifiers) else None
+
+
+def _check_slot_sources(db: Session, tournament_id: int, data: dict) -> None:
+    """Validates the source fields a knockout slot can be fed by. A slot takes
+    either an earlier match's winner or a pool's qualifier at a rank, never both,
+    and a pool source must belong to this tournament and say which rank."""
+    for s in ("a", "b"):
+        pool_id = data.get(f"source_pool_{s}_id")
+        rank = data.get(f"source_pool_{s}_rank")
+        match_id = data.get(f"source_match_{s}_id")
+        if pool_id and match_id:
+            raise HTTPException(400, f"Slot {s.upper()} can be fed by a match or a pool, not both")
+        if match_id and not db.get(models.Match, match_id):
+            raise HTTPException(404, f"Source match {match_id} not found")
+        if pool_id:
+            pool = db.get(models.Pool, pool_id)
+            if not pool or pool.tournament_id != tournament_id:
+                raise HTTPException(400, f"Slot {s.upper()}'s pool must belong to this tournament")
+            if not rank or rank < 1:
+                raise HTTPException(400, f"Slot {s.upper()} needs a qualifying rank (1 = winner, 2 = runner-up, …)")
+
+
+def _fill_slots_from_sources(db: Session, m: models.Match) -> None:
+    """Fill any EMPTY team slot on a knockout match from the source feeding it —
+    a pool qualifier at its rank, or an earlier match's winner. This is the same
+    rule _propagate_winner / _propagate_pool_qualifiers apply when a source
+    settles later, applied now for a match that's added or re-linked after its
+    source already finished. A team explicitly on the slot is never overwritten."""
+    if m.pool_id:
+        return
+    for s in ("a", "b"):
+        if getattr(m, f"team_{s}_id") is not None:
+            continue
+        pool_id = getattr(m, f"source_pool_{s}_id")
+        match_id = getattr(m, f"source_match_{s}_id")
+        if pool_id:
+            team_id = _pool_qualifier_team_id(db, pool_id, getattr(m, f"source_pool_{s}_rank"))
+        elif match_id:
+            src = db.get(models.Match, match_id)
+            team_id = src.winner_team_id if src else None
+        else:
+            continue
+        setattr(m, f"team_{s}_id", team_id)
+
+
 # ---------- Tournaments ----------
 @router.get("/api/tournaments")
 def list_tournaments(db: Session = Depends(get_db)):
@@ -1104,13 +1171,13 @@ def create_match(round_id: int, payload: schemas.MatchCreate, db: Session = Depe
         if team_id:
             _check_team_age_group(db, team_id, round_.tournament.age_group)
             _check_team_playable(db, team_id, round_.tournament)
-    for source_id in (payload.source_match_a_id, payload.source_match_b_id):
-        if source_id and not db.get(models.Match, source_id):
-            raise HTTPException(404, f"Source match {source_id} not found")
+    _check_slot_sources(db, round_.tournament_id, payload.model_dump())
     m = models.Match(tournament_id=round_.tournament_id, round_id=round_id, **payload.model_dump())
+    _fill_slots_from_sources(db, m)
     db.add(m)
     db.commit()
     db.refresh(m)
+    broadcast_match_event_sync(m, "match_updated")
     return _match_dict(m, db)
 
 
@@ -1157,12 +1224,21 @@ def update_match(match_id: int, payload: schemas.MatchUpdate, db: Session = Depe
         if team_id:
             _check_team_age_group(db, team_id, m.tournament.age_group)
             _check_team_playable(db, team_id, m.tournament)
+    _check_slot_sources(db, m.tournament_id, {k: getattr(m, k) for k in _SLOT_SOURCE_KEYS} | data)
     for k, v in data.items():
         setattr(m, k, v)
+    # Re-pointing a slot at a different source means the team already in it came
+    # from the old source — clear it, unless the same request sets the team too.
+    for s in ("a", "b"):
+        source_keys = (f"source_match_{s}_id", f"source_pool_{s}_id", f"source_pool_{s}_rank")
+        if any(k in data for k in source_keys) and f"team_{s}_id" not in data:
+            setattr(m, f"team_{s}_id", None)
+    _fill_slots_from_sources(db, m)
     if m.status == "POSTPONED" and "scheduled_at" in data:
         m.status = "SCHEDULED"  # rescheduling a postponed match puts it back on the calendar
     db.commit()
     db.refresh(m)
+    broadcast_match_event_sync(m, "match_updated")
     return _match_dict(m, db)
 
 

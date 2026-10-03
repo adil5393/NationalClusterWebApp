@@ -13,6 +13,7 @@ import {
   Shuffle,
   Eye,
   EyeOff,
+  Link2,
   ChevronDown,
   Search,
   Maximize2,
@@ -44,6 +45,13 @@ import { Spinner, EmptyState } from "@/components/ui/feedback";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/meta";
 import { MatchSlotEditor } from "@/components/admin/MatchSlotEditor";
+import {
+  NO_SLOT_SOURCE,
+  SlotSourcePicker,
+  slotSourcePayload,
+  type SlotSource,
+  type SlotSourceOptions,
+} from "@/components/admin/SlotSourceFields";
 import { useModuleAccess, useMe, type Me } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
@@ -83,6 +91,10 @@ interface MatchT {
   source_match_a_number?: number | null;
   source_match_a_round_name?: string | null;
   source_match_b_id?: number | null;
+  source_pool_a_id?: number | null;
+  source_pool_a_rank?: number | null;
+  source_pool_b_id?: number | null;
+  source_pool_b_rank?: number | null;
   source_match_b_number?: number | null;
   source_match_b_round_name?: string | null;
   venue_id?: number | null;
@@ -324,6 +336,20 @@ function compareMatchIndex(a: MatchT, b: MatchT): number {
   return a.id - b.id;
 }
 
+// What a knockout slot can be fed from, given the rounds that come before the
+// match being edited: earlier knockout matches (winners) and earlier pools.
+function earlierSlotOptions(rounds: RoundT[], sequence: number): SlotSourceOptions {
+  const earlier = rounds.filter((r) => r.sequence < sequence);
+  const matches = earlier.flatMap((r) =>
+    r.matches.filter((m) => !m.pool_id).map((m) => ({ id: m.id, label: `${matchLabel(m)} · ${r.name}` })),
+  );
+  const pools = new Map<number, string>();
+  for (const r of earlier)
+    for (const m of r.matches)
+      if (m.pool_id && m.pool_name) pools.set(m.pool_id, `${m.pool_name} · ${r.name}`);
+  return { matches, pools: [...pools].map(([id, label]) => ({ id, label })) };
+}
+
 function matchLabel(m: MatchT) {
   if (m.notes === "Bye") return `${m.team_a_name ?? m.team_b_name} — Bye`;
   const a =
@@ -348,6 +374,7 @@ function RoundMatchesList({
   onRemove,
   onAssignStaff,
   onScheduleSaved,
+  slotOptions,
 }: {
   matches: MatchT[];
   presentCounts: Record<number, { present: number; total: number }>;
@@ -357,8 +384,49 @@ function RoundMatchesList({
   onRemove: (id: number) => void;
   onAssignStaff: (m: MatchT) => void;
   onScheduleSaved: () => void;
+  slotOptions: SlotSourceOptions;
 }) {
   const me = useMe();
+  // "Link slots" — re-feeds a scheduled knockout match from a pool or an earlier
+  // match's winner. Used to reconnect a downstream match after its source match
+  // was deleted and replaced.
+  const [slotMatch, setSlotMatch] = useState<MatchT | null>(null);
+  const [slotA, setSlotA] = useState<SlotSource>(NO_SLOT_SOURCE);
+  const [slotB, setSlotB] = useState<SlotSource>(NO_SLOT_SOURCE);
+  const [slotSaving, setSlotSaving] = useState(false);
+  const sourceOf = (m: MatchT, s: "a" | "b"): SlotSource => {
+    const matchId = s === "a" ? m.source_match_a_id : m.source_match_b_id;
+    const poolId = s === "a" ? m.source_pool_a_id : m.source_pool_b_id;
+    const rank = s === "a" ? m.source_pool_a_rank : m.source_pool_b_rank;
+    if (matchId) return { kind: "match", matchId: String(matchId), poolId: "", rank: "1" };
+    if (poolId) return { kind: "pool", matchId: "", poolId: String(poolId), rank: String(rank ?? 1) };
+    return NO_SLOT_SOURCE;
+  };
+  const openSlots = (m: MatchT) => {
+    setSlotMatch(m);
+    setSlotA(sourceOf(m, "a"));
+    setSlotB(sourceOf(m, "b"));
+  };
+  const saveSlots = async () => {
+    if (!slotMatch) return;
+    setSlotSaving(true);
+    try {
+      await api.put(`/matches/${slotMatch.id}`, {
+        // A slot left on "team picked above" keeps its current team.
+        team_a_id: slotA.kind === "none" ? slotMatch.team_a_id ?? null : null,
+        team_b_id: slotB.kind === "none" ? slotMatch.team_b_id ?? null : null,
+        ...slotSourcePayload("a", slotA),
+        ...slotSourcePayload("b", slotB),
+      });
+      toast.success("Team slots linked");
+      setSlotMatch(null);
+      onScheduleSaved();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not link team slots");
+    } finally {
+      setSlotSaving(false);
+    }
+  };
   const saveMatchIndex = async (matchId: number, next: string) => {
     try {
       await api.put(`/matches/${matchId}/index`, { match_index: next || null });
@@ -377,6 +445,50 @@ function RoundMatchesList({
   };
   return (
     <>
+      <Dialog
+        open={!!slotMatch}
+        onClose={() => setSlotMatch(null)}
+        title={slotMatch ? `Link team slots — ${matchLabel(slotMatch)}` : "Link team slots"}
+        testId="link-slots-dialog"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-slate-400">
+            Pick where each team comes from. A pool qualifier or an earlier match's winner fills the slot as soon as that
+            source settles — including right away if it already has.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <SlotSourcePicker
+              label="Team A"
+              value={slotA}
+              onChange={setSlotA}
+              options={slotOptions}
+              testId="link-slot-a"
+            />
+            <SlotSourcePicker
+              label="Team B"
+              value={slotB}
+              onChange={setSlotB}
+              options={slotOptions}
+              testId="link-slot-b"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setSlotMatch(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="gold"
+              size="sm"
+              onClick={saveSlots}
+              disabled={slotSaving}
+              data-testid="save-link-slots-btn"
+            >
+              {slotSaving ? "Saving…" : "Save Links"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
       {/* MOBILE: CARD LIST */}
       <div className="mt-2 grid gap-2.5 lg:hidden">
         {matches.map((m, i) => (
@@ -411,6 +523,16 @@ function RoundMatchesList({
                       data-testid={`swap-teams-mobile-${m.id}`}
                     >
                       <ArrowLeftRight className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                  {canEdit && !m.pool_id && m.status === "SCHEDULED" && (
+                    <button
+                      onClick={() => openSlots(m)}
+                      title="Link team slots to a pool's qualifier or an earlier match's winner"
+                      className="shrink-0 text-slate-400 hover:text-gold"
+                      data-testid={`link-slots-mobile-${m.id}`}
+                    >
+                      <Link2 className="h-3.5 w-3.5" />
                     </button>
                   )}
                 </div>
@@ -551,6 +673,16 @@ function RoundMatchesList({
                         data-testid={`swap-teams-${m.id}`}
                       >
                         <ArrowLeftRight className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    {canEdit && !m.pool_id && m.status === "SCHEDULED" && (
+                      <button
+                        onClick={() => openSlots(m)}
+                        title="Link team slots to a pool's qualifier or an earlier match's winner"
+                        className="shrink-0 text-slate-400 hover:text-gold"
+                        data-testid={`link-slots-${m.id}`}
+                      >
+                        <Link2 className="h-3.5 w-3.5" />
                       </button>
                     )}
                   </div>
@@ -880,6 +1012,10 @@ export default function Matches() {
     scheduled_at: "",
     notes: "",
   });
+  // Where each slot gets its team from instead of a fixed pick — so a match
+  // added after a pool or an earlier match has already finished still fills.
+  const [mSrcA, setMSrcA] = useState<SlotSource>(NO_SLOT_SOURCE);
+  const [mSrcB, setMSrcB] = useState<SlotSource>(NO_SLOT_SOURCE);
 
   const [consoleMatchId, setConsoleMatchId] = useState<number | null>(null);
   const [assignStaffMatch, setAssignStaffMatch] = useState<MatchT | null>(null);
@@ -1175,14 +1311,23 @@ export default function Matches() {
   const openAddMatch = (roundId: number) => {
     setMRoundId(roundId);
     setMForm({ team_a_id: "", team_b_id: "", venue_id: "", scheduled_at: "", notes: "" });
+    setMSrcA(NO_SLOT_SOURCE);
+    setMSrcB(NO_SLOT_SOURCE);
     setMOpen(true);
   };
+  const addMatchSlotOptions = (() => {
+    const round = detail?.rounds?.find((r) => r.id === mRoundId);
+    return earlierSlotOptions(detail?.rounds ?? [], round?.sequence ?? 0);
+  })();
   const saveMatch = async () => {
     if (!mRoundId) return;
     try {
       await api.post(`/rounds/${mRoundId}/matches`, {
-        team_a_id: mForm.team_a_id ? Number(mForm.team_a_id) : null,
-        team_b_id: mForm.team_b_id ? Number(mForm.team_b_id) : null,
+        // A slot fed from a source ignores any team picked for it.
+        team_a_id: mSrcA.kind === "none" && mForm.team_a_id ? Number(mForm.team_a_id) : null,
+        team_b_id: mSrcB.kind === "none" && mForm.team_b_id ? Number(mForm.team_b_id) : null,
+        ...slotSourcePayload("a", mSrcA),
+        ...slotSourcePayload("b", mSrcB),
         venue_id: mForm.venue_id ? Number(mForm.venue_id) : null,
         scheduled_at: mForm.scheduled_at || null,
         notes: mForm.notes || null,
@@ -1695,6 +1840,7 @@ export default function Matches() {
                                     onRemove={removeMatch}
                                     onAssignStaff={setAssignStaffMatch}
                                     onScheduleSaved={() => selectedId && loadDetail(selectedId)}
+                                    slotOptions={earlierSlotOptions(detail?.rounds ?? [], r.sequence)}
                                   />
                                 );
                               }
@@ -1732,6 +1878,7 @@ export default function Matches() {
                                             onRemove={removeMatch}
                                             onAssignStaff={setAssignStaffMatch}
                                             onScheduleSaved={() => selectedId && loadDetail(selectedId)}
+                                            slotOptions={earlierSlotOptions(detail?.rounds ?? [], r.sequence)}
                                           />
                                         )}
                                       </div>
@@ -1950,6 +2097,22 @@ export default function Matches() {
               </Select>
               <PresentCount counts={presentCounts} teamId={mForm.team_b_id} />
             </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 rounded-lg border border-white/10 bg-obsidian-950 p-3">
+            <SlotSourcePicker
+              label="Team A comes from"
+              value={mSrcA}
+              onChange={setMSrcA}
+              options={addMatchSlotOptions}
+              testId="match-slot-a-source"
+            />
+            <SlotSourcePicker
+              label="Team B comes from"
+              value={mSrcB}
+              onChange={setMSrcB}
+              options={addMatchSlotOptions}
+              testId="match-slot-b-source"
+            />
           </div>
           <div>
             <Label>Match Venue / Arena</Label>

@@ -1451,8 +1451,14 @@ class BucketCreateRoundRequest(BaseModel):
 class MatchCreate(BaseModel):
     team_a_id: Optional[int] = None
     team_b_id: Optional[int] = None
+    # A slot is fed either by an earlier match's winner (source_match_*) or by
+    # a pool's qualifier at a given rank (source_pool_* + rank, 1 = winner).
     source_match_a_id: Optional[int] = None
     source_match_b_id: Optional[int] = None
+    source_pool_a_id: Optional[int] = None
+    source_pool_a_rank: Optional[int] = None
+    source_pool_b_id: Optional[int] = None
+    source_pool_b_rank: Optional[int] = None
     venue_id: Optional[int] = None
     scheduled_at: Optional[datetime] = None
     notes: Optional[str] = None
@@ -1463,6 +1469,10 @@ class MatchUpdate(BaseModel):
     team_b_id: Optional[int] = None
     source_match_a_id: Optional[int] = None
     source_match_b_id: Optional[int] = None
+    source_pool_a_id: Optional[int] = None
+    source_pool_a_rank: Optional[int] = None
+    source_pool_b_id: Optional[int] = None
+    source_pool_b_rank: Optional[int] = None
     venue_id: Optional[int] = None
     scheduled_at: Optional[datetime] = None
     notes: Optional[str] = None
