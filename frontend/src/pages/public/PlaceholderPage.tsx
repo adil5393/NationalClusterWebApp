@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import {
   MapPin,
   BedDouble,
+  UtensilsCrossed,
   Bus,
   PhoneCall,
   HelpCircle,
@@ -32,6 +33,7 @@ import { Input, Label, Textarea } from "@/components/ui/input";
 import { CallbackRequestDialog, type CallbackTarget } from "@/components/public/CallbackRequestDialog";
 import { cn } from "@/lib/utils";
 import Campus from "@/pages/public/Campus";
+import { TemplateOnlyHeading } from "@/components/public/TemplateOnlyHeading";
 
 interface SectionProps {
   title: string;
@@ -57,9 +59,12 @@ export function PlaceholderPage({ title, section }: SectionProps) {
         </span>
       </div>
 
+      {["venues", "food", "transport"].includes(normSection) && <TemplateOnlyHeading />}
+
       {/* RENDER BESPOKE SECTION CONTENT */}
       {normSection === "venues" && <VenuesSection />}
       {normSection === "accommodation" && <AccommodationSection />}
+      {normSection === "food" && <FoodSection />}
       {normSection === "transport" && <TransportSection />}
       {normSection === "contacts" && <ContactsSection />}
       {normSection === "faq" && <FaqSection />}
@@ -267,6 +272,63 @@ function AccommodationSection() {
       <section id="campus" className="scroll-mt-24 border-t border-white/10 pt-8">
         <Campus embedded />
       </section>
+    </div>
+  );
+}
+
+/* ========================================================================== */
+/* FOOD & DINING SECTION                                                     */
+/* ========================================================================== */
+/** Also shown as the Schedule page's "Fooding Schedule" tab (`embedded`,
+ * which drops this section's own page heading). */
+export function FoodSection({ embedded = false }: { embedded?: boolean } = {}) {
+  const MEALS = [
+    { meal: "Breakfast", time: "06:30 – 09:00", menu: "Porridge, Sprouts, Boiled Eggs, Idli/Dosa, Parathas, Fresh Fruits, Milk & Tea" },
+    { meal: "Lunch", time: "12:30 – 14:30", menu: "Steamed Rice, Roti, Dal Makhani/Tadka, Paneer, Chicken Curry (Non-veg days), Curd, Green Salad" },
+    { meal: "Evening High Tea", time: "17:00 – 18:00", menu: "Energy Drinks, Glucose, Banana, Light Sandwiches, Biscuits & Hot Beverages" },
+    { meal: "Dinner", time: "19:30 – 21:30", menu: "Wholesome Athletic Dinner with Carbs & Proteins, Rice, Vegetable Pulao, Dal, Sabzi & Dessert" },
+  ];
+
+  return (
+    <div className="space-y-8">
+      {embedded ? (
+        <p className="text-sm text-slate-400 font-body">
+          High-protein sports nutrition prepared in hygienic conditions for student athletes.
+        </p>
+      ) : (
+        <div className="border-b border-white/10 pb-6">
+          <h1 className="font-heading text-3xl sm:text-4xl lg:text-5xl font-black text-white">
+            Food & Dining Schedule
+          </h1>
+          <p className="mt-2 text-sm sm:text-base text-slate-400 font-body">
+            High-protein sports nutrition prepared in hygienic conditions for student athletes.
+          </p>
+        </div>
+      )}
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        {MEALS.map((m, i) => (
+          <div key={i} className="rounded-xl border border-white/10 bg-obsidian-900 p-5 space-y-2">
+            <div className="flex items-center justify-between border-b border-white/10 pb-2">
+              <h3 className="font-heading text-base font-bold text-gold">{m.meal}</h3>
+              <span className="flex items-center gap-1 text-xs font-mono text-white font-bold bg-white/10 px-2 py-0.5 rounded">
+                <Clock className="h-3 w-3 text-gold" /> {m.time}
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 font-body leading-relaxed pt-1">
+              {m.menu}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-xl border border-gold/30 bg-gold/10 p-5 flex items-start gap-3.5">
+        <UtensilsCrossed className="h-5 w-5 text-gold shrink-0 mt-0.5" />
+        <div className="text-xs text-slate-200 font-body space-y-1">
+          <p className="font-heading font-bold text-white text-sm">Dining Location & Access Protocol</p>
+          <p>The Central Dining Hall is located adjacent to the Sports Pavilion. Meal coupons or participant QR badge scanning is mandatory at the entry counter.</p>
+        </div>
+      </div>
     </div>
   );
 }

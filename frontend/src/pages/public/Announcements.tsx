@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { TemplateOnlyHeading } from "@/components/public/TemplateOnlyHeading";
 import { Megaphone, AlertCircle, Bell, Clock, Shield } from "lucide-react";
 import { api } from "@/lib/api";
 import { Spinner, EmptyState } from "@/components/ui/feedback";
@@ -62,6 +63,8 @@ export default function PublicAnnouncements() {
       className="mx-auto max-w-4xl px-4 sm:px-6 md:px-8 py-12 md:py-16 text-slate-100 min-h-screen"
       data-testid="public-announcements"
     >
+      <TemplateOnlyHeading />
+
       {/* PAGE HEADER */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-white/10 pb-8">
         <div className="space-y-1.5">

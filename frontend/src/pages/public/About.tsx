@@ -156,6 +156,12 @@ export default function About() {
                 <Users className="h-4 w-4" /> Meet Qualified Teams
               </Link>
               <Link
+                to="/schedule"
+                className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-xs sm:text-sm font-heading font-bold text-slate-200 hover:border-white/25 hover:text-white transition-colors"
+              >
+                <CalendarDays className="h-4 w-4 text-slate-400" /> Daily Fixtures
+              </Link>
+              <Link
                 to="/accommodation#campus"
                 className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-xs sm:text-sm font-heading font-bold text-slate-200 hover:border-white/25 hover:text-white transition-colors"
               >
@@ -756,6 +762,12 @@ export default function About() {
               className="inline-flex items-center gap-2 rounded-lg border border-gold/40 bg-gold/10 px-6 py-3 text-sm font-heading font-black text-gold hover:bg-gold/20 transition-colors shadow-sm"
             >
               <Users className="h-4 w-4" /> Browse Qualified Teams
+            </Link>
+            <Link
+              to="/schedule"
+              className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-6 py-3 text-sm font-heading font-bold text-white hover:border-white/25 transition-colors"
+            >
+              <CalendarDays className="h-4 w-4 text-slate-400" /> Tournament Schedule
             </Link>
           </div>
         </div>

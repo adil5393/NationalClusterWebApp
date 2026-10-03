@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Users,
+  CalendarDays,
   MapPin,
   ArrowRight,
   BedDouble,
@@ -76,6 +77,12 @@ const TOURNAMENT_SECTIONS = [
     desc: "State champions from across India and guest delegations from Saudi Arabia.",
   },
   {
+    to: "/schedule",
+    icon: CalendarDays,
+    title: "Tournament Schedule",
+    desc: "Daily fixture timetables, opening ceremony, knockouts & championship finals.",
+  },
+  {
     to: "/accommodation#campus",
     icon: MapPin,
     title: "Campus & Court Map",
@@ -86,6 +93,12 @@ const TOURNAMENT_SECTIONS = [
     icon: BedDouble,
     title: "Accommodation & Hostels",
     desc: "Hostel block assignments, floor arrangements, and team room guidelines.",
+  },
+  {
+    to: "/schedule?tab=food",
+    icon: UtensilsCrossed,
+    title: "Food & Dining Schedule",
+    desc: "Athlete meal timings, nutritional dining arrangements, and dining hall location.",
   },
   {
     to: "/transport",

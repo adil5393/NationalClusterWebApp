@@ -7,6 +7,7 @@ import {
   Trophy,
   Radio,
   Users,
+  Calendar,
   MapPin,
   HelpCircle,
   Megaphone,
@@ -16,11 +17,13 @@ import {
 import { cn } from "@/lib/utils";
 import schoolLogo from "@/assets/logo/Document_from_Adil_Shahid-removebg-preview.png";
 import { SiteBackgroundSlideshow } from "@/components/public/SiteBackgroundSlideshow";
+import { PublicDisclaimerBanner } from "@/components/public/PublicDisclaimerBanner";
 
 const NAV = [
   { to: "/", label: "Home" },
   { to: "/about", label: "About" },
   { to: "/teams", label: "Teams" },
+  { to: "/schedule", label: "Schedule" },
   { to: "/live", label: "Live", isLive: true },
   { to: "/venues", label: "Venues" },
   { to: "/accommodation", label: "Accommodation" },
@@ -210,6 +213,9 @@ export function PublicLayout() {
           </div>
         </header>
 
+        {/* GLOBAL DISCLAIMER & OWNERSHIP BANNER */}
+        <PublicDisclaimerBanner />
+
         {/* MAIN BODY OUTLET */}
         <main className="flex-1 w-full min-w-0">
           <div className="mx-auto max-w-7xl min-h-full min-w-0 w-full">
@@ -271,6 +277,11 @@ export function PublicLayout() {
                     </Link>
                   </li>
                   <li>
+                    <Link to="/schedule" className="flex items-center gap-1.5 hover:text-gold transition-colors">
+                      <Calendar className="h-3.5 w-3.5 text-slate-400" /> Tournament Schedule & Fixtures
+                    </Link>
+                  </li>
+                  <li>
                     <Link to="/announcements" className="flex items-center gap-1.5 hover:text-gold transition-colors">
                       <Megaphone className="h-3.5 w-3.5 text-slate-400" /> Official Announcements
                     </Link>
@@ -292,6 +303,11 @@ export function PublicLayout() {
                   <li>
                     <Link to="/accommodation" className="hover:text-gold transition-colors">
                       Hostel & Accommodation Blocks
+                    </Link>
+                  </li>
+                  <li>
+                    <Link to="/schedule?tab=food" className="hover:text-gold transition-colors">
+                      Food Courts & Dining Timings
                     </Link>
                   </li>
                   <li>
