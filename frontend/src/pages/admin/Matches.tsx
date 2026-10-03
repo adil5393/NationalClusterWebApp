@@ -583,7 +583,7 @@ function RoundMatchesList({
                     <Users className="h-3.5 w-3.5 text-gold" />
                   </Button>
                 )}
-                {canEdit && (m.status === "SCHEDULED" || m.status === "POSTPONED") && (
+                {canEdit && (m.status === "SCHEDULED" || m.status === "POSTPONED" || m.status === "CANCELLED") && (
                   <Button
                     variant="danger"
                     size="icon-sm"
@@ -774,7 +774,7 @@ function RoundMatchesList({
                         <Users className="h-4 w-4 text-gold" />
                       </Button>
                     )}
-                    {canEdit && (m.status === "SCHEDULED" || m.status === "POSTPONED") && (
+                    {canEdit && (m.status === "SCHEDULED" || m.status === "POSTPONED" || m.status === "CANCELLED") && (
                       <Button
                         variant="ghost"
                         size="icon-sm"
