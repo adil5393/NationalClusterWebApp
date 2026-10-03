@@ -59,7 +59,7 @@ export function PlaceholderPage({ title, section }: SectionProps) {
         </span>
       </div>
 
-      {["venues", "food", "transport"].includes(normSection) && <TemplateOnlyHeading />}
+      {["venues", "food", "transport"].includes(normSection) && <TemplateOnlyHeading note={normSection === "food" ? "Not Actual Menu" : undefined} />}
 
       {/* RENDER BESPOKE SECTION CONTENT */}
       {normSection === "venues" && <VenuesSection />}

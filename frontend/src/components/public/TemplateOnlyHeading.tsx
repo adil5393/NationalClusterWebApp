@@ -1,7 +1,7 @@
 import { FlaskConical } from "lucide-react";
 
 /** Marks a public page as showing placeholder/template data, not real event info. */
-export function TemplateOnlyHeading() {
+export function TemplateOnlyHeading({ note }: { note?: string }) {
   return (
     <div
       data-testid="template-only-heading"
@@ -11,6 +11,12 @@ export function TemplateOnlyHeading() {
       <h2 className="text-xs font-heading font-extrabold uppercase tracking-widest text-amber-300">
         Template Only
       </h2>
+      {note && (
+        <>
+          <span className="text-amber-500/50" aria-hidden="true">–</span>
+          <span className="text-xs font-heading font-bold uppercase tracking-widest text-amber-200">{note}</span>
+        </>
+      )}
     </div>
   );
 }

@@ -220,7 +220,7 @@ export default function PublicSchedule() {
         <span className="text-xs font-heading font-extrabold uppercase tracking-widest text-gold">Schedule</span>
       </div>
 
-      <TemplateOnlyHeading />
+      <TemplateOnlyHeading note={tab === "food" ? "Not Actual Menu" : undefined} />
 
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-white/10 pb-6">
         <div>

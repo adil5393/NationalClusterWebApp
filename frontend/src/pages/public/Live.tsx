@@ -1966,6 +1966,12 @@ export default function Live() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Indices are per-tournament, so group by tournament first, then by index.
+  const sortedLiveMatches = useMemo(
+    () => [...liveMatches].sort((a, b) => a.tournament_id - b.tournament_id || compareMatchIndex(a, b)),
+    [liveMatches],
+  );
+
   const selectedTournament = useMemo(
     () => tournaments.find((t) => t.id === selected),
     [tournaments, selected]
@@ -2020,7 +2026,7 @@ export default function Live() {
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {liveMatches.map((m) => (
+            {sortedLiveMatches.map((m) => (
               <LiveMatchCard key={m.id} initial={m} />
             ))}
           </div>
