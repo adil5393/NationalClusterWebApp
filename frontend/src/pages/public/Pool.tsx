@@ -7,6 +7,7 @@ import { BracketMatchCard, MatchRosterDialog, MatchT, compareMatchIndex } from "
 import { Badge } from "@/components/ui/badge";
 import { Table, THead, TH, TR, TD, TBody } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { LiveScoreNoticeBanner } from "@/components/public/LiveScoreNoticeBanner";
 
 interface PoolDetail {
   id: number;
@@ -141,6 +142,11 @@ export default function Pool() {
                 </span>
               ))}
             </div>
+          </div>
+
+          {/* INFORMATIONAL SCORE NOTICE */}
+          <div>
+            <LiveScoreNoticeBanner />
           </div>
 
           {/* STANDINGS TABLE */}

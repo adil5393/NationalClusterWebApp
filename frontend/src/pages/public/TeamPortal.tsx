@@ -628,6 +628,18 @@ export default function TeamPortal() {
         <ArrowLeft className="h-3.5 w-3.5" /> All Participating Teams
       </Link>
 
+      {/* DATA ACCURACY NOTICE */}
+      <div
+        role="note"
+        data-testid="team-data-notice"
+        className="mb-4 flex items-center gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5"
+      >
+        <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" aria-hidden="true" />
+        <p className="text-xs sm:text-sm font-bold text-amber-200">
+          Data may be inconsistent. Contact Developer
+        </p>
+      </div>
+
       {/* TEAM PROFILE HERO BANNER */}
       <div className="rounded-2xl border border-white/15 bg-gradient-to-br from-obsidian-900 via-obsidian-900 to-obsidian-950 p-6 sm:p-8 shadow-md">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">

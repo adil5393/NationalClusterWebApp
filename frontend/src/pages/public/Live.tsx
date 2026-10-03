@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { ActionCapturedMat } from "@/components/public/ActionCapturedMat";
 import { AdminGateForm } from "@/components/public/AdminGateForm";
+import { LiveScoreNoticeBanner } from "@/components/public/LiveScoreNoticeBanner";
 
 // Every match has two sides — team A is always red, team B is always blue,
 // regardless of which actual team ends up in that slot as the bracket fills
@@ -1973,7 +1974,7 @@ export default function Live() {
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-10">
       {/* ARENA BROADCAST BANNER */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-white/10 pb-6">
+      <div className="border-b border-white/10 pb-6 space-y-4">
         <div>
           <div className="flex items-center gap-2">
             <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_10px_#34d399]" />
@@ -1989,6 +1990,9 @@ export default function Live() {
           </p>
         </div>
 
+        <div>
+          <LiveScoreNoticeBanner />
+        </div>
       </div>
 
       {/* LIVE NOW SECTION */}
