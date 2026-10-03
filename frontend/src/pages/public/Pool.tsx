@@ -38,6 +38,9 @@ export default function Pool() {
   const [standings, setStandings] = useState<StandingRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [rosterMatchId, setRosterMatchId] = useState<number | null>(null);
+  // Set when the organizer has turned public pool details off for this
+  // tournament (backend answers 403) — shown instead of the fixtures.
+  const [detailsHidden, setDetailsHidden] = useState(false);
 
   const load = () => {
     Promise.all([
@@ -47,6 +50,9 @@ export default function Pool() {
       .then(([p, s]) => {
         setPool(p.data);
         setStandings(s.data);
+      })
+      .catch((err) => {
+        if (err?.response?.status === 403) setDetailsHidden(true);
       })
       .finally(() => setLoading(false));
   };
@@ -83,7 +89,16 @@ export default function Pool() {
         <ArrowLeft className="h-4 w-4" /> Back to Live &amp; Fixtures Center
       </Link>
 
-      {loading || !pool ? (
+      {detailsHidden ? (
+        <div
+          className="rounded-xl border border-white/10 bg-obsidian-900 p-10 text-center space-y-2"
+          data-testid="pool-details-hidden"
+        >
+          <Shield className="mx-auto h-6 w-6 text-slate-500" />
+          <h1 className="font-heading text-lg font-bold text-white">Pool details aren't public yet</h1>
+          <p className="text-xs text-slate-400">The organizers haven't opened fixtures and standings for this pool.</p>
+        </div>
+      ) : loading || !pool ? (
         <div className="rounded-xl border border-white/10 bg-obsidian-900 py-16 text-center text-xs text-slate-400 font-mono">
           Loading pool fixtures &amp; standings…
         </div>

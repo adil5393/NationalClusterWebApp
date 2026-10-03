@@ -12,6 +12,7 @@ import {
   Ban,
   Shuffle,
   Eye,
+  EyeOff,
   ChevronDown,
   Search,
   Maximize2,
@@ -123,6 +124,7 @@ interface TournamentT {
   league_advance_count?: number;
   bracket_mode?: string | null;
   indices_locked?: boolean;
+  pool_details_public?: boolean;
   round_count: number;
   match_count: number;
   rounds?: RoundT[];
@@ -3713,6 +3715,26 @@ function LeagueSetup({
     }
   };
 
+  // Public pool details — whether visitors on the Live page can open a pool's
+  // fixtures, scores and standings. No password: it's a plain organizer switch
+  // (see backend matches.py set_pool_details_public).
+  const [poolDetailsPublic, setPoolDetailsPublic] = useState(tournament.pool_details_public !== false);
+  const [poolPublicBusy, setPoolPublicBusy] = useState(false);
+  useEffect(() => setPoolDetailsPublic(tournament.pool_details_public !== false), [tournament.pool_details_public]);
+  const togglePoolDetailsPublic = async () => {
+    const next = !poolDetailsPublic;
+    setPoolPublicBusy(true);
+    try {
+      await api.put(`/tournaments/${tournamentId}/pool-details-public`, { enabled: next });
+      setPoolDetailsPublic(next);
+      toast.success(next ? "Pool details are now public" : "Pool details hidden from the public site");
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? "Could not change pool visibility");
+    } finally {
+      setPoolPublicBusy(false);
+    }
+  };
+
   useEffect(() => {
     if (!roundId && leagueRounds.length > 0) setRoundId(leagueRounds[0].id);
   }, [leagueRounds]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -3844,6 +3866,24 @@ function LeagueSetup({
             >
               {indicesLocked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5 text-gold" />}
               {indicesLocked ? "Unlock Indices" : "Lock Indices"}
+            </Button>
+          )}
+          {canEdit && (
+            <Button
+              variant={poolDetailsPublic ? "outline" : "danger"}
+              size="sm"
+              onClick={togglePoolDetailsPublic}
+              disabled={poolPublicBusy}
+              data-testid="toggle-pool-details-public-btn"
+              className="text-xs font-semibold"
+              title={
+                poolDetailsPublic
+                  ? "Visitors can open pool fixtures, scores and standings from the Live page — click to hide"
+                  : "Pool cards are visible on the Live page but can't be opened — click to make public"
+              }
+            >
+              {poolDetailsPublic ? <Eye className="h-3.5 w-3.5 text-gold" /> : <EyeOff className="h-3.5 w-3.5" />}
+              {poolDetailsPublic ? "Pool Details: Public" : "Pool Details: Hidden"}
             </Button>
           )}
         </div>

@@ -1267,6 +1267,11 @@ class Tournament(TimestampMixin, Base):
     # "protective direction is free, risky direction needs a password" shape
     # as attendance.py's _require_admin_password). V1: no other validation.
     indices_locked = Column(Boolean, nullable=False, default=False, server_default="false")
+    # Whether the public site lets a visitor open a pool's fixtures, scores and
+    # standings (Live → pool card → /live/pools/{id}). Off = pool cards are
+    # shown but not clickable, and the public pool endpoints refuse with 403.
+    # Defaults on so existing tournaments keep today's behavior.
+    pool_details_public = Column(Boolean, nullable=False, default=True, server_default="true")
 
     rounds = relationship(
         "Round", back_populates="tournament", cascade="all, delete-orphan", order_by="Round.sequence"

@@ -544,6 +544,7 @@ def public_bracket(tournament_id: int, db: Session = Depends(get_db)):
         "sport": t.sport,
         "status": t.status,
         "has_pools": has_pools,
+        "pool_details_public": t.pool_details_public,
         "rounds": [
             {
                 "id": r.id,
@@ -561,6 +562,14 @@ def public_bracket(tournament_id: int, db: Session = Depends(get_db)):
     }
 
 
+def _require_pool_details_public(db: Session, p: models.Pool) -> None:
+    """Organizer switch (Tournament.pool_details_public) — when off, a visitor
+    can still see the pool card on Live but not open its fixtures or standings."""
+    t = db.get(models.Tournament, p.tournament_id)
+    if t and not t.pool_details_public:
+        raise HTTPException(403, "Pool details are not public for this tournament")
+
+
 @router.get("/pools/{pool_id}")
 def public_pool_detail(pool_id: int, db: Session = Depends(get_db)):
     from .reports import _match_index_order_key  # local import: avoids a hard import-order dependency between routers
@@ -568,6 +577,7 @@ def public_pool_detail(pool_id: int, db: Session = Depends(get_db)):
     p = db.get(models.Pool, pool_id)
     if not p:
         raise HTTPException(404, "Pool not found")
+    _require_pool_details_public(db, p)
     ordered_matches = sorted(p.matches, key=_match_index_order_key)
     return {
         **_public_pool_dict(p, db),
@@ -584,6 +594,7 @@ def public_pool_standings(pool_id: int, db: Session = Depends(get_db)):
     p = db.get(models.Pool, pool_id)
     if not p:
         raise HTTPException(404, "Pool not found")
+    _require_pool_details_public(db, p)
     return compute_standings(p)
 
 

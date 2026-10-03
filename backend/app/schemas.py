@@ -1396,6 +1396,10 @@ class MatchIndexUpdate(BaseModel):
     match_index: Optional[str] = None
 
 
+class PoolDetailsPublicUpdate(BaseModel):
+    enabled: bool
+
+
 class IndicesLockUpdate(BaseModel):
     locked: bool
     # Required (and checked) only when locked=False — same "locking is free,

@@ -96,6 +96,8 @@ interface Bracket {
   sport?: string | null;
   status: string;
   has_pools: boolean;
+  // Organizer switch — when false, pool cards still show but can't be opened.
+  pool_details_public?: boolean;
   rounds: RoundT[];
 }
 
@@ -1343,6 +1345,7 @@ function PoolsSegment({
   onHoverTeam,
   onSelectTeam,
   hasInitialRevealed,
+  poolDetailsPublic = true,
 }: {
   round: RoundT;
   registerAnchor?: AnchorRegistrar;
@@ -1350,6 +1353,7 @@ function PoolsSegment({
   onHoverTeam?: (teamId: number | null) => void;
   onSelectTeam?: (teamId: number | null) => void;
   hasInitialRevealed?: boolean;
+  poolDetailsPublic?: boolean;
 }) {
   return (
     <div className="inline-flex flex-col self-stretch" style={{ width: CARD_W }} data-testid={`public-pools-segment-${round.id}`}>
@@ -1376,6 +1380,13 @@ function PoolsSegment({
               <Link
                 key={p.id}
                 to={`/live/pools/${p.id}`}
+                /* When the organizer has turned pool details off, the card still
+                   renders (teams + status) but its link is swallowed — the backend
+                   would 403 the page anyway. */
+                onClick={(e) => {
+                  if (!poolDetailsPublic) e.preventDefault();
+                }}
+                aria-disabled={!poolDetailsPublic || undefined}
                 data-testid={`public-pool-${p.id}`}
                 style={{
                   animation: !hasInitialRevealed
@@ -1383,7 +1394,8 @@ function PoolsSegment({
                     : undefined,
                 }}
                 className={cn(
-                  "block rounded-xl border p-3.5 text-left shadow-md transition-all duration-200 hover:border-gold hover:-translate-y-0.5",
+                  "block rounded-xl border p-3.5 text-left shadow-md transition-all duration-200",
+                  poolDetailsPublic ? "hover:border-gold hover:-translate-y-0.5" : "cursor-default",
                   hasHighlightedTeam
                     ? "border-emerald-500/80 bg-obsidian-950 ring-2 ring-emerald-500/30"
                     : isDimmed
@@ -1758,6 +1770,7 @@ function TournamentFlow({
           onHoverTeam={(tId) => setHighlightedTeamId(tId)}
           onSelectTeam={(tId) => setHighlightedTeamId((prev) => (prev === tId ? null : tId))}
           hasInitialRevealed={hasInitialRevealed}
+          poolDetailsPublic={bracket?.pool_details_public !== false}
         />
       )
     );

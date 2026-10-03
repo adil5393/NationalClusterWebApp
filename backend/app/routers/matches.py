@@ -117,6 +117,7 @@ def _tournament_dict(t: models.Tournament, db: Session, with_rounds: bool = Fals
         "league_advance_count": t.league_advance_count,
         "bracket_mode": t.bracket_mode,
         "indices_locked": t.indices_locked,
+        "pool_details_public": t.pool_details_public,
         "round_count": len(t.rounds),
         "match_count": sum(len(r.matches) for r in t.rounds),
     }
@@ -384,6 +385,24 @@ def set_indices_lock(tournament_id: int, payload: schemas.IndicesLockUpdate, db:
     t.indices_locked = payload.locked
     db.commit()
     return {"locked": t.indices_locked}
+
+
+@router.put("/api/tournaments/{tournament_id}/pool-details-public")
+def set_pool_details_public(
+    tournament_id: int,
+    payload: schemas.PoolDetailsPublicUpdate,
+    db: Session = Depends(get_db),
+    current: models.OrganizerUser = Depends(require_auth),
+):
+    """Organizer switch for whether the public site lets visitors open a pool
+    (its fixtures, scores and standings). Enforced server-side too — see
+    routers/public.py _require_pool_details_public."""
+    t = db.get(models.Tournament, tournament_id)
+    if not t:
+        raise HTTPException(404, "Tournament not found")
+    t.pool_details_public = payload.enabled
+    db.commit()
+    return {"enabled": t.pool_details_public}
 
 
 def _propagate_winner(db: Session, match: models.Match) -> None:
